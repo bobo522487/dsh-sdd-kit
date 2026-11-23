@@ -1,6 +1,6 @@
 {
   "name": "dsh-sdd-kit",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Zero-fork SDD bridge plugin for DeepSeek Harness (DSH): delegates 'what to build' to upstream GitHub Spec Kit (specify CLI) and 'how to build' to upstream obra/superpowers, with EARS/Non-Goals overrides, strict TDD, and atomic commits.",
   "type": "module",
   "license": "MIT",

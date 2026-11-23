@@ -16,7 +16,7 @@
 
 ## 安装到 DSH
 
-从 GitHub 安装（当前发布版本 [`v0.4.0`](https://github.com/bobo522487/dsh-sdd-kit/releases/tag/v0.4.0)）：
+从 GitHub 安装（当前发布版本 [`v0.5.0`](https://github.com/bobo522487/dsh-sdd-kit/releases/tag/v0.5.0)）：
 
 ```bash
 # Web profile
@@ -29,7 +29,7 @@ dsh plugin --profile desktop add https://github.com/bobo522487/dsh-sdd-kit
 或从本地 `.tgz` 压缩包安装：
 
 ```bash
-dsh plugin --profile web add ./dsh-sdd-kit-0.4.0.tgz
+dsh plugin --profile web add ./dsh-sdd-kit-0.5.0.tgz
 ```
 
 安装后重启 DSH，然后在项目中运行 `/sdd-setup`。
