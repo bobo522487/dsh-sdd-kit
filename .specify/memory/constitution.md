@@ -1,20 +1,18 @@
 <!--
 同步影响报告
-版本变更：2.0.0 → 2.1.0（MINOR：新增原则 VI，并对既有原则做中文表述）
+版本变更：2.1.0 → 3.0.0（MAJOR：技能表面从三个降为两个，执行纪律改由 Spec Kit 原生扩展钩子注入）
 修改的原则：
-  I. Zero Fork, Thin Glue → I. 零分叉，薄胶水层（仅中文化表述，规则不变）
-  II. Spec-First with EARS and Non-Goals → II. 规范优先，采用 EARS 与非目标（仅中文化表述）
-  III. Strict Test-First Development (NON-NEGOTIABLE) → III. 严格测试先行（不可协商）（仅中文化表述）
-  IV. Atomic Commits on the Current Branch → IV. 当前分支上的原子提交（仅中文化表述）
-  V. Upgrade-Proof, Unattended Upstream Setup → V. 可升级、免值守的上游同步（仅中文化表述）
-  VI. 中文优先的文档与答复（新增）
+  I. 零分叉，薄胶水层（技能上限 3 → 2；新增扩展层作为第三种合法承载形态）
+  III. 严格测试先行（执行载体从 `/sdd-implement` 改为 `/speckit.implement` + 扩展钩子，规则不变）
+  V. 可升级、免值守的上游同步（`specify_init` 默认 integration 改为 `dsh`，三参数不变）
 新增章节：无
 移除章节：无
-迁移说明：新增中文文档与答复原则，自 2.1.0 起适用于所有新增与修订内容；
-  存量英文文档可在后续任务中逐步中文化，不要求本次一次性重写。
-  2.0.0 的三技能上限迁移说明仍保留在原则 I。
+迁移说明：`/sdd-implement` 技能已被彻底删除，不保留废弃提示页，也不留并行执行路径。
+  日常流程 MUST 改用 Spec Kit 原生命令（`/speckit.implement`、`/speckit-bug-fix`），
+  执行纪律由仓库内 `spec-kit-extension/` 这个标准扩展的四个强制钩子注入。
+  技能目录断言 MUST 同步改为两个技能。
 授权：项目拥有者显式指令。
-后续待办：本文档无；此前推迟的 spec/tasks/analyze 复检仍按既有安排执行。
+后续待办：本文档无。
 -->
 
 # dsh-sdd-kit 项目章程
@@ -24,17 +22,19 @@
 ### I. 零分叉，薄胶水层
 dsh-sdd-kit MUST NOT 重实现 GitHub Spec Kit 或 obra/superpowers。它 MUST 把“构建什么”
 交给上游 `specify` CLI，把“如何构建”交给上游 Superpowers 技能。插件对外表面 MUST
-严格限定为三个命名技能（`sdd-setup`、`sdd-implement`、`sdd-update`）和两个轻量 Host
-工具（`sdd_upstream`、`sdd_bridge`）；新行为 MUST 以委托或薄胶水层实现，MUST NOT
-形成并行逻辑。`/sdd-update` MUST 是声明式命令技能，仅委托 `sdd_upstream(update_all)`
+严格限定为两个命名技能（`sdd-setup`、`sdd-update`）和两个轻量 Host
+工具（`sdd_upstream`、`sdd_bridge`），以及一个以标准形态存在的 Spec Kit 扩展
+（`spec-kit-extension/`，由 `specify extension add --dev` 装入，自身不含桥接代码）；
+新行为 MUST 以委托或薄胶水层实现，MUST NOT 形成并行逻辑。`/sdd-update` MUST 是声明式命令技能，仅委托 `sdd_upstream(update_all)`
 一次，MUST NOT 包含更新逻辑。
 
 理由：这使项目始终可随上游升级，避免漂移，同时以薄表面扩展承载用户明确要求的统一更新手势。
 
-迁移说明（v2.0.0）：v1.0.0 的“恰好两个命名技能”上限已被上述三技能上限取代。
-`sdd-setup` 与 `sdd-implement` 不变；`sdd-update` 作为第三个命名技能加入。
-任何断言两个技能的测试或文档 MUST 在功能实现前更新。本次修订经项目拥有者显式指令批准，
-用于解决 `/speckit-analyze` 的 C1 发现。
+迁移说明（v3.0.0）：v2.1.0 的三技能上限（`sdd-setup`、`sdd-implement`、`sdd-update`）
+已被上述两技能上限取代。`/sdd-implement` 整体删除，执行纪律改由 Spec Kit 原生扩展的
+四个强制钩子（`before_implement`、`after_implement`、`before_bug_fix`、`after_bug_fix`）
+注入，因此日常流程 100% 使用 Spec Kit 原生命令。任何断言三个技能的测试或文档 MUST
+在功能实现前更新。本次修订经项目拥有者显式指令批准。
 
 ### II. 规范优先，采用 EARS 与非目标
 每个功能和缺陷修复 MUST 在编写实现代码前具备已批准的 Spec Kit 产物。规范 MUST 使用
@@ -90,10 +90,12 @@ profile 副本刷新时，MUST 向用户报告需要重启 DSH。
 1. 运行 `/sdd-setup` 同步上游并安装 EARS/非目标覆盖文件。
 2. 定义阶段：`/speckit-constitution` → `/speckit-specify` → `/speckit-clarify` →
    `/speckit-plan` → `/speckit-tasks` → `/speckit-analyze`。
-3. 执行阶段：使用 `/sdd-implement`，遵循 TDD 与每任务一次原子提交，然后执行
+3. 执行阶段：使用原生 `/speckit.implement`，遵循 TDD 与每任务一次原子提交（纪律由扩展
+   钩子 `before_implement` / `after_implement` 自动注入），然后执行
    `/speckit-converge` 与 `specs/INDEX.md` 同步。
 4. 缺陷流程：`/speckit-bug-assess "<symptom>" slug=<slug>` →
-   `/sdd-implement bug=<slug>` → `/speckit-bug-test slug=<slug>`，直至验证通过。
+   `/speckit-bug-fix slug=<slug>` → `/speckit-bug-test slug=<slug>`，直至验证通过
+   （纪律由扩展钩子 `before_bug_fix` / `after_bug_fix` 自动注入）。
 5. 完成前 MUST 审查测试、验证证据与本章程合规性；复杂度 MUST 在计划或规范中论证。
 
 ## 治理
@@ -104,8 +106,9 @@ profile 副本刷新时，MUST 向用户报告需要重启 DSH。
 每次 PR 与评审 MUST 验证对这些原则的合规性。运行时指导见 `README.md` 与已安装的
 Superpowers 技能；本文档仅定义不可协商的治理规则。
 
+v3.0.0 修订为 MAJOR，因为删除了一个命名技能并改变了执行入口，属不兼容变更。
 v2.1.0 修订为 MINOR，因为新增了原则 VI；其中文文档与答复规则记录在该原则中，并经项目
 拥有者授权。v2.0.0 修订为 MAJOR，因为原则 I 的表面上限被重新定义，其迁移说明记录在
 原则 I 中。
 
-**版本**：2.1.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-23
+**版本**：3.0.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-23

@@ -180,13 +180,13 @@ test('Cordis registerSddTools registers sdd_upstream and sdd_bridge with valid r
   }
 });
 
-test('skills/ contains exactly 3 user-only bridge skills matching DSH frontmatter contract', async () => {
+test('skills/ contains exactly 2 user-only bridge skills matching DSH frontmatter contract', async () => {
   const skillsDir = path.join(PKG_ROOT, 'skills');
   const dirs = (await fs.readdir(skillsDir, { withFileTypes: true }))
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort();
-  assert.deepEqual(dirs, ['sdd-implement', 'sdd-setup', 'sdd-update']);
+  assert.deepEqual(dirs, ['sdd-setup', 'sdd-update']);
 
   for (const dir of dirs) {
     const raw = await fs.readFile(path.join(skillsDir, dir, 'SKILL.md'), 'utf8');
@@ -855,7 +855,7 @@ test('artifact line references point at the content they cite', async () => {
   };
 
   const anchors = [
-    ['constitution.md', 24, 37, '零分叉'],
+    ['constitution.md', 22, 37, '零分叉'],
     ['constitution.md', 46, 50, '严格测试先行'],
     ['constitution.md', 52, 55, '原子提交'],
     ['constitution.md', 57, 63, '可升级'],
@@ -1324,5 +1324,28 @@ test('US3 end-to-end install writes the extension into the dsh skill root', asyn
     assert.match(cfg, /auto_execute_hooks: true/, 'the global switch must stay untouched');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('US4 the retired /sdd-implement entry point leaves no trace in shipped surfaces', async () => {
+  const surfaces = ['README.md', 'cordis.patch.yml'];
+  for (const relative of surfaces) {
+    const body = await fs.readFile(path.join(PKG_ROOT, relative), 'utf8');
+    assert.equal(
+      /sdd-implement/.test(body),
+      false,
+      `${relative} must not reference the retired /sdd-implement entry point (AC-05)`
+    );
+  }
+
+  const skillsDir = path.join(PKG_ROOT, 'skills');
+  const dirs = await fs.readdir(skillsDir, { withFileTypes: true });
+  for (const entry of dirs.filter((e) => e.isDirectory())) {
+    const body = await fs.readFile(path.join(skillsDir, entry.name, 'SKILL.md'), 'utf8');
+    assert.equal(
+      /sdd-implement/.test(body),
+      false,
+      `skills/${entry.name}/SKILL.md must not reference the retired entry point (AC-05)`
+    );
   }
 });

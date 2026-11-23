@@ -119,15 +119,15 @@ description: "Task list for Spec Kit 原生扩展钩子层（Hooks 取代 /sdd-i
 
 ### Tests for User Story 4
 
-- [ ] T023 [P] [US4] 修改 `test/sdd-kit.test.mjs:183-189` 的技能断言：测试名改为「skills/ contains exactly 2 user-only bridge skills…」，`assert.deepEqual(dirs, ['sdd-setup', 'sdd-update'])`，并保留逐技能 frontmatter 断言（`name`/`description`/`disable-model-invocation: true`）
-- [ ] T024 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增全仓引用测试：断言 `README.md`、`skills/**`、`cordis.patch.yml` 中不含 `sdd-implement`（章程文件允许在「迁移说明」段落提及，测试只断言 `README.md`/`skills/`/`cordis.patch.yml` 三处，AC-05）
+- [x] T023 [P] [US4] 修改 `test/sdd-kit.test.mjs:183-189` 的技能断言：测试名改为「skills/ contains exactly 2 user-only bridge skills…」，`assert.deepEqual(dirs, ['sdd-setup', 'sdd-update'])`，并保留逐技能 frontmatter 断言（`name`/`description`/`disable-model-invocation: true`）
+- [x] T024 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增全仓引用测试：断言 `README.md`、`skills/**`、`cordis.patch.yml` 中不含 `sdd-implement`（章程文件允许在「迁移说明」段落提及，测试只断言 `README.md`/`skills/`/`cordis.patch.yml` 三处，AC-05）
 
 ### Implementation for User Story 4
 
-- [ ] T025 [US4] 删除整个 `skills/sdd-implement/` 目录（REQ-05：不保留废弃提示页，不留并行执行路径）
-- [ ] T026 [P] [US4] 更新 `cordis.patch.yml` 注释：把「3 个桥接技能（/sdd-setup、/sdd-implement、/sdd-update）」改为「2 个桥接技能（/sdd-setup、/sdd-update）」并补一句「执行纪律由 Spec Kit 原生扩展钩子注入」
-- [ ] T027 [P] [US4] 更新 `README.md`：开头「3 个技能」改「2 个技能」；第 43 行「用 `/sdd-implement` 执行…」与第 46 行「用 `/sdd-implement bug=<slug>`…」改写为原生命令 + 钩子说明（`/speckit.implement` 自动注入 TDD、`/speckit-bug-fix` 自动衔接 `/speckit-bug-test`）；补一句「Runtime Events 硬门禁为未来可选升级口」
-- [ ] T028 [US4] 更新 `.specify/memory/constitution.md` 至 v3.0.0：原则 I 技能上限「三个」→「两个（`sdd-setup`、`sdd-update`）」；开发流程段「使用 `/sdd-implement`，遵循 TDD…」→「使用原生 `/speckit.implement`，执行纪律由扩展钩子注入」；「`/sdd-implement bug=<slug>` → `/speckit-bug-test`」→「`/speckit-bug-fix` → `/speckit-bug-test`」；治理段记录版本变更理由（AC-05）
+- [x] T025 [US4] 删除整个 `skills/sdd-implement/` 目录（REQ-05：不保留废弃提示页，不留并行执行路径）
+- [x] T026 [P] [US4] 更新 `cordis.patch.yml` 注释：把「3 个桥接技能（/sdd-setup、/sdd-implement、/sdd-update）」改为「2 个桥接技能（/sdd-setup、/sdd-update）」并补一句「执行纪律由 Spec Kit 原生扩展钩子注入」
+- [x] T027 [P] [US4] 更新 `README.md`：开头「3 个技能」改「2 个技能」；第 43 行「用 `/sdd-implement` 执行…」与第 46 行「用 `/sdd-implement bug=<slug>`…」改写为原生命令 + 钩子说明（`/speckit.implement` 自动注入 TDD、`/speckit-bug-fix` 自动衔接 `/speckit-bug-test`）；补一句「Runtime Events 硬门禁为未来可选升级口」
+- [x] T028 [US4] 更新 `.specify/memory/constitution.md` 至 v3.0.0：原则 I 技能上限「三个」→「两个（`sdd-setup`、`sdd-update`）」；开发流程段「使用 `/sdd-implement`，遵循 TDD…」→「使用原生 `/speckit.implement`，执行纪律由扩展钩子注入」；「`/sdd-implement bug=<slug>` → `/speckit-bug-test`」→「`/speckit-bug-fix` → `/speckit-bug-test`」；治理段记录版本变更理由（AC-05）
 
 **Checkpoint**: 全仓只有一个执行入口，`npm test` 与 grep 双双证明。
 

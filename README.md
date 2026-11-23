@@ -40,10 +40,25 @@ dsh plugin --profile web add ./dsh-sdd-kit-0.3.0.tgz
 2. **刷新全部三层**：`/sdd-update` 在一次调用中检查并更新三层——`specify-cli`、`~/.dsh/upstream/superpowers` 镜像，以及安装在当前 DSH profile 中的 dsh-sdd-kit 副本——并输出每个组件的 `before → after` 报告与所需的重启提示。该技能不会自动查找本地检出：必须显式传入 `dshKitSourceDir=/path/to/dsh-sdd-kit`，否则 dsh-sdd-kit 组件会以 “No dsh-sdd-kit source configured” 失败，其余两层仍照常报告。
 3. **开发特性**：
    - 用原生 Spec Kit 规划：`/speckit.constitution` → `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze`
-   - 用 `/sdd-implement` 执行（全流程严格 TDD + 在当前分支上按任务原子提交 → 原生 `/speckit.converge` + 同步 `specs/INDEX.md`）。
+   - 用原生 `/speckit.implement` 执行。内置扩展的 `before_implement` 钩子会在写第一行源码前自动拉起 Superpowers 的严格 TDD 与根因调试纪律，`after_implement` 钩子在完成后做两阶段自审并提示 `/speckit.converge`；每个任务仍在当前分支上原子提交。
 4. **修复缺陷**：
    - 用原生 Spec Kit 评估：`/speckit-bug-assess "<symptom>" slug=<slug>`
-   - 用 `/sdd-implement bug=<slug>` 修复与验证（上游 Superpowers 调试 + 严格 TDD + 原子提交 → 原生 `/speckit-bug-test slug=<slug>` 直至 `verified`）。
+   - 用原生 `/speckit-bug-fix slug=<slug>` 修复。`before_bug_fix` 钩子自动注入系统化调试与复现测试纪律，`after_bug_fix` 钩子在写完修复报告后做两阶段自审并提示 `/speckit-bug-test slug=<slug>`，直至 `verified`。
+
+## 扩展钩子（Hooks）
+
+执行纪律不再由一个桥接技能承载，而是由仓库内 `spec-kit-extension/` 这个标准 Spec Kit 扩展注入：
+
+| 事件 | 触发时机 | 自动加载的上游技能 |
+|---|---|---|
+| `before_implement` | `/speckit.implement` 写第一行源码前 | `test-driven-development`、`systematic-debugging` |
+| `after_implement` | 全部任务完成后 | `verification-before-completion`、`requesting-code-review` |
+| `before_bug_fix` | `/speckit-bug-fix` 改源码前 | `systematic-debugging`、`test-driven-development` |
+| `after_bug_fix` | 修复报告写完后 | `verification-before-completion`、`requesting-code-review` |
+
+四条钩子均为 `optional: false`（强制）。日常只需敲 Spec Kit 原生命令，纪律由钩子织入；Spec Kit 升级 `/speckit.implement` 模板时不会冲突。
+
+> 若未来需要硬门禁（例如「未跑测试禁止 commit」），Spec Kit 的 Runtime Events（`pre_tool_use` 等）是现成的可选升级口；当前刻意不使用，保持软门禁。
 
 ## 本地测试
 
