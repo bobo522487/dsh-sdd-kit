@@ -51,6 +51,17 @@ export async function runSetup(args = {}, deps = {}) {
     record('specify_init', 'skipped', { reason: 'existing .specify layout preserved (REQ-15)' });
   }
 
+  // Install artifacts are untracked, so a legacy checkout can lack the generated
+  // command skills: repair them before the extensions write their own skills.
+  const native = await upstream({ action: 'ensure_integration_commands', cwd });
+  record(
+    'integration_commands',
+    native.ok ? (native.repaired ? 'performed' : 'skipped') : 'failed',
+    native.ok
+      ? { skillsDir: native.skillsDir, commands: native.commands }
+      : { error: native.error, skillsDir: native.skillsDir }
+  );
+
   // Both extensions are ensured on every run (idempotent via --force).
   const bug = await upstream({ action: 'install_bug_ext', cwd });
   record('install_bug_ext', bug.ok ? 'performed' : 'failed', bug.ok ? null : { stderr: bug.stderr });

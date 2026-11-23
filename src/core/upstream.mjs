@@ -224,6 +224,61 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     };
   }
 
+  if (action === 'ensure_integration_commands') {
+    const integration = await readIntegration(cwd);
+    const description = describeIntegration(integration);
+    const sentinel = path.join(cwd, description.skillsDir, 'speckit-implement', 'SKILL.md');
+    if (await exists(sentinel)) {
+      return {
+        action,
+        cwd,
+        ok: true,
+        present: true,
+        repaired: false,
+        integration,
+        skillsDir: description.skillsDir,
+        commands: [],
+      };
+    }
+
+    // Install artifacts are no longer tracked (v0.5.0), so a checkout that skipped
+    // `specify init` can be missing the integration-managed command files.
+    const commands = [];
+    for (const subcommand of ['upgrade', 'install']) {
+      const cliArgs = ['integration', subcommand, integration];
+      commands.push(`specify ${cliArgs.join(' ')}`);
+      await runner('specify', cliArgs, { cwd });
+      if (await exists(sentinel)) {
+        return {
+          action,
+          cwd,
+          ok: true,
+          present: true,
+          repaired: true,
+          integration,
+          skillsDir: description.skillsDir,
+          commands,
+        };
+      }
+    }
+
+    return {
+      action,
+      cwd,
+      ok: false,
+      present: false,
+      repaired: false,
+      integration,
+      skillsDir: description.skillsDir,
+      commands,
+      error: {
+        code: 'E_INTEGRATION_COMMANDS',
+        message: `native Spec Kit commands are missing under ${description.skillsDir} and could not be restored`,
+        hint: 'run `specify init --here --force`, or `specify integration uninstall <key>` then `specify integration install <key>`, and re-run /sdd-setup',
+      },
+    };
+  }
+
   if (action === 'switch_integration') {
     const target = args.integration || EXPECTED_INTEGRATION;
     const cliArgs = ['integration', 'switch', target];
@@ -245,7 +300,7 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     error: {
       code: 'E_ARGS',
       message: `Unknown sdd_upstream action "${action}".`,
-      hint: 'Expected one of: setup, status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+      hint: 'Expected one of: setup, status, sync_superpowers, specify_upgrade, specify_init, ensure_integration_commands, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
     },
   };
 }

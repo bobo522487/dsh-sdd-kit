@@ -846,6 +846,102 @@ test('switch_integration surfaces CLI failures without throwing', async () => {
   }
 });
 
+const NATIVE_COMMAND_SENTINEL = 'speckit-implement';
+
+async function seedNativeCommand(cwd, skillsDir = '.dsh/skills') {
+  await writeSeed(cwd, `${skillsDir}/${NATIVE_COMMAND_SENTINEL}/SKILL.md`, '# Skill\n');
+}
+
+test('ensure_integration_commands skips the CLI when the native commands are already on disk', async () => {
+  const cwd = await makeTempDir();
+  await seedNativeCommand(cwd);
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args].join(' '));
+    return { ok: true, code: 0, stdout: '', stderr: '' };
+  };
+
+  try {
+    const report = await runUpstream({ action: 'ensure_integration_commands', cwd }, mockRunner);
+    assert.equal(report.ok, true);
+    assert.equal(report.present, true);
+    assert.equal(report.repaired, false);
+    assert.equal(report.integration, 'dsh');
+    assert.equal(report.skillsDir, '.dsh/skills');
+    assert.deepEqual(calls, [], 'no CLI call when the native commands are already present');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('ensure_integration_commands restores missing commands through integration upgrade', async () => {
+  const cwd = await makeTempDir();
+  await fs.mkdir(path.join(cwd, '.specify'), { recursive: true });
+  await fs.writeFile(
+    path.join(cwd, '.specify', 'init-options.json'),
+    JSON.stringify({ ai: 'dsh', integration: 'dsh' })
+  );
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args].join(' '));
+    if (args.join(' ') === 'integration upgrade dsh') {
+      // A diff-aware upgrade reinstalls the managed command files.
+      await seedNativeCommand(cwd);
+      return { ok: true, code: 0, stdout: "Upgraded integration: dsh", stderr: '' };
+    }
+    return { ok: false, code: 1, stdout: '', stderr: 'unexpected call' };
+  };
+
+  try {
+    const report = await runUpstream({ action: 'ensure_integration_commands', cwd }, mockRunner);
+    assert.equal(report.ok, true);
+    assert.equal(report.repaired, true);
+    assert.equal(report.present, true);
+    assert.deepEqual(report.commands, ['specify integration upgrade dsh']);
+    assert.deepEqual(calls, ['specify integration upgrade dsh']);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('ensure_integration_commands falls back to integration install when upgrade cannot repair', async () => {
+  const cwd = await makeTempDir();
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args].join(' '));
+    if (args.join(' ') === 'integration install dsh') {
+      await seedNativeCommand(cwd);
+      return { ok: true, code: 0, stdout: "Installed integration: dsh", stderr: '' };
+    }
+    return { ok: true, code: 0, stdout: 'Nothing to upgrade', stderr: '' };
+  };
+
+  try {
+    const report = await runUpstream({ action: 'ensure_integration_commands', cwd }, mockRunner);
+    assert.equal(report.ok, true);
+    assert.equal(report.repaired, true);
+    assert.deepEqual(report.commands, ['specify integration upgrade dsh', 'specify integration install dsh']);
+    assert.deepEqual(calls, ['specify integration upgrade dsh', 'specify integration install dsh']);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('ensure_integration_commands reports failure when no repair step restores the commands', async () => {
+  const cwd = await makeTempDir();
+  const mockRunner = async () => ({ ok: true, code: 0, stdout: 'no-op', stderr: '' });
+
+  try {
+    const report = await runUpstream({ action: 'ensure_integration_commands', cwd }, mockRunner);
+    assert.equal(report.ok, false);
+    assert.equal(report.present, false);
+    assert.equal(report.error.code, 'E_INTEGRATION_COMMANDS');
+    assert.match(report.error.hint, /specify init --here --force/);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 const HOOK_COMMAND_SECTIONS = [
   '## 何时触发',
   '## 上游依赖检查',
@@ -1326,7 +1422,7 @@ test('US5 the global hook switch and shared templates stay untouched', async (t)
   }
 });
 
-function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled = true, syncOk = true, mismatch = null } = {}) {
+function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled = true, syncOk = true, mismatch = null, commandsOk = true } = {}) {
   const calls = [];
   let switched = false;
   const upstream = async (args) => {
@@ -1342,6 +1438,10 @@ function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled
         return syncOk ? { ok: true, mode: 'pull', skillCount: 15 } : { ok: false, code: 128, stderr: 'fatal: offline' };
       case 'specify_upgrade': return { ok: true, mode: 'install' };
       case 'specify_init': return { ok: true };
+      case 'ensure_integration_commands':
+        return commandsOk
+          ? { ok: true, present: true, repaired: true, integration: 'dsh', skillsDir: '.dsh/skills', commands: ['specify integration upgrade dsh'] }
+          : { ok: false, present: false, error: { code: 'E_INTEGRATION_COMMANDS', message: 'native commands missing', hint: 'run specify init --here --force' } };
       case 'install_bug_ext': return { ok: true };
       case 'install_hooks_ext': {
         const active = switched ? null : mismatch;
@@ -1368,7 +1468,7 @@ function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled
 }
 
 const SETUP_STEP_ORDER = [
-  'inspect', 'sync_superpowers', 'specify_cli', 'specify_init',
+  'inspect', 'sync_superpowers', 'specify_cli', 'specify_init', 'integration_commands',
   'install_bug_ext', 'install_hooks_ext', 'install_overrides',
 ];
 
@@ -1396,6 +1496,29 @@ test('runSetup: existing project skips init and stays idempotent across reruns',
   );
   assert.equal(second.steps.find((s) => s.name === 'specify_init').status, 'skipped');
   assert.equal(second.steps.find((s) => s.name === 'install_bug_ext').status, 'performed', 'extensions are ensured on every run');
+});
+
+test('runSetup: repairs missing native commands after skipping init (legacy checkout)', async () => {
+  const { calls, deps } = setupFakes({ hasSpecifyDir: true });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  const step = report.steps.find((s) => s.name === 'integration_commands');
+  assert.equal(step.status, 'performed');
+  assert.ok(
+    calls.indexOf('specify_init') < calls.indexOf('ensure_integration_commands'),
+    'the repair runs after the REQ-15 init decision'
+  );
+  assert.ok(
+    calls.indexOf('ensure_integration_commands') < calls.indexOf('install_bug_ext'),
+    'integration-managed commands are repaired before extension skills are installed'
+  );
+});
+
+test('runSetup: a failed command repair fails the run but still installs both extensions', async () => {
+  const { deps } = setupFakes({ commandsOk: false });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.find((s) => s.name === 'integration_commands').status, 'failed');
+  assert.equal(report.steps.find((s) => s.name === 'install_hooks_ext').status, 'performed');
 });
 
 test('runSetup: a Superpowers sync failure does not abort the extension install (REQ-11)', async () => {
@@ -1438,4 +1561,40 @@ test('unknown actions return structured E_ARGS instead of throwing', async () =>
   assert.equal(br.ok, false);
   assert.equal(br.error.code, 'E_ARGS');
   assert.match(br.error.message, /Unknown sdd_bridge action/);
+});
+
+test('ensure_integration_commands repairs a real project whose .dsh/skills was deleted', async (t) => {
+  if (!(await specifyAvailable())) {
+    t.skip('specify CLI not available');
+    return;
+  }
+  const cwd = await makeTempDir();
+  try {
+    const init = await runUpstream({ action: 'specify_init', cwd });
+    assert.equal(init.ok, true, init.stderr);
+
+    const skillsDir = path.join(cwd, '.dsh', 'skills');
+    assert.ok(
+      await fs.access(path.join(skillsDir, 'speckit-implement', 'SKILL.md')).then(() => true, () => false),
+      'a fresh init must generate the native command skills'
+    );
+    await fs.rm(skillsDir, { recursive: true, force: true });
+
+    const repaired = await runUpstream({ action: 'ensure_integration_commands', cwd });
+    assert.equal(repaired.ok, true, JSON.stringify(repaired));
+    assert.equal(repaired.repaired, true);
+    assert.equal(repaired.present, true);
+    assert.ok(repaired.commands.length >= 1);
+    assert.deepEqual(
+      await fs.readdir(skillsDir),
+      ['speckit-analyze', 'speckit-checklist', 'speckit-clarify', 'speckit-constitution',
+        'speckit-converge', 'speckit-implement', 'speckit-plan', 'speckit-specify', 'speckit-tasks']
+    );
+
+    const again = await runUpstream({ action: 'ensure_integration_commands', cwd });
+    assert.equal(again.repaired, false, 'a healthy layout needs no repair');
+    assert.deepEqual(again.commands, []);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
 });

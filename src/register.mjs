@@ -23,7 +23,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'string',
             required: true,
             description:
-              'One of: setup, status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+              'One of: setup, status, sync_superpowers, specify_upgrade, specify_init, ensure_integration_commands, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
           },
           cwd: {
             type: 'string',
