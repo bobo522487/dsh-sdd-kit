@@ -89,10 +89,10 @@ test('specify_init emits --skills only on explicit opt-in', async () => {
   assert.ok(initCall.includes('--integration-options=--skills'));
 });
 
-test('sdd_bridge inspects features & bugs, installs EARS overrides, checks tasks, and syncs specs/INDEX.md', async () => {
+test('sdd_bridge inspects features & bugs, installs EARS overrides, and syncs specs/INDEX.md', async () => {
   const cwd = await makeTempDir();
   try {
-    // Seed a Spec Kit feature and bug directory
+    // Seed a Spec Kit feature and bug directory (T001 already checked off by upstream implement)
     const featDir = path.join(cwd, 'specs', '001-user-auth');
     const bugDir = path.join(cwd, '.specify', 'bugs', 'login-crash');
     await fs.mkdir(featDir, { recursive: true });
@@ -101,7 +101,7 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, checks tasks
     await fs.writeFile(path.join(featDir, 'plan.md'), '# Plan\n', 'utf8');
     await fs.writeFile(
       path.join(featDir, 'tasks.md'),
-      `# Tasks\n- [ ] T001 Setup JWT helper\n- [ ] T002 [P] Add login endpoint\n`,
+      `# Tasks\n- [x] T001 Setup JWT helper\n- [ ] T002 [P] Add login endpoint\n`,
       'utf8'
     );
     await fs.writeFile(path.join(bugDir, 'assessment.md'), '# Bug Assessment\n', 'utf8');
@@ -112,19 +112,14 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, checks tasks
     const ov2 = await runBridge({ action: 'install_overrides', cwd });
     assert.equal(ov2.status, 'skipped_existing');
 
-    // Inspect
+    // Inspect (read-only view of upstream-owned task state)
     const info = await runBridge({ action: 'inspect', cwd });
     assert.equal(info.hasEarsOverride, true);
     assert.equal(info.selectedFeature.name, '001-user-auth');
     assert.equal(info.selectedFeature.tasks.total, 2);
+    assert.equal(info.selectedFeature.tasks.done, 1);
     assert.equal(info.selectedFeature.tasks.parallelCount, 1);
     assert.equal(info.selectedBug.slug, 'login-crash');
-
-    // Check off T001
-    const chk = await runBridge({ action: 'check_task', cwd, featureName: '001-user-auth', taskMatch: 'T001' });
-    assert.equal(chk.progress.done, 1);
-    assert.equal(chk.progress.remaining, 1);
-    assert.equal(chk.nextTask.id, 'T002');
 
     // Sync specs/INDEX.md
     const idx = await runBridge({ action: 'sync_index', cwd });
@@ -132,11 +127,13 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, checks tasks
     const indexMd = await fs.readFile(idx.indexPath, 'utf8');
     assert.match(indexMd, /`001-user-auth` \| In Progress \(1\/2\)/);
 
-    // Path traversal guard
+    // The parallel checkbox writer is retired: upstream /speckit.implement owns tasks.md
     await assert.rejects(
-      () => runBridge({ action: 'check_task', cwd, featureName: '../escape', taskMatch: 'T001' }),
-      /Invalid featureName/
+      () => runBridge({ action: 'check_task', cwd, featureName: '001-user-auth', taskMatch: 'T002' }),
+      /Unknown sdd_bridge action/
     );
+    const tasksAfter = await fs.readFile(path.join(featDir, 'tasks.md'), 'utf8');
+    assert.match(tasksAfter, /- \[ \] T002/, 'the bridge must never write task checkboxes');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }

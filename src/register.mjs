@@ -74,12 +74,12 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
       defineTool({
         name: 'sdd_bridge',
         description:
-          'Thin bridge between Spec Kit artifacts (specs/<NNN>/ and .specify/bugs/<slug>/) and Superpowers execution: inspect progress, install EARS+Non-Goals template overrides, check off tasks.md items, or refresh specs/INDEX.md.',
+          'Thin read-mostly bridge between Spec Kit artifacts (specs/<NNN>/ and .specify/bugs/<slug>/) and Superpowers execution: inspect progress, install EARS+Non-Goals template overrides, or refresh specs/INDEX.md. Task checkboxes in tasks.md are owned by upstream /speckit.implement.',
         parameters: {
           action: {
             type: 'string',
             required: true,
-            description: 'One of: inspect, install_overrides, check_task, sync_index.',
+            description: 'One of: inspect, install_overrides, sync_index.',
           },
           cwd: {
             type: 'string',
@@ -92,10 +92,6 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           bugSlug: {
             type: 'string',
             description: 'Spec Kit bug slug under .specify/bugs/ (e.g. "login-crash").',
-          },
-          taskMatch: {
-            type: 'string',
-            description: 'Task ID or unique substring to mark [x] for action="check_task".',
           },
           overwrite: {
             type: 'boolean',

@@ -152,49 +152,6 @@ async function installOverrides(cwd, overwrite = false) {
   return { action: 'install_overrides', path: destFile, status: 'written' };
 }
 
-async function checkTask(cwd, featureName, taskMatch) {
-  if (!featureName || !taskMatch) {
-    throw new Error('Both featureName and taskMatch are required for action="check_task".');
-  }
-  if (featureName.includes('..') || featureName.includes('/') || featureName.includes('\\')) {
-    throw new Error(`Invalid featureName: "${featureName}".`);
-  }
-  const root = path.resolve(cwd || process.cwd());
-  const tasksPath = assertInside(path.join(root, 'specs'), path.join(root, 'specs', featureName, 'tasks.md'));
-  const raw = await fs.readFile(tasksPath, 'utf8');
-  const lines = raw.split(/\r?\n/);
-  const needle = taskMatch.trim().toLowerCase();
-
-  const matches = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^(\s*-\s+\[)( )(\]\s+)(.+)$/);
-    if (m && m[4].toLowerCase().includes(needle)) {
-      matches.push(i);
-    }
-  }
-  if (matches.length === 0) {
-    throw new Error(`No unchecked task matching "${taskMatch}" in ${tasksPath}.`);
-  }
-  if (matches.length > 1) {
-    throw new Error(`Multiple unchecked tasks match "${taskMatch}". Pass a more specific task ID.`);
-  }
-
-  const idx = matches[0];
-  const completedTask = lines[idx].replace(/^\s*-\s+\[ \]\s+/, '').trim();
-  lines[idx] = lines[idx].replace(/^(\s*-\s+\[) (\])/, '$1x$2');
-  const updated = lines.join('\n');
-  await fs.writeFile(tasksPath, updated, 'utf8');
-  const after = parseTasks(updated);
-
-  return {
-    action: 'check_task',
-    featureName,
-    completedTask,
-    progress: { done: after.done, total: after.total, remaining: after.remaining },
-    nextTask: after.nextTask,
-  };
-}
-
 async function syncIndex(cwd) {
   const root = path.resolve(cwd || process.cwd());
   const info = await inspectRepo(root);
@@ -236,13 +193,12 @@ export async function runBridge(args = {}) {
       return inspectRepo(args.cwd, args.featureName, args.bugSlug);
     case 'install_overrides':
       return installOverrides(args.cwd, Boolean(args.overwrite));
-    case 'check_task':
-      return checkTask(args.cwd, args.featureName, args.taskMatch);
     case 'sync_index':
       return syncIndex(args.cwd);
     default:
       throw new Error(
-        `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, check_task, sync_index.`
+        `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, sync_index. ` +
+        'Task checkbox updates belong to upstream /speckit.implement, not to this bridge.'
       );
   }
 }
