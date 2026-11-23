@@ -110,10 +110,9 @@ export async function runUpdate(args = {}, deps = {}) -> UpdateReport
 // deps (all optional, for tests):
 //   runUpstream: (args, runner?) => Promise<any>   default: imported runUpstream
 //   refreshKit:  (args) => Promise<KitCopyResult>   default: imported refreshInstalledKit
-//   runner:      (cmd, args, opts?) => Promise<{ok,code,stdout,stderr}>
-//   env:         NodeJS.ProcessEnv                  default: process.env
-//   homedir:     () => string                       default: os.homedir
 ```
+
+`runUpdate` 只读取上面两个注入点。命令执行由 `runUpstream` 自己的 `runner` 参数负责，因此这里不再重复暴露 `runner`。
 
 行为：
 - 独立解析三个组件任务并用 `Promise.allSettled` 等待；将抛出的错误归一化为 `failed` 记录。
@@ -124,8 +123,12 @@ export async function runUpdate(args = {}, deps = {}) -> UpdateReport
 ```js
 // src/core/kit-copy.mjs
 export async function refreshInstalledKit(args = {}, deps = {}) -> KitCopyResult
-// deps: fs (default node:fs/promises), crypto (default node:crypto), env/homedir as above
+// deps (all optional, for tests):
+//   env:     NodeJS.ProcessEnv   default: process.env
+//   homedir: () => string        default: os.homedir
 ```
+
+`refreshInstalledKit` 只读取 `env` 与 `homedir` 两个注入点；文件系统与哈希直接使用 `node:fs/promises` 与 `node:crypto`，不额外注入。
 
 ## 4. Error semantics
 

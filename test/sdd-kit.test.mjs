@@ -788,3 +788,24 @@ test('quickstart manual recovery uses staged swaps instead of in-place copies', 
   assert.match(quickstart, /mv /, 'quickstart must swap entries in with mv/rename');
   assert.match(quickstart, /nlink/, 'quickstart must explain the hardlink hazard it avoids');
 });
+
+test('contract injection points match the deps the implementation actually reads', async () => {
+  const contract = await fs.readFile(
+    path.join(PKG_ROOT, 'specs/001-sdd-update-command/contracts/sdd-update.contract.md'),
+    'utf8'
+  );
+  const updateSource = await fs.readFile(path.join(PKG_ROOT, 'src/core/update.mjs'), 'utf8');
+  const kitCopySource = await fs.readFile(path.join(PKG_ROOT, 'src/core/kit-copy.mjs'), 'utf8');
+
+  const documented = [...contract.matchAll(/^\/\/\s{3}(\w+):/gm)].map((match) => match[1]);
+  assert.ok(documented.length > 0, 'contract must document its injection points');
+
+  for (const key of documented) {
+    const used = new RegExp(`deps\\.${key}\\b`).test(updateSource) || new RegExp(`deps\\.${key}\\b`).test(kitCopySource);
+    assert.ok(used, `contract documents deps.${key} but no module reads it`);
+  }
+
+  for (const key of ['runner', 'fs', 'crypto']) {
+    assert.ok(!documented.includes(key), `contract must not document unsupported deps.${key}`);
+  }
+});

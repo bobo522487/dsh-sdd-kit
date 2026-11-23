@@ -22,7 +22,7 @@
 
 **Storage**：仅本地文件系统。读写目标：Superpowers 镜像（`~/.dsh/upstream/superpowers`）、已安装的 profile 副本（`$DSH_PROFILE_DIR/node_modules/dsh-sdd-kit`，回退为 `~/.dsh/profiles/${DSH_PROFILE:-web}/node_modules/dsh-sdd-kit`），以及该 profile 副本旁的临时暂存目录。无数据库。`cwd` 下的项目文件（`specs/`、`plan.md`、`tasks.md`、应用源码、`.specify/`）为只读或不被触碰。
 
-**Testing**：`npm test` → `node --test test/sdd-kit.test.mjs`（`package.json:42`）。按 `test/sdd-kit.test.mjs:14-55` 与 `:157-181` 的模式，以注入的 `runner`/`runUpstream`/`refreshKit` 假实现和临时目录文件系统快照来扩展现有测试套件。每个任务严格遵循 Red → Green → Refactor（constitution.md:36-42）。
+**Testing**：`npm test` → `node --test test/sdd-kit.test.mjs`（`package.json:42`）。按 `test/sdd-kit.test.mjs:14-55` 与 `:157-181` 的模式，以注入的 `runUpstream`/`refreshKit` 假实现和临时目录文件系统快照来扩展现有测试套件。每个任务严格遵循 Red → Green → Refactor（constitution.md:36-42）。
 
 **Target Platform**：宿主操作系统上的 DSH Web/Desktop profile；插件内部为 Node 18+ 运行时。斜杠命令由 `@deepseek-ai/dsh-skill-filesystem` 挂载打包的 `skills/` 目录提供（`cordis.patch.yml:5-11`）。
 

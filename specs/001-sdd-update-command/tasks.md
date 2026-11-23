@@ -168,5 +168,5 @@ description: "Task list for the SDD unified update command feature"
 - [x] T017 **CRITICAL**：按章程「技术与集成约束」把当前源码安全刷新到 `/home/bobo/.dsh/profiles/web/node_modules/dsh-sdd-kit`，验证 profile 中出现 `sdd-update` 技能、`package.json` 为 `0.3.0`、`src/register.mjs` 含 `update_all`，并向用户报告需要重启 DSH per Constitution 技术与集成约束 (missing)
 - [x] T018 修正 `README.md:40` 中关于检出目录“自动发现”的误导表述，明确 `dshKitSourceDir` 必须显式传入、缺失时该组件会失败 per README.md:40 / REQ-05 (contradicts)
 - [x] T019 把 `specs/001-sdd-update-command/quickstart.md:78-96` 的手工恢复流程改为暂存 + 逐条目重命名的硬链接安全流程，或明确标注原地复制的破坏性前提 per plan: profile-copy 安全决策 (partial)
-- [ ] T020 对齐 `specs/001-sdd-update-command/contracts/sdd-update.contract.md` §3 与 `plan.md:25` 的依赖注入说明：要么实现 `runner`/`fs`/`crypto` 注入，要么把文档改为实现实际支持的 `runUpstream`/`refreshKit`/`env`/`homedir` per plan:contract §3 (partial)
+- [x] T020 对齐 `specs/001-sdd-update-command/contracts/sdd-update.contract.md` §3 与 `plan.md:25` 的依赖注入说明：要么实现 `runner`/`fs`/`crypto` 注入，要么把文档改为实现实际支持的 `runUpstream`/`refreshKit`/`env`/`homedir` per plan:contract §3 (partial)
 - [ ] T021 校正 `plan.md:19,25,34,38,40`、`research.md:15,50,70,84`、`tasks.md:12,14,152` 中因章程中文化而失效的行号引用，保持原有语义不变 per plan/research/tasks 引用 (partial)
