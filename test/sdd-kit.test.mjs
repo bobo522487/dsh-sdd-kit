@@ -27,7 +27,7 @@ async function seedKitSource(root, { marker = 'source' } = {}) {
   await writeSeed(
     root,
     'package.json',
-    `${JSON.stringify({ name: 'dsh-sdd-kit', version: '0.3.0', type: 'module', files: ['src/', 'skills/', 'overrides/', 'cordis.patch.yml', 'README.md', 'LICENSE'] }, null, 2)}\n`
+    `${JSON.stringify({ name: 'dsh-sdd-kit', version: '0.3.0', type: 'module', files: ['src/', 'skills/', 'overrides/', 'spec-kit-extension/', 'cordis.patch.yml', 'README.md', 'LICENSE'] }, null, 2)}\n`
   );
   await writeSeed(root, 'src/index.mjs', `export const marker = '${marker}';\n`);
   await writeSeed(root, 'src/core/update.mjs', `export const marker = '${marker}';\n`);
@@ -900,5 +900,34 @@ test('artifact line references point at the content they cite', async () => {
       );
       assert.ok(targetLines[start - 1].trim().length > 0, `${artifact} cites blank line ${label}`);
     }
+  }
+});
+
+test('release allowlist ships the Spec Kit extension source directory', async () => {
+  const manifest = JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));
+  const files = manifest.files.map((entry) => entry.replace(/\/$/, ''));
+  assert.ok(
+    files.includes('spec-kit-extension'),
+    `package.json files must include spec-kit-extension/, got: ${files.join(', ')}`
+  );
+
+  const kitCopySource = await fs.readFile(path.join(PKG_ROOT, 'src', 'core', 'kit-copy.mjs'), 'utf8');
+  const allowlistBlock = kitCopySource.match(/export const KIT_ALLOWLIST = \[([\s\S]*?)\];/)?.[1] || '';
+  assert.ok(
+    /'spec-kit-extension'/.test(allowlistBlock),
+    'KIT_ALLOWLIST must include spec-kit-extension so update_all copies it into the DSH profile'
+  );
+
+  const seededRoot = await makeTempDir();
+  try {
+    await seedKitSource(seededRoot);
+    const seededManifest = JSON.parse(await fs.readFile(path.join(seededRoot, 'package.json'), 'utf8'));
+    const seededFiles = seededManifest.files.map((entry) => entry.replace(/\/$/, ''));
+    assert.ok(
+      seededFiles.includes('spec-kit-extension'),
+      'seedKitSource must mirror the real package.json files array'
+    );
+  } finally {
+    await fs.rm(seededRoot, { recursive: true, force: true });
   }
 });

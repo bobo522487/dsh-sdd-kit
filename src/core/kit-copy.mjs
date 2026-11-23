@@ -7,6 +7,7 @@ export const KIT_ALLOWLIST = [
   'src',
   'skills',
   'overrides',
+  'spec-kit-extension',
   'cordis.patch.yml',
   'README.md',
   'LICENSE',
