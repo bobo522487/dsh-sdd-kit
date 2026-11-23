@@ -777,6 +777,23 @@ test('README states that dshKitSourceDir must be passed explicitly', async () =>
   assert.doesNotMatch(readme, /自动发现/, 'README must not imply the local checkout is discovered automatically');
 });
 
+test('README install commands point at the real repository and release version', async () => {
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+  const pkg = JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));
+
+  assert.doesNotMatch(readme, /<your-username>/, 'README must not ship a placeholder GitHub owner');
+  assert.match(
+    readme,
+    /https:\/\/github\.com\/bobo522487\/dsh-sdd-kit/,
+    'README must install from the published repository URL'
+  );
+  assert.match(
+    readme,
+    new RegExp(`dsh-sdd-kit-${pkg.version.replaceAll('.', '\\.')}\\.tgz`),
+    `README tarball example must match package.json version ${pkg.version}`
+  );
+});
+
 test('quickstart manual recovery uses staged swaps instead of in-place copies', async () => {
   const quickstart = await fs.readFile(
     path.join(PKG_ROOT, 'specs/001-sdd-update-command/quickstart.md'),

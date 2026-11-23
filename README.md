@@ -16,14 +16,14 @@
 
 ## 安装到 DSH
 
-从 GitHub 安装（推送本仓库之后）：
+从 GitHub 安装（当前发布版本 [`v0.3.0`](https://github.com/bobo522487/dsh-sdd-kit/releases/tag/v0.3.0)）：
 
 ```bash
 # Web profile
-dsh plugin --profile web add https://github.com/<your-username>/dsh-sdd-kit
+dsh plugin --profile web add https://github.com/bobo522487/dsh-sdd-kit
 
 # Desktop profile
-dsh plugin --profile desktop add https://github.com/<your-username>/dsh-sdd-kit
+dsh plugin --profile desktop add https://github.com/bobo522487/dsh-sdd-kit
 ```
 
 或从本地 `.tgz` 压缩包安装：
