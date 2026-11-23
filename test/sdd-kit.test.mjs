@@ -1202,7 +1202,7 @@ test('US5 reinstalling the hooks extension stays idempotent', async (t) => {
     assert.equal(second.restartRequired, false, 'INV-13: a pure reinstall must not demand a restart');
     assert.equal(second.skillsDir, '.dsh/skills', 'INV-12: the report must reflect the dsh skill root');
 
-    const events = (cfg) => cfg.split('\n').filter((line) => /^  [a-z_]+:$/.test(line)).map((line) => line.trim());
+    const events = (cfg) => cfg.split(/\r?\n/).filter((line) => /^  [a-z_]+:$/.test(line)).map((line) => line.trim());
     assert.deepEqual(events(afterSecond), events(afterFirst), 'INV-8: a reinstall must not add orphan event keys');
     assert.deepEqual(
       events(afterSecond),
@@ -1235,7 +1235,7 @@ test('US5 removing the extension rolls the project back to a hook-free state', a
     assert.deepEqual(installedEntriesOf(cfg), [], 'INV-8: removal must drop the installed entry');
     assert.deepEqual(hookCommandsOf(cfg), [], 'INV-8: removal must drop every hook entry');
     assert.equal(
-      cfg.split('\n').filter((line) => /^  [a-z_]+:$/.test(line)).length,
+      cfg.split(/\r?\n/).filter((line) => /^  [a-z_]+:$/.test(line)).length,
       0,
       'INV-8: removal must not leave orphan event keys'
     );
