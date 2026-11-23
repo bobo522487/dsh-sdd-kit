@@ -78,6 +78,17 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 
 `.dsh/skills/` 与 `.specify/extensions*` 是安装产物，不入库。克隆后运行一次 `/sdd-setup` 即可幂等重建（specify-cli、Superpowers 镜像、bug 与 hooks 扩展、EARS 覆盖）。治理文档 `.specify/memory/constitution.md` 与上游脚本/模板仍在库中。
 
+## 支持矩阵
+
+| 平台 | 状态 |
+|---|---|
+| Linux / macOS / WSL | 一级支持（specify CLI 生成符号链接，bash 脚本原生） |
+| Windows 原生 | 已验证（44 测试全绿）；CLI 无 symlink 权限时钩子技能回退为内容一致的副本；`.specify/scripts/` 仅 bash 版本，Spec Kit 脚本步骤需 WSL/Git Bash |
+
+`peerDependencies` 目前为 `"*"`：宿主 `@deepseek-ai/cordis`、`dsh-tools`、`dsh-skill-filesystem` 的实际版本下界待在可读取的 DSH profile 上核实后收紧（desktop profile 的宿主包内置于应用，profile 内不可读）。
+
+**插件不加载时的排查**：`cordis.patch.yml` 用 `!!js` + `createRequire(baseUrl)` 定位包内 `skills/`，是加载的单点故障。确认 profile 的 `node_modules/dsh-sdd-kit` 存在且 `package.json` 可解析；DSH 日志中 skill-filesystem 提供器报错时优先检查该路径。
+
 ## 本地测试
 
 ```bash
