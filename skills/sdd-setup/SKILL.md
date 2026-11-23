@@ -14,6 +14,7 @@ One-command bootstrap and upgrade for the **Spec Kit (what) × Superpowers (how)
 2. **Sync upstream `obra/superpowers`**:
    - Call `sdd_upstream(action: "sync_superpowers")` to clone or `git pull --ff-only` `~/.dsh/upstream/superpowers`.
    - Remind the user to restart DSH once if this was the first clone (so the `superpowers-upstream` skill provider picks up all upstream skills).
+   - If the sync fails, continue with steps 3–7 anyway (REQ-11): the extension install is independent of the mirror. In the summary, state the sync failure explicitly and warn that each hook will fail closed at `REQ-06` until the mirror is restored.
 3. **Install or upgrade `specify-cli`**:
    - If `specifyCli.installed` is `false` (or the user asked to upgrade), call `sdd_upstream(action: "specify_upgrade")`. Fresh installs pin a stable Python (`3.14` default, overridable via `python`) to avoid source-building on alpha interpreters.
    - If `uv` is missing, tell the user cleanly how to install `uv` and stop without guessing.

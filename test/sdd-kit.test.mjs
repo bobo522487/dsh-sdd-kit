@@ -1088,8 +1088,13 @@ function assertHookCommandShape(body, file) {
   );
   assert.match(
     body,
-    /缺失[\s\S]{0,40}停止/,
+    /缺失[\s\S]{0,80}停止/,
     `${file} must tell the agent to stop when an upstream skill is missing (INV-5)`
+  );
+  assert.match(
+    body,
+    /\/sdd-setup/,
+    `${file} must name the repair command when the upstream skills are missing (REQ-06)`
   );
   assert.ok(
     body.split('\n').length <= 61,
@@ -1253,6 +1258,11 @@ test('US3 sdd-setup installs the hooks extension and reports integration mismatc
   assert.match(body, /hasSpecifyDir/, 'sdd-setup must gate specify_init on hasSpecifyDir');
   assert.match(body, /specify integration switch dsh/, 'sdd-setup must surface the explicit switch command');
   assert.match(body, /integrationMismatch/, 'sdd-setup must branch on the mismatch report');
+  assert.match(
+    body,
+    /sync fails[\s\S]{0,120}continue/,
+    'sdd-setup must keep installing the extension when the upstream sync fails (REQ-11)'
+  );
   assert.equal(
     /--integration claude/.test(body),
     false,
