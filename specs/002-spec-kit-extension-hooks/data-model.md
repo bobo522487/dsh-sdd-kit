@@ -142,3 +142,9 @@ sdd_upstream(install_hooks_ext) ──1 次委派──▶ specify CLI ──▶
 ```
 
 **删除 `sdd-implement` 后的表面**：对外技能 = `sdd-setup` + `sdd-update`（2 个）；Host 工具 = `sdd_upstream` + `sdd_bridge`（2 个）。执行纪律的载体从「技能」变成「扩展钩子」，不再占用技能名额。
+
+### E6: 显式切换报告（`switch_integration`）
+
+- `action: "switch_integration"`、`cwd`、`command: "specify integration switch <target>"`；透传 `ok/code/stdout/stderr`。
+- 与 E4 共用 `integration` / `skillsDir` / `skillsDirInDshRoots` / `integrationMismatch` 派生规则；成功切到 `dsh` 后 `integrationMismatch === null`。
+- INV-14：`switch_integration` 不负责重装扩展；`/sdd-setup` 必须在切换成功后重跑步骤 5，使四个钩子技能落到 `.dsh/skills`。

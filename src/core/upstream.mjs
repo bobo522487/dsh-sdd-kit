@@ -185,8 +185,6 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     const cliArgs = ['extension', 'add', '--dev', extensionDir, '--force'];
     const res = await runner('specify', cliArgs, { cwd });
     const integration = await readIntegration(cwd);
-    const skillsDir = SKILLS_DIR_BY_INTEGRATION[integration] || '.dsh/skills';
-    const skillsDirGuessed = !SKILLS_DIR_BY_INTEGRATION[integration];
     const report = {
       action,
       cwd,
@@ -194,27 +192,55 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
       command: `specify ${cliArgs.join(' ')}`,
       ...res,
       extension: { ...HOOKS_EXTENSION },
-      integration,
-      skillsDir,
-      skillsDirInDshRoots: integration === EXPECTED_INTEGRATION,
-      integrationMismatch:
-        integration === EXPECTED_INTEGRATION
-          ? null
-          : {
-              current: integration,
-              expected: EXPECTED_INTEGRATION,
-              switchCommand: `specify integration switch ${EXPECTED_INTEGRATION}`,
-              note: INTEGRATION_MISMATCH_NOTE,
-            },
+      ...describeIntegration(integration),
       hooks: [...HOOKS_EXTENSION_EVENTS],
       restartRequired: false,
     };
-    if (skillsDirGuessed) report.skillsDirGuessed = true;
     if (args.force === false) report.forceIgnored = true;
     return report;
   }
 
+  if (action === 'switch_integration') {
+    const target = args.integration || EXPECTED_INTEGRATION;
+    const cliArgs = ['integration', 'switch', target];
+    const res = await runner('specify', cliArgs, { cwd });
+    const integration = await readIntegration(cwd);
+    return {
+      action,
+      cwd,
+      command: `specify ${cliArgs.join(' ')}`,
+      ...res,
+      ...describeIntegration(integration),
+      restartRequired: false,
+    };
+  }
+
   throw new Error(
-    `Unknown sdd_upstream action "${action}". Expected one of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext.`
+    `Unknown sdd_upstream action "${action}". Expected one of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration.`
   );
+}
+
+/**
+ * Describe where Spec Kit writes its generated skills for the given integration.
+ * `integrationMismatch` is the only signal that a project is not on the DSH
+ * layout; it is a report, never an instruction to switch on its own (REQ-15).
+ */
+function describeIntegration(integration) {
+  const known = SKILLS_DIR_BY_INTEGRATION[integration];
+  const description = {
+    integration,
+    skillsDir: known || '.dsh/skills',
+    skillsDirInDshRoots: integration === EXPECTED_INTEGRATION,
+    integrationMismatch:
+      integration === EXPECTED_INTEGRATION
+        ? null
+        : {
+            current: integration,
+            expected: EXPECTED_INTEGRATION,
+            switchCommand: `specify integration switch ${EXPECTED_INTEGRATION}`,
+            note: INTEGRATION_MISMATCH_NOTE,
+          },
+  };
+  if (!known) description.skillsDirGuessed = true;
+  return description;
 }

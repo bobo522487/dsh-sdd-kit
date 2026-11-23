@@ -125,3 +125,18 @@
 | 幂等（CLI 可用时） | 连跑两次 → 条目数不变、`installed` 不重复（AC-07） |
 | 卸载（CLI 可用时） | `specify extension remove superpowers-hooks --force` → `installed: []` / `hooks: {}`（AC-10） |
 | CLI 不可用 | `t.skip('specify CLI not available')`，不 mock |
+
+## 显式 integration 切换（`switch_integration`，REQ-16 / AC-14）
+
+默认路径**不调用**本动作；只有用户向 `/sdd-setup` 传 `switchIntegration: true`（或明确要求“切换到 dsh”）时才调用。
+
+| 项 | 值 |
+|---|---|
+| 入参 | `action: "switch_integration"`；`cwd`（项目根）；可选 `integration`（默认 `dsh`） |
+| 委托 | `specify integration switch <target>`，**恰好一次** runner 调用 |
+| 回读 | 切换后重新读取 `.specify/init-options.json`，产出与 E4 相同的 `integration` / `skillsDir` / `skillsDirInDshRoots` / `integrationMismatch` 字段 |
+| 失败 | 直接透传 CLI 的 `ok:false` / `code` / `stdout` / `stderr`，不合成 `error`，不抛异常 |
+| 后续 | `/sdd-setup` 必须重新执行扩展安装（步骤 5），把四条命令技能重建到 `.dsh/skills` |
+| 禁止 | 默认 `/sdd-setup` 路径自动调用；在 `hasSpecifyDir === true` 时重跑 `specify init` 代替切换 |
+
+测试契约：`switch_integration` 委托次数为 1、argv 为 `['integration','switch','dsh']`、成功后 `integrationMismatch === null`、`skillsDirInDshRoots === true`；CLI 失败时保持原始 `stderr`。

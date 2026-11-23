@@ -35,6 +35,7 @@
 - Q: 内置扩展在仓库里的开发位置放在哪里？ → A: 仓库内 `spec-kit-extension/` 目录；它同时是 `specify extension add --dev` 的安装来源与 npm 包 `files` 的一部分，测试直接调用真实 `specify` CLI（不 mock）。
 - Q: 当项目里 `settings.auto_execute_hooks` 为 false 时，强制钩子应该仍然执行还是尊重全局开关？ → A: 只依赖每条钩子自己的 `optional: false`，**不修改** `settings.auto_execute_hooks`；扩展安装与卸载均不改动该全局设置。
 - Q: 既然本套件的宿主是 DSH，`specify_init` 的默认 integration 应该继续用 `claude` 还是改成 `dsh`？ → A: 默认改为 `dsh`（技能落到 DSH 原生根 `.dsh/skills`，无需 claude 兼容层）；对已初始化为其它 integration 的项目，`/sdd-setup` 必须**报告不一致**并提供显式切换动作，**不自动**改写用户项目布局。
+- Q: 报告里的“显式切换动作”只有一段文字说明，用户重跑 `/sdd-setup` 发现不会切换，应该怎么补？ → A: 保持“默认只报告、不自动切换”（REQ-15）不变；新增 `switch_integration` 动作与 `/sdd-setup` 的 `switchIntegration: true` opt-in（REQ-16），用户显式请求时才委托 `specify integration switch dsh` 并重装钩子扩展。
 
 ## 2. Functional Requirements (EARS Format)
 
@@ -55,6 +56,7 @@
 - `REQ-13`：**WHEN** 扩展安装或卸载 **THE SYSTEM SHALL** 保持 `settings.auto_execute_hooks` 不变，强制语义仅由每条钩子的 `optional: false` 承担；**MUST NOT** 借改写全局开关来“确保”钩子执行。
 - `REQ-14`：**WHEN** 用户在没有既有 `.specify/` 的项目中运行 `/sdd-setup` **THE SYSTEM SHALL** 以 `integration=dsh` 执行 `specify init`，使 Spec Kit 生成的技能落在 DSH 原生技能根 `.dsh/skills`；**MUST NOT** 默认写入 `.claude/` 等其它 agent 的目录。
 - `REQ-15`：**IF** 项目已用其它 integration（如 `claude`）初始化 **THE SYSTEM SHALL** 在 `/sdd-setup` 报告中明确指出该不一致、给出显式切换命令与影响范围，并**不得**自动改写用户项目布局；切换动作 **MUST** 由用户显式请求触发。
+- `REQ-16`：**WHEN** 用户显式请求切换 integration（向 `/sdd-setup` 传 `switchIntegration: true` 或明确说“切换到 dsh”）**THE SYSTEM SHALL** 通过 `sdd_upstream(action: "switch_integration")` 委托一次 `specify integration switch dsh`，回读切换后的 integration 与技能目录，并在重新安装钩子扩展后报告 `integration=dsh`、`skillsDirInDshRoots=true`；**MUST NOT** 将该动作设为默认行为或自动执行。
 
 ## 3. Non-Goals & Hard Constraints (业务禁区)
 
@@ -96,6 +98,7 @@
 - [ ] `AC-11`：`/sdd-setup` 的输出包含扩展版本、四个钩子事件清单与重启提示。
 - [ ] `AC-12`：在没有 `.specify/` 的临时目录中运行 `/sdd-setup`；生成的技能落在 `.dsh/skills/`，`.claude/` 未被创建，且 `.specify/init-options.json` 的 `integration` 与 `ai` 均为 `dsh`。
 - [ ] `AC-13`：在 `integration=claude` 的既有项目上运行 `/sdd-setup`；输出明确指出 integration 不一致、给出 `specify integration switch dsh` 命令，且该次运行**未**改动 `.claude/` 下的任何文件。
+- [ ] `AC-14`：在上述项目上显式传 `switchIntegration: true` 重跑 `/sdd-setup`；`sdd_upstream(switch_integration)` 只调用一次 `specify integration switch dsh`，回读报告为 `integration=dsh` / `skillsDir=.dsh/skills` / `integrationMismatch=null`，四个钩子技能出现在 `.dsh/skills/`，且 `.specify/extensions.yml` 的四条钩子保持不变。
 
 ### Success Criteria
 

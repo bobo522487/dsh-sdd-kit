@@ -1079,6 +1079,103 @@ test('sdd_upstream exposes install_hooks_ext and extensionDir to the model', () 
   assert.ok(upstream.parameters.extensionDir, 'extensionDir must be a declared parameter');
 });
 
+test('sdd_upstream exposes switch_integration so the mismatch report is actionable', () => {
+  const registered = [];
+  const ctx = { tools: { register: (tool) => { registered.push(tool); return () => {}; } } };
+  registerSddTools(ctx, (definition) => definition);
+
+  const upstream = registered.find((tool) => tool.name === 'sdd_upstream');
+  assert.ok(
+    upstream.parameters.action.description.includes('switch_integration'),
+    'REQ-16: the model must be able to opt in to the integration switch'
+  );
+});
+
+test('switch_integration delegates once to specify integration switch dsh', async () => {
+  const cwd = await makeTempDir();
+  await fs.mkdir(path.join(cwd, '.specify'), { recursive: true });
+  await fs.writeFile(
+    path.join(cwd, '.specify', 'init-options.json'),
+    JSON.stringify({ ai: 'claude', integration: 'claude' })
+  );
+  const calls = [];
+  const mockRunner = async (cmd, args, options) => {
+    calls.push({ cmd, args, options });
+    if (args[0] === 'integration' && args[1] === 'switch') {
+      // The CLI rewrites init-options.json as part of the switch.
+      await fs.writeFile(
+        path.join(cwd, '.specify', 'init-options.json'),
+        JSON.stringify({ ai: 'dsh', integration: 'dsh' })
+      );
+      return { ok: true, code: 0, stdout: "Switched to integration 'DeepSeek Harness'", stderr: '' };
+    }
+    return { ok: false, code: 1, stdout: '', stderr: 'unexpected call' };
+  };
+
+  try {
+    const report = await runUpstream({ action: 'switch_integration', cwd }, mockRunner);
+    assert.equal(calls.length, 1, 'must delegate exactly once');
+    assert.equal(calls[0].cmd, 'specify');
+    assert.deepEqual(calls[0].args, ['integration', 'switch', 'dsh']);
+    assert.equal(calls[0].options.cwd, cwd);
+
+    assert.equal(report.action, 'switch_integration');
+    assert.equal(report.ok, true);
+    assert.equal(report.cwd, cwd);
+    assert.equal(report.command, 'specify integration switch dsh');
+    assert.equal(report.integration, 'dsh', 'REQ-16: the report must re-read the post-switch integration');
+    assert.equal(report.skillsDir, '.dsh/skills');
+    assert.equal(report.skillsDirInDshRoots, true);
+    assert.equal(report.integrationMismatch, null, 'a completed switch must clear the mismatch');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('switch_integration reports an already-switched project without failing', async () => {
+  const cwd = await makeTempDir();
+  await fs.mkdir(path.join(cwd, '.specify'), { recursive: true });
+  await fs.writeFile(
+    path.join(cwd, '.specify', 'init-options.json'),
+    JSON.stringify({ ai: 'dsh', integration: 'dsh' })
+  );
+  const mockRunner = async () => ({
+    ok: true,
+    code: 0,
+    stdout: "Integration 'dsh' is already the default integration. Nothing to switch.",
+    stderr: '',
+  });
+
+  try {
+    const report = await runUpstream({ action: 'switch_integration', cwd }, mockRunner);
+    assert.equal(report.ok, true);
+    assert.equal(report.integration, 'dsh');
+    assert.equal(report.integrationMismatch, null);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('switch_integration surfaces CLI failures without throwing', async () => {
+  const cwd = await makeTempDir();
+  const mockRunner = async () => ({
+    ok: false,
+    code: 1,
+    stdout: '',
+    stderr: 'Error: Not a Spec Kit project (no .specify/ directory)',
+  });
+
+  try {
+    const report = await runUpstream({ action: 'switch_integration', cwd }, mockRunner);
+    assert.equal(report.ok, false);
+    assert.equal(report.code, 1);
+    assert.match(report.stderr, /Not a Spec Kit project/);
+    assert.equal(report.error, undefined, 'CLI failures keep raw stderr instead of a synthesized error');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 const HOOK_COMMAND_SECTIONS = [
   '## 何时触发',
   '## 上游依赖检查',
@@ -1285,6 +1382,27 @@ test('US3 sdd-setup installs the hooks extension and reports integration mismatc
     /--integration claude/.test(body),
     false,
     'sdd-setup must no longer document a hardcoded claude integration'
+  );
+});
+
+test('US6 sdd-setup exposes the explicit integration switch without making it automatic', async () => {
+  const body = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
+
+  assert.match(body, /switch_integration/, 'REQ-16: the opt-in action must be documented in sdd-setup');
+  assert.match(
+    body,
+    /switchIntegration/,
+    'REQ-16: sdd-setup must name the explicit opt-in signal'
+  );
+  assert.match(
+    body,
+    /only when the user explicitly asks|explicit opt-in/i,
+    'REQ-15: the switch must stay opt-in, never automatic'
+  );
+  assert.match(
+    body,
+    /never run the switch yourself/i,
+    'REQ-15: the default path must still refuse to switch on its own'
   );
 });
 

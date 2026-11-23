@@ -46,6 +46,8 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 - `pnpm update --force` 在 pnpm v12 上不可用（`error: unexpected argument '--force' found`）。
 - 升级后重启 DSH，并在项目里重跑 `/sdd-setup` 重装扩展。
 
+**既有项目的 integration 不会自动切换**：`/sdd-setup` 为保护用户布局只报告不一致；重跑多少次都仍是原 integration。要显式切换到 DSH 原生技能根，传 `switchIntegration: true` 重跑 `/sdd-setup`（内部调用一次 `sdd_upstream(action: "switch_integration")`，等价于 `specify integration switch dsh`，随后重装钩子扩展）。切换只替换未修改的托管文件，本地改过的文件会保留；`.specify/extensions.yml`、模板与脚本不受影响。
+
 ## 日常流程
 
 1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here --integration dsh` 与 `specify extension add bug`、装入本仓库内置的 `superpowers-hooks` 扩展、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
