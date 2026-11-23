@@ -1,17 +1,18 @@
 <!--
 同步影响报告
-版本变更：2.1.0 → 3.0.0（MAJOR：技能表面从三个降为两个，执行纪律改由 Spec Kit 原生扩展钩子注入）
+版本变更：3.0.0 → 4.0.0（MAJOR：删除自研 profile 安装器与 check_task 平行写路径，工具动作表面收缩）
 修改的原则：
-  I. 零分叉，薄胶水层（技能上限 3 → 2；新增扩展层作为第三种合法承载形态）
-  III. 严格测试先行（执行载体从 `/sdd-implement` 改为 `/speckit.implement` + 扩展钩子，规则不变）
-  V. 可升级、免值守的上游同步（`specify_init` 默认 integration 改为 `dsh`，三参数不变）
+  I. 零分叉，薄胶水层（新增两条禁令：插件 MUST NOT 自替换已安装副本；MUST NOT 提供 tasks.md 平行勾选写者。
+     `/sdd-update` 语义从三层降为两层上游）
+  V. 可升级、免值守的上游同步（插件自身安装/升级 MUST 走 DSH 包管理器；重启提示义务改为按上游变更判定）
 新增章节：无
 移除章节：无
-迁移说明：`/sdd-implement` 技能已被彻底删除，不保留废弃提示页，也不留并行执行路径。
-  日常流程 MUST 改用 Spec Kit 原生命令（`/speckit.implement`、`/speckit-bug-fix`），
-  执行纪律由仓库内 `spec-kit-extension/` 这个标准扩展的四个强制钩子注入。
-  技能目录断言 MUST 同步改为两个技能。
-授权：项目拥有者显式指令。
+迁移说明：`sdd_upstream(update_all)` 不再更新 dsh-sdd-kit 自身，`dshKitSourceDir`/`dshProfileDir`/`force`
+  参数已删除；`sdd_bridge(check_task)` 与 `taskMatch` 参数已删除，tasks.md 勾选唯一写者为上游
+  `/speckit.implement`。升级插件请执行 `dsh plugin --profile <profile> update dsh-sdd-kit --latest`
+  并重启 DSH。`src/core/kit-copy.mjs` 已整体删除。EARS 模板唯一可编辑源为 `overrides/spec-template.md`，
+  `.specify/templates/overrides/` 为安装产物，不再入库。
+授权：项目拥有者显式指令（宏观架构评审批次 1，2026-11-23）。
 后续待办：本文档无。
 -->
 
@@ -28,8 +29,19 @@ dsh-sdd-kit MUST NOT 重实现 GitHub Spec Kit 或 obra/superpowers。它 MUST �
 新行为 MUST 以委托或薄胶水层实现，MUST NOT 形成并行逻辑。`/sdd-update` MUST 是声明式命令技能，仅委托 `sdd_upstream(update_all)`
 一次，MUST NOT 包含更新逻辑。
 
-理由：这使项目始终可随上游升级，避免漂移，同时以薄表面扩展承载用户明确要求的统一更新手势。
+零分叉的两条硬边界（v4.0.0）：
+- 插件 MUST NOT 复制或替换已安装的 profile 副本；自身安装与升级 MUST 走 DSH 包管理器
+  （`dsh plugin add/update dsh-sdd-kit --latest`）。运行中的插件无法可靠替换自己。
+- `tasks.md` 勾选 MUST 只有上游 `/speckit.implement` 一个写者；插件 MUST NOT 提供
+  平行的任务勾选动作，只读统计（`inspect`）不受限。
+- 同一事实 MUST 只有一处可编辑源：打包白名单以 `package.json` 的 `files` 为准，
+  EARS 模板以 `overrides/spec-template.md` 为准，安装产物 MUST NOT 入库。
 
+理由：这使项目始终可随上游升级，避免漂移；“薄”的实质是消灭第二套机制与第二份事实，
+而不是表面的技能个数。
+
+迁移说明（v4.0.0）：`update_all` 从三层降为两层上游（`spec-kit`、`superpowers`），
+`kit-copy` 自研安装器与 `check_task` 平行勾选路径整体删除，不保留兼容别名。
 迁移说明（v3.0.0）：v2.1.0 的三技能上限（`sdd-setup`、`sdd-implement`、`sdd-update`）
 已被上述两技能上限取代。`/sdd-implement` 整体删除，执行纪律改由 Spec Kit 原生扩展的
 四个强制钩子（`before_implement`、`after_implement`、`before_bug_fix`、`after_bug_fix`）
@@ -59,7 +71,8 @@ EARS 验收语法（`WHEN ... THE SYSTEM SHALL ...`），并 MUST 通过已安�
 `specify init` 命令默认 MUST 免值守：MUST 包含 `--non-interactive`、`--force`、
 `--ignore-agent-tools`，并 MUST 省略已弃用的 `--integration-options=--skills`（除非显式选择加入）。
 全新 `specify` 安装 MUST 通过可覆盖参数固定稳定 Python 版本，MUST NOT 硬编码机器相关路径。
-profile 副本刷新时，MUST 向用户报告需要重启 DSH。
+插件自身的安装与升级 MUST 走 DSH 包管理器路径，升级后 MUST 提示用户重启 DSH；
+上游 Superpowers 首次克隆或技能数变化时，MUST 向用户报告需要重启 DSH。
 理由：安装流程 MUST NOT 挂起、在非 Claude 主机上失败，或因新工具发布而中断。
 
 ### VI. 中文优先的文档与答复
@@ -78,9 +91,11 @@ profile 副本刷新时，MUST 向用户报告需要重启 DSH。
 - 运行时 MUST 为 Node.js >=18 与 ESM 模块；MUST NOT 新增 npm 依赖。
 - 上游事实来源 MUST 保持为 `specify` CLI 与本地 `~/.dsh/upstream/superpowers` Git 镜像；
   本插件 MUST NOT 复制其逻辑。
-- DSH profile 安装方式是普通目录副本，路径为
-  `/home/bobo/.dsh/profiles/web/node_modules/dsh-sdd-kit`；源码变更 MUST 复制到该路径后再做
-  profile 验证，工具代码变更时 MUST 请求重启 DSH。
+- DSH profile 中的插件副本由 DSH 包管理器（pnpm）安装与升级；本插件 MUST NOT
+  自行写入该副本。开发验证 MUST 通过 `dsh plugin add/update` 或本地 `.tgz` 安装完成，
+  工具代码变更时 MUST 请求重启 DSH。
+- 仓库内文本文件 MUST 以 LF 存储与检出（`.gitattributes`）；契约测试 MUST NOT
+  锚定平台相关换行；平台受限用例（如 symlink）MUST 显式 skip 并注明原因。
 - 生成的 Spec Kit 覆盖文件、模板与工作流文件 MUST 通过 `sdd_bridge`/`/sdd-setup` 安装，
   MUST NOT 在下游项目中手工编辑。
 - 本章程仅用于项目治理；`/speckit-constitution` MUST NOT 修改命令与模板源文件。
@@ -106,9 +121,12 @@ profile 副本刷新时，MUST 向用户报告需要重启 DSH。
 每次 PR 与评审 MUST 验证对这些原则的合规性。运行时指导见 `README.md` 与已安装的
 Superpowers 技能；本文档仅定义不可协商的治理规则。
 
+v4.0.0 修订为 MAJOR，因为删除了 `update_all` 的第三组件与 `check_task` 动作及配套参数，
+属工具表面的不兼容收缩；其迁移说明记录在原则 I 与顶部同步影响报告中，经项目拥有者
+对宏观架构评审批次 1 的显式批准落地。
 v3.0.0 修订为 MAJOR，因为删除了一个命名技能并改变了执行入口，属不兼容变更。
 v2.1.0 修订为 MINOR，因为新增了原则 VI；其中文文档与答复规则记录在该原则中，并经项目
 拥有者授权。v2.0.0 修订为 MAJOR，因为原则 I 的表面上限被重新定义，其迁移说明记录在
 原则 I 中。
 
-**版本**：3.0.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-23
+**版本**：4.0.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-23
