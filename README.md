@@ -34,11 +34,17 @@ dsh plugin --profile web add ./dsh-sdd-kit-0.4.0.tgz
 
 安装后重启 DSH，然后在项目中运行 `/sdd-setup`。
 
-升级到新版本时请**重新 add 同一个来源**——git 依赖的锁文件指向具体 commit，`dsh plugin update` 会报 `Already up to date`：
+升级到新版本时，git 依赖的锁文件指向具体 commit，**必须让 pnpm 重新解析**，否则内容会停在旧 commit：
 
 ```bash
-dsh plugin --profile web add github:bobo522487/dsh-sdd-kit
+dsh plugin --profile web update dsh-sdd-kit --latest
 ```
+
+要点：
+
+- 只重新 `add` 同一个来源**不会**升级——specifier 没变时 pnpm 直接报 `Lockfile is up to date, resolution step is skipped`，锁仍钉在旧 commit。
+- `pnpm update --force` 在 pnpm v12 上不可用（`error: unexpected argument '--force' found`）。
+- 升级后重启 DSH，并在项目里重跑 `/sdd-setup` 重装扩展。
 
 ## 日常流程
 

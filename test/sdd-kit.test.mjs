@@ -799,8 +799,8 @@ test('README install commands point at the real repository and release version',
   );
   assert.match(
     readme,
-    /重新 add 同一个来源/,
-    'README must explain that git dependencies upgrade by re-adding, not by `dsh plugin update`'
+    /update dsh-sdd-kit --latest/,
+    'README must explain that git dependencies upgrade via update --latest (plain re-add is skipped when the specifier is unchanged)'
   );
 
   const cordis = await fs.readFile(path.join(PKG_ROOT, 'cordis.patch.yml'), 'utf8');
