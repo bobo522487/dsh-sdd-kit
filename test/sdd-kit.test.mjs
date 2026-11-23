@@ -613,3 +613,54 @@ test('refreshInstalledKit validates the source, stages swaps, and preserves unli
     await fs.rm(profileDir, { recursive: true, force: true });
   }
 });
+
+test('runUpdate keeps the readable before identifier on a failed component', async () => {
+  const cwd = await makeTempDir();
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.3.1', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'aaaaaaa', skillCount: 2 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: false, code: 1, mode: 'upgrade', stdout: '', stderr: 'uv: command failed' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: false, code: 128, mode: 'pull', skillCount: 2, stdout: '', stderr: 'fatal: offline' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const refreshKit = async () => ({
+    changed: false,
+    beforeHash: 'sha256:same',
+    afterHash: 'sha256:same',
+    changedFiles: [],
+    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
+    mode: 'unchanged',
+  });
+
+  try {
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
+      { runUpstream: runUpstreamFake, refreshKit }
+    );
+    assert.equal(report.ok, false);
+    assert.equal(report.components[0].before, 'specify 1.3.1');
+    assert.equal(report.components[0].after, null);
+    assert.match(report.components[0].error.message, /Spec Kit update failed:/);
+    assert.equal(report.components[1].before, 'aaaaaaa');
+    assert.equal(report.components[1].after, null);
+    assert.match(report.components[1].error.message, /Superpowers update failed:/);
+    assert.equal(report.components[2].outcome, 'unchanged');
+    assert.deepEqual(
+      report.errors.map((entry) => entry.component),
+      ['spec-kit', 'superpowers']
+    );
+    assert.equal(report.requiresRestart, false);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});

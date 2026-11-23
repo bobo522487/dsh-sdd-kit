@@ -21,6 +21,12 @@ function toError(error) {
   return new Error(typeof error === 'string' ? error : JSON.stringify(error));
 }
 
+function failure(message, before = null) {
+  const error = new Error(message);
+  error.before = before;
+  return error;
+}
+
 function normalizeRecord(component, record) {
   return {
     component,
@@ -52,7 +58,7 @@ async function updateSpecKit(upstream, args) {
 
   const result = await upstream({ action: 'specify_upgrade', cwd: args.cwd, python: args.python });
   if (result && result.ok === false) {
-    throw new Error(`Spec Kit update failed: ${failureDetail(result)}`);
+    throw failure(`Spec Kit update failed: ${failureDetail(result)}`, before);
   }
 
   let after;
@@ -60,7 +66,7 @@ async function updateSpecKit(upstream, args) {
     const status = await readStatus(upstream, args);
     after = status?.specifyCli?.version ?? null;
   } catch (error) {
-    throw new Error(`Unable to read Spec Kit version after update: ${toError(error).message}`);
+    throw failure(`Unable to read Spec Kit version after update: ${toError(error).message}`, before);
   }
 
   return {
@@ -90,7 +96,7 @@ async function updateSuperpowers(upstream, args) {
     repoUrl: args.repoUrl,
   });
   if (result && result.ok === false) {
-    throw new Error(`Superpowers update failed: ${failureDetail(result)}`);
+    throw failure(`Superpowers update failed: ${failureDetail(result)}`, before);
   }
 
   let after;
@@ -100,7 +106,7 @@ async function updateSuperpowers(upstream, args) {
     after = status?.superpowers?.head ?? null;
     afterSkillCount = status?.superpowers?.skillCount ?? null;
   } catch (error) {
-    throw new Error(`Unable to read Superpowers revision after update: ${toError(error).message}`);
+    throw failure(`Unable to read Superpowers revision after update: ${toError(error).message}`, before);
   }
 
   const cloned = result?.mode === 'clone';
@@ -162,7 +168,7 @@ export async function runUpdate(args = {}, deps = {}) {
     if (result.status === 'fulfilled') return normalizeRecord(component, result.value);
     const error = toError(result.reason);
     return normalizeRecord(component, {
-      before: null,
+      before: error.before ?? null,
       after: null,
       outcome: 'failed',
       followUp: null,
