@@ -5,3 +5,4 @@
 | Feature | Status | Spec | Plan |
 | :--- | :--- | :--- | :--- |
 | `001-sdd-update-command` | Done | [spec.md](./001-sdd-update-command/spec.md) | [plan.md](./001-sdd-update-command/plan.md) |
+| `002-spec-kit-extension-hooks` | Done | [spec.md](./002-spec-kit-extension-hooks/spec.md) | [plan.md](./002-spec-kit-extension-hooks/plan.md) |

@@ -88,7 +88,14 @@ ls -l .dsh/skills/ | grep superpowers-hooks     # integration=dsh（默认）时
 ls -l .claude/skills/ | grep superpowers-hooks  # 仅当项目仍是 integration=claude
 ```
 
-应为 4 个 symlink 指向 `.specify/extensions/superpowers-hooks/.specify-dev/agent-commands/<agent>/...`。
+应为 4 个目录；每个目录里的 `SKILL.md` 是 symlink，指向
+`.specify/extensions/superpowers-hooks/.specify-dev/agent-commands/<agent>/speckit-superpowers-hooks-*/SKILL.md`
+（`--dev` 安装即 `link_commands=True`，所以正文只有一份，改动扩展源后重装即生效）：
+
+```bash
+ls -l .dsh/skills/speckit-superpowers-hooks-before-implement/
+# SKILL.md -> ../../../.specify/extensions/superpowers-hooks/.specify-dev/agent-commands/dsh/speckit-superpowers-hooks-before-implement/SKILL.md
+```
 
 > **为什么默认是 `dsh`**：DSH 的默认技能根是项目 `.dsh/skills`、`.agents/skills`、`~/.dsh/skills`、`~/.agents/skills`，**不含 `.claude/skills`**。因此 `/sdd-setup` 的 `specify init` 默认传 `--integration dsh`，装完即可被 DSH 发现，无需第三方 skills 管理器。
 >
@@ -167,7 +174,7 @@ specify extension remove superpowers-hooks --force
 期望：
 
 - `.specify/extensions.yml` 中四个事件下本扩展条目被清除，`installed` 不再含 `superpowers-hooks`；若没有其它扩展，文件回落为 `installed: []` / `hooks: {}`；
-- `.dsh/skills/speckit-superpowers-hooks-*` 四个 symlink 被删除（若项目是 `integration=claude` 则为 `.claude/skills/` 下同名条目）；
+- `.dsh/skills/speckit-superpowers-hooks-*` 四个目录（及其中的 `SKILL.md` symlink）被删除（若项目是 `integration=claude` 则为 `.claude/skills/` 下同名条目）；
 - 配置备份在 `.specify/extensions/.backup/superpowers-hooks/`；
 - `/speckit-implement` 回到无钩子的原始行为。
 

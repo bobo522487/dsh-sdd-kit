@@ -55,7 +55,7 @@
 
 - INV-4：正文 MUST NOT 复制上游技能的任何段落；只允许出现技能名、命令名、路径与顺序描述（REQ-02/03）。
 - INV-5：每个文件开头 MUST 含缺失处理句——若 `~/.dsh/upstream/superpowers/skills` 不存在或缺所列技能，报告缺失项并停止，不得凭记忆代替（REQ-06）。
-- INV-6：引用其它 Spec Kit 命令时一律写 `/speckit-*` 形式（DSH 恒渲染 `/`，research R5）。
+- INV-6：引用其它 Spec Kit 命令时 MUST 写 `__SPECKIT_COMMAND_<NAME>__` 占位符，由 CLI 按当前 agent 风格渲染（DSH 恒为 `/`，research R5）；MUST NOT 硬写 `/speckit.converge` 这类点号形式，否则 skills 模式下不可执行。
 
 ---
 

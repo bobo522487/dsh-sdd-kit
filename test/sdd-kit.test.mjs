@@ -1086,6 +1086,11 @@ function assertHookCommandShape(body, file) {
     body.includes('~/.dsh/upstream/superpowers/skills'),
     `${file} must name the Superpowers skill root for the missing-dependency check (INV-5)`
   );
+  assert.match(
+    body,
+    /缺失[\s\S]{0,40}停止/,
+    `${file} must tell the agent to stop when an upstream skill is missing (INV-5)`
+  );
   assert.ok(
     body.split('\n').length <= 61,
     `${file} must stay within 60 lines (INV-9), got ${body.split('\n').length}`
@@ -1414,6 +1419,8 @@ test('US5 reinstalling the hooks extension stays idempotent', async (t) => {
       4,
       'a reinstall must not duplicate hook entries'
     );
+    assert.equal(second.restartRequired, false, 'INV-13: a pure reinstall must not demand a restart');
+    assert.equal(second.skillsDir, '.dsh/skills', 'INV-12: the report must reflect the dsh skill root');
 
     const events = (cfg) => cfg.split('\n').filter((line) => /^  [a-z_]+:$/.test(line)).map((line) => line.trim());
     assert.deepEqual(events(afterSecond), events(afterFirst), 'INV-8: a reinstall must not add orphan event keys');

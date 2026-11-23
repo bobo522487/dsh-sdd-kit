@@ -153,11 +153,11 @@ description: "Task list for Spec Kit 原生扩展钩子层（Hooks 取代 /sdd-i
 
 **Purpose**: 交付前的一致性核对与文档校验。
 
-- [ ] T032 [P] 核对 `specs/002-spec-kit-extension-hooks/quickstart.md` 的命令与实测行为一致（尤其 `specify extension list` 的 `Commands: 4 | Hooks: 4`、`remove --force`、`integration switch` 影响范围）
-- [ ] T033 [P] 核对 `specs/002-spec-kit-extension-hooks/data-model.md` 的 INV-1…INV-13 与 `test/sdd-kit.test.mjs` 的断言一一对应，无遗漏不变量
-- [ ] T034 全量回归：`npm test` 必须全绿（章程原则 III），并确认 `node --test test/sdd-kit.test.mjs` 无 `t.skip` 之外的跳过
-- [ ] T035 手工走一遍 [quickstart.md](./quickstart.md) 的「一次性安装 → 四视角验证 → 幂等 → 回滚」四段，记录实际输出
-- [ ] T036 更新 `specs/INDEX.md`（通过 `sdd_bridge(action: "sync_index")`），确认 `002-spec-kit-extension-hooks` 行状态正确
+- [x] T032 [P] 核对 `specs/002-spec-kit-extension-hooks/quickstart.md` 的命令与实测行为一致（尤其 `specify extension list` 的 `Commands: 4 | Hooks: 4`、`remove --force`、`integration switch` 影响范围）
+- [x] T033 [P] 核对 `specs/002-spec-kit-extension-hooks/data-model.md` 的 INV-1…INV-13 与 `test/sdd-kit.test.mjs` 的断言一一对应，无遗漏不变量
+- [x] T034 全量回归：`npm test` 必须全绿（章程原则 III），并确认 `node --test test/sdd-kit.test.mjs` 无 `t.skip` 之外的跳过
+- [x] T035 手工走一遍 [quickstart.md](./quickstart.md) 的「一次性安装 → 四视角验证 → 幂等 → 回滚」四段，记录实际输出
+- [x] T036 更新 `specs/INDEX.md`（通过 `sdd_bridge(action: "sync_index")`），确认 `002-spec-kit-extension-hooks` 行状态正确
 
 ---
 
