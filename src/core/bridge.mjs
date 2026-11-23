@@ -196,9 +196,14 @@ export async function runBridge(args = {}) {
     case 'sync_index':
       return syncIndex(args.cwd);
     default:
-      throw new Error(
-        `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, sync_index. ` +
-        'Task checkbox updates belong to upstream /speckit.implement, not to this bridge.'
-      );
+      return {
+        ok: false,
+        action,
+        error: {
+          code: 'E_ARGS',
+          message: `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, sync_index.`,
+          hint: 'Task checkbox updates belong to upstream /speckit.implement, not to this bridge.',
+        },
+      };
   }
 }

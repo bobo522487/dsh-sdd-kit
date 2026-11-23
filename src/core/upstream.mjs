@@ -239,9 +239,15 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     };
   }
 
-  throw new Error(
-    `Unknown sdd_upstream action "${action}". Expected one of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration.`
-  );
+  return {
+    ok: false,
+    action,
+    error: {
+      code: 'E_ARGS',
+      message: `Unknown sdd_upstream action "${action}".`,
+      hint: 'Expected one of: setup, status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+    },
+  };
 }
 
 /**

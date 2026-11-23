@@ -129,10 +129,9 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, and syncs sp
     assert.match(indexMd, /`001-user-auth` \| In Progress \(1\/2\)/);
 
     // The parallel checkbox writer is retired: upstream /speckit.implement owns tasks.md
-    await assert.rejects(
-      () => runBridge({ action: 'check_task', cwd, featureName: '001-user-auth', taskMatch: 'T002' }),
-      /Unknown sdd_bridge action/
-    );
+    const retired = await runBridge({ action: 'check_task', cwd, featureName: '001-user-auth', taskMatch: 'T002' });
+    assert.equal(retired.ok, false);
+    assert.equal(retired.error.code, 'E_ARGS');
     const tasksAfter = await fs.readFile(path.join(featDir, 'tasks.md'), 'utf8');
     assert.match(tasksAfter, /- \[ \] T002/, 'the bridge must never write task checkboxes');
   } finally {
@@ -1428,4 +1427,15 @@ test('runSetup: integration switch happens only on explicit opt-in', async () =>
   assert.ok(optIn.calls.includes('switch_integration'));
   assert.ok(optIn.calls.filter((a) => a === 'install_hooks_ext').length === 2, 'hooks must be regenerated after the switch');
   assert.equal(reportOpt.integrationMismatch, null);
+});
+
+test('unknown actions return structured E_ARGS instead of throwing', async () => {
+  const up = await runUpstream({ action: 'nope' });
+  assert.equal(up.ok, false);
+  assert.equal(up.error.code, 'E_ARGS');
+  assert.match(up.error.hint, /setup|status/);
+  const br = await runBridge({ action: 'check_task', featureName: 'x', taskMatch: 'T001' });
+  assert.equal(br.ok, false);
+  assert.equal(br.error.code, 'E_ARGS');
+  assert.match(br.error.message, /Unknown sdd_bridge action/);
 });
