@@ -17,6 +17,47 @@ async function makeTempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'dsh-sdd-kit-v2-test-'));
 }
 
+async function writeSeed(root, relativePath, content) {
+  const target = path.join(root, relativePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content, 'utf8');
+}
+
+async function seedKitSource(root, { marker = 'source' } = {}) {
+  await writeSeed(
+    root,
+    'package.json',
+    `${JSON.stringify({ name: 'dsh-sdd-kit', version: '0.3.0', type: 'module', files: ['src/', 'skills/', 'overrides/', 'cordis.patch.yml', 'README.md', 'LICENSE'] }, null, 2)}\n`
+  );
+  await writeSeed(root, 'src/index.mjs', `export const marker = '${marker}';\n`);
+  await writeSeed(root, 'src/core/update.mjs', `export const marker = '${marker}';\n`);
+  await writeSeed(root, 'skills/sdd-update/SKILL.md', `---\nname: sdd-update\n---\n# /sdd-update\n${marker}\n`);
+  await writeSeed(root, 'overrides/spec-template.md', `# override ${marker}\n`);
+  await writeSeed(root, 'cordis.patch.yml', `# ${marker}\n`);
+  await writeSeed(root, 'README.md', `# ${marker}\n`);
+  await writeSeed(root, 'LICENSE', `MIT ${marker}\n`);
+}
+
+async function snapshotTree(root) {
+  const snapshot = {};
+  async function walk(dir, relative = '') {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const absolute = path.join(dir, entry.name);
+      const relativePath = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(absolute, relativePath);
+      } else if (entry.isSymbolicLink()) {
+        snapshot[relativePath] = `symlink:${await fs.readlink(absolute)}`;
+      } else {
+        snapshot[relativePath] = (await fs.readFile(absolute)).toString('base64');
+      }
+    }
+  }
+  await walk(root);
+  return snapshot;
+}
+
 test('sdd_upstream delegates cleanly to specify CLI and git without reimplementing them', async () => {
   const cwd = await makeTempDir();
   const spDir = path.join(cwd, 'superpowers-mirror');
@@ -404,6 +445,171 @@ test('runUpdate AC-04: missing dsh-kit source fails that component but keeps ups
     assert.equal(await fs.stat(profileDir).then((s) => s.isDirectory()), true);
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(profileDir, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-05: leaves project specs, plans, tasks, and app source byte-identical', async () => {
+  const cwd = await makeTempDir();
+  const sourceDir = await makeTempDir();
+  const profileDir = await makeTempDir();
+  const actions = [];
+  const runUpstreamFake = async (args) => {
+    actions.push(args.action);
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+
+  try {
+    await writeSeed(cwd, 'specs/001-demo/spec.md', '# demo spec\n');
+    await writeSeed(cwd, 'specs/001-demo/plan.md', '# demo plan\n');
+    await writeSeed(cwd, 'specs/001-demo/tasks.md', '- [ ] T001 demo\n');
+    await writeSeed(cwd, '.specify/memory/constitution.md', '# constitution\n');
+    await writeSeed(cwd, 'src/app.js', 'export const app = true;\n');
+    await seedKitSource(sourceDir, { marker: 'source' });
+
+    const before = await snapshotTree(cwd);
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
+      { runUpstream: runUpstreamFake }
+    );
+    const after = await snapshotTree(cwd);
+
+    assert.deepEqual(after, before);
+    assert.equal(actions.includes('specify_init'), false);
+    assert.equal(actions.includes('install_bug_ext'), false);
+    assert.equal(report.components.length, 3);
+    assert.equal(report.components[2].outcome, 'updated');
+    const copiedPackage = JSON.parse(
+      await fs.readFile(path.join(profileDir, 'node_modules', 'dsh-sdd-kit', 'package.json'), 'utf8')
+    );
+    assert.equal(copiedPackage.name, 'dsh-sdd-kit');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(sourceDir, { recursive: true, force: true });
+    await fs.rm(profileDir, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-06: a changed kit hash requires a DSH restart with guidance', async () => {
+  const cwd = await makeTempDir();
+  const sourceDir = await makeTempDir();
+  const profileDir = await makeTempDir();
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+
+  try {
+    await seedKitSource(sourceDir, { marker: 'new' });
+    await seedKitSource(path.join(profileDir, 'node_modules', 'dsh-sdd-kit'), { marker: 'old' });
+
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
+      { runUpstream: runUpstreamFake }
+    );
+    const kit = report.components[2];
+
+    assert.equal(report.ok, true);
+    assert.equal(report.requiresRestart, true);
+    assert.equal(kit.outcome, 'updated');
+    assert.match(kit.followUp, /Restart DSH/);
+    assert.match(kit.before, /^sha256:/);
+    assert.match(kit.after, /^sha256:/);
+    assert.notEqual(kit.before, kit.after);
+    assert.equal(report.components[0].followUp, null);
+    assert.equal(report.components[1].followUp, null);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(sourceDir, { recursive: true, force: true });
+    await fs.rm(profileDir, { recursive: true, force: true });
+  }
+});
+
+test('refreshInstalledKit validates the source, stages swaps, and preserves unlisted files', async () => {
+  const cwd = await makeTempDir();
+  const sourceDir = await makeTempDir();
+  const profileDir = await makeTempDir();
+
+  try {
+    await assert.rejects(
+      () => refreshInstalledKit({ cwd }, { env: {}, homedir: () => profileDir }),
+      /No dsh-sdd-kit source configured/
+    );
+
+    await seedKitSource(sourceDir);
+    const destDir = path.join(profileDir, 'node_modules', 'dsh-sdd-kit');
+
+    const first = await refreshInstalledKit(
+      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
+      { env: {}, homedir: () => profileDir }
+    );
+    assert.equal(first.changed, true);
+    assert.equal(first.beforeHash, null);
+    assert.match(first.afterHash, /^sha256:/);
+    assert.equal(first.destDir, destDir);
+
+    await fs.writeFile(path.join(destDir, 'UNLISTED.txt'), 'keep', 'utf8');
+    const second = await refreshInstalledKit(
+      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
+      { env: {}, homedir: () => profileDir }
+    );
+    assert.equal(second.changed, false);
+    assert.equal(second.beforeHash, second.afterHash);
+    assert.deepEqual(second.changedFiles, []);
+    assert.equal(await fs.readFile(path.join(destDir, 'UNLISTED.txt'), 'utf8'), 'keep');
+
+    await fs.writeFile(path.join(sourceDir, 'README.md'), '# changed\n', 'utf8');
+    const third = await refreshInstalledKit(
+      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
+      { env: {}, homedir: () => profileDir }
+    );
+    assert.equal(third.changed, true);
+    assert.ok(third.changedFiles.includes('README.md'));
+    assert.equal(await fs.readFile(path.join(destDir, 'UNLISTED.txt'), 'utf8'), 'keep');
+
+    const insideSource = path.join(sourceDir, 'profile');
+    await assert.rejects(
+      () => refreshInstalledKit({ cwd, dshKitSourceDir: sourceDir, dshProfileDir: insideSource }, { env: {}, homedir: () => profileDir }),
+      /Invalid dsh-sdd-kit source:/
+    );
+
+    const symlinkSource = path.join(cwd, 'symlink-source');
+    await seedKitSource(symlinkSource);
+    await fs.symlink(path.join(symlinkSource, 'README.md'), path.join(symlinkSource, 'src', 'link.md'));
+    await assert.rejects(
+      () => refreshInstalledKit({ cwd, dshKitSourceDir: symlinkSource, dshProfileDir: profileDir }, { env: {}, homedir: () => profileDir }),
+      /symlink/
+    );
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(sourceDir, { recursive: true, force: true });
     await fs.rm(profileDir, { recursive: true, force: true });
   }
 });
