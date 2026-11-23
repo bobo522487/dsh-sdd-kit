@@ -34,7 +34,7 @@ description: "Task list for the SDD unified update command feature"
 
 **⚠️ CRITICAL**: No user-story implementation can begin until T001–T004 are complete.
 
-- [ ] T003 [P] Create `skills/sdd-update/SKILL.md` skeleton with frontmatter `name: sdd-update`, a one-line description, `disable-model-invocation: true`, and H1 `# /sdd-update`; leave the body as a TODO placeholder for T013 (no logic yet).
+- [x] T003 [P] Create `skills/sdd-update/SKILL.md` skeleton with frontmatter `name: sdd-update`, a one-line description, `disable-model-invocation: true`, and H1 `# /sdd-update`; leave the body as a TODO placeholder for T013 (no logic yet).
 - [ ] T004 [P] Add behavior-free skeletons in `src/core/update.mjs` and `src/core/kit-copy.mjs`: export `runUpdate(args = {}, deps = {})` and `refreshInstalledKit(args = {}, deps = {})` with named constants `COMPONENT_NAMES`, `OUTCOMES`, and `KIT_ALLOWLIST`; do not implement orchestration or copying yet.
 
 **Checkpoint**: Governance permits the third skill; skill and core module shells exist. User-story work can begin.
