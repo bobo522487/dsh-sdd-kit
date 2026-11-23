@@ -1,7 +1,7 @@
 # DeepSeek Harness (DSH) bundle patch for dsh-sdd-kit v0.3.0
-# 1. Mounts this plugin's 3 bridge skills (/sdd-setup, /sdd-implement, /sdd-update).
-# 2. Mounts upstream obra/superpowers skills directly from ~/.dsh/upstream/superpowers/skills (zero fork).
-# 3. Mounts the lightweight Host tool plugin (sdd_upstream, sdd_bridge).
+# 1. 挂载本插件的 3 个桥接技能（/sdd-setup、/sdd-implement、/sdd-update）。
+# 2. 直接从 ~/.dsh/upstream/superpowers/skills 挂载上游 obra/superpowers 技能（零分叉）。
+# 3. 挂载轻量 Host 工具插件（sdd_upstream、sdd_bridge）。
 - insert:
     - id: skill-filesystem-sdd-kit
       name: '@deepseek-ai/dsh-skill-filesystem'

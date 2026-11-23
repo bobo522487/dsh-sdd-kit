@@ -1,43 +1,43 @@
 # Quickstart: `/sdd-update`
 
-Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Contract: [contracts/sdd-update.contract.md](./contracts/sdd-update.contract.md)
+日期：2026-11-23 | 规格：[spec.md](./spec.md) | 契约：[contracts/sdd-update.contract.md](./contracts/sdd-update.contract.md)
 
 ## What it does
 
-`/sdd-update` checks and, when needed, refreshes exactly three tooling layers in one non-interactive invocation:
+`/sdd-update` 在一次非交互式调用中检查并（在需要时）刷新恰好三个工具层：
 
-1. **Spec Kit** — the `specify` CLI, via `uv tool upgrade specify-cli` (or a pinned-Python install when missing).
-2. **Superpowers** — the local `~/.dsh/upstream/superpowers` Git mirror, via clone or `git pull --ff-only`.
-3. **dsh-sdd-kit** — the installed DSH profile copy, via a staged, allowlisted copy from your local source checkout.
+1. **Spec Kit** — 即 `specify` CLI，通过 `uv tool upgrade specify-cli` 升级（缺失时则采用固定版本的 Python 安装）。
+2. **Superpowers** — 本地 `~/.dsh/upstream/superpowers` Git 镜像，通过克隆或 `git pull --ff-only` 更新。
+3. **dsh-sdd-kit** — 已安装的 DSH profile 副本，通过从本地源码检出目录执行带暂存的白名单复制来刷新。
 
-It prints one record per component with `before`, `after`, `outcome`, and any required follow-up. It never runs project initialization, never edits specs/plans/tasks/application source, and never restarts DSH for you.
+它为每个组件打印一条记录，包含 `before`、`after`、`outcome` 以及任何必需的后续操作。它绝不运行项目初始化，绝不编辑 specs/plans/tasks/应用源码，也绝不替你重启 DSH。
 
-> First adoption: the `/sdd-update` skill itself must already be installed in the active profile. For this feature's own rollout, copy the updated plugin into the profile and restart DSH once (see below); subsequent refreshes can use the command.
+> 首次采用：`/sdd-update` 技能本身必须已安装在当前生效的 profile 中。对于本功能自身的上线，请将更新后的插件复制到 profile 中并重启 DSH 一次（见下文）；后续刷新即可使用该命令。
 
 ## Prerequisites
 
-- A project already initialized by `/sdd-setup`.
-- `specify` and `uv` available (or `uv` installable); `git` available.
-- A local dsh-sdd-kit source checkout for the third component, e.g. `/home/bobo/Projects/dsh-sdd-kit`.
-- Network access when an upstream actually needs updating.
+- 一个已由 `/sdd-setup` 初始化的项目。
+- `specify` 与 `uv` 可用（或 `uv` 可安装）；`git` 可用。
+- 第三个组件所需的本地 dsh-sdd-kit 源码检出目录，例如 `/home/bobo/Projects/dsh-sdd-kit`。
+- 当上游确实需要更新时，需要网络访问。
 
 ## Run
 
-In the DSH chat for your project:
+在你项目的 DSH 会话中：
 
 ```text
 /sdd-update
 ```
 
-If DSH cannot infer paths, name them in the same message so the skill forwards them:
+如果 DSH 无法推断路径，请在同一条消息中指明，以便技能将其转发：
 
 ```text
 /sdd-update dshKitSourceDir=/home/bobo/Projects/dsh-sdd-kit
 ```
 
-Optional overrides: `cwd`, `dshProfileDir`, `superpowersDir`, `python` (default `3.14`), `repoUrl`.
+可选覆盖项：`cwd`、`dshProfileDir`、`superpowersDir`、`python`（默认 `3.14`）、`repoUrl`。
 
-Destination resolution for the installed kit:
+已安装套件的目标位置解析：
 
 ```text
 $dshProfileDir/node_modules/dsh-sdd-kit
@@ -55,29 +55,29 @@ OVERALL: success
 Restart DSH to load updated tools/skills.
 ```
 
-- `unchanged` — component already current; no effective update was performed.
-- `updated` — identifier changed and the update succeeded.
-- `failed` — that component errored; the other two were still attempted. `OVERALL: unsuccessful` and the component name are shown.
-- `No restart required` appears when only the Spec Kit CLI changed.
+- `unchanged` — 组件已是最新；未执行任何有效更新。
+- `updated` — 标识符发生变化且更新成功。
+- `failed` — 该组件出错；其余两个仍会被尝试。会显示 `OVERALL: unsuccessful` 与组件名称。
+- 当只有 Spec Kit CLI 发生变化时，会显示 `No restart required`。
 
-A restart is required when the profile copy changed, Superpowers was cloned for the first time, or the Superpowers skill count changed. Restart is a user action; the command does not perform it.
+当 profile 副本发生变化、Superpowers 首次被克隆，或 Superpowers 技能数量发生变化时，需要重启。重启是用户操作；该命令不会执行重启。
 
 ## Profile-copy safety
 
-The installed kit is refreshed through a temporary staging directory and per-entry `fs.rename`, because an installed copy may consist of files hardlinked to the pnpm store (`nlink > 1`). Writing in place would mutate that shared store, so the refresh always stages a fresh copy and swaps it in; the resulting files have `nlink == 1` and no longer share storage with the store. Do not manually `fs.writeFile` into the profile copy.
+已安装套件的刷新通过临时暂存目录和逐条目 `fs.rename` 完成，因为已安装副本可能由与 pnpm store 硬链接的文件组成（`nlink > 1`）。就地写入会改动该共享 store，因此刷新总是先暂存一份新副本再替换进去；生成的文件具有 `nlink == 1`，不再与 store 共享存储。不要手动向 profile 副本中 `fs.writeFile`。
 
-Only these entries are copied from the source checkout: `src/`, `skills/`, `overrides/`, `cordis.patch.yml`, `README.md`, `LICENSE`, and `package.json`. Project files, `.specify/`, `specs/`, `.git/` and application source are never copied or deleted. Entries outside the allowlist that already exist in the destination (for example `UNLISTED.txt`) are left untouched, and the staging/backup directories are removed on both success and failure.
+仅从源码检出目录复制以下条目：`src/`、`skills/`、`overrides/`、`cordis.patch.yml`、`README.md`、`LICENSE` 和 `package.json`。项目文件、`.specify/`、`specs/`、`.git/` 与应用源码绝不会被复制或删除。目标位置中已存在的白名单之外条目（例如 `UNLISTED.txt`）保持原样，暂存/备份目录在成功与失败时都会被删除。
 
-Verified drill (temp `DSH_PROFILE_DIR`, real source checkout):
+已验证演练（临时 `DSH_PROFILE_DIR`、真实源码检出目录）：
 
-- first run: `changed: true`, `mode: "updated"`, destination contains exactly `LICENSE`, `README.md`, `cordis.patch.yml`, `overrides`, `package.json`, `skills`, `src`; `node_modules/` holds only `dsh-sdd-kit` (no leftover stage/backup dirs).
-- second run with an unchanged source: `changed: false`, `mode: "unchanged"`, `beforeHash === afterHash`.
+- 首次运行：`changed: true`、`mode: "updated"`，目标位置恰好包含 `LICENSE`、`README.md`、`cordis.patch.yml`、`overrides`、`package.json`、`skills`、`src`；`node_modules/` 中只有 `dsh-sdd-kit`（没有残留的 stage/backup 目录）。
+- 源码未变的第二次运行：`changed: false`、`mode: "unchanged"`、`beforeHash === afterHash`。
 
-Operational caveat: `.modules.yaml` may still pin an older `dsh-sdd-kit` tarball. A later `dsh plugin` install can overwrite the refreshed copy; if that happens, rerun `/sdd-update` (or redo the manual copy) and restart DSH.
+运维注意事项：`.modules.yaml` 可能仍锁定较旧的 `dsh-sdd-kit` tarball。之后的 `dsh plugin` 安装可能覆盖已刷新的副本；若发生这种情况，请重新运行 `/sdd-update`（或重做手动复制）并重启 DSH。
 
 ## Manual profile copy (first adoption / recovery)
 
-From the source checkout:
+从源码检出目录执行：
 
 ```bash
 # Adjust profile name if needed
@@ -93,21 +93,21 @@ done
 # Then restart DSH so tools/skills reload.
 ```
 
-For a hardlink-safe automated refresh, prefer running `/sdd-update` after it is installed; it stages and renames instead of writing in place.
+对于硬链接安全的自动刷新，建议在安装完成后运行 `/sdd-update`；它采用暂存加重命名的方式，而不是就地写入。
 
 ## Troubleshooting
 
-| Symptom | Action |
+| 现象 | 处理 |
 | :--- | :--- |
-| `No dsh-sdd-kit source configured` | Pass `dshKitSourceDir=/path/to/checkout` or fix the argument passed by the skill. Spec Kit and Superpowers results are still shown. |
-| `Unable to read Spec Kit version` | Confirm `specify` is on PATH and `uv` can manage tools; rerun. |
-| `Superpowers update failed` | Check network access and Git credentials for `https://github.com/obra/superpowers.git`; the other components were still attempted. |
-| `dsh-sdd-kit profile copy failed` | Check write permission on `$DSH_PROFILE_DIR/node_modules`, remove symlinks from the allowlisted source entries, and rerun. Do not delete the whole profile directory. |
-| Skills/tooling look stale after success | Restart DSH; the report's `followUp` line tells you when this is required. |
-| Project specs/tasks changed unexpectedly | Not caused by this command; it has no write path into `cwd`. Verify other commands such as `/sdd-setup` or `/sdd-implement`. |
+| `No dsh-sdd-kit source configured` | 传入 `dshKitSourceDir=/path/to/checkout`，或修正技能传入的参数。Spec Kit 与 Superpowers 的结果仍会显示。 |
+| `Unable to read Spec Kit version` | 确认 `specify` 在 PATH 中且 `uv` 能管理工具；然后重新运行。 |
+| `Superpowers update failed` | 检查访问 `https://github.com/obra/superpowers.git` 的网络与 Git 凭据；其余组件仍会被尝试。 |
+| `dsh-sdd-kit profile copy failed` | 检查 `$DSH_PROFILE_DIR/node_modules` 的写权限，移除白名单源码条目中的符号链接，然后重新运行。不要删除整个 profile 目录。 |
+| 成功之后技能/工具看起来仍是旧的 | 重启 DSH；报告中的 `followUp` 行会告诉你何时需要这样做。 |
+| 项目 specs/tasks 意外发生变化 | 并非本命令所致；它没有任何写入 `cwd` 的路径。请核查 `/sdd-setup` 或 `/sdd-implement` 等其他命令。 |
 
 ## Related artifacts
 
-- Decision record: [research.md](./research.md)
-- Data shapes: [data-model.md](./data-model.md)
-- Full implementation plan: [plan.md](./plan.md)
+- 决策记录：[research.md](./research.md)
+- 数据形状：[data-model.md](./data-model.md)
+- 完整实现计划：[plan.md](./plan.md)
