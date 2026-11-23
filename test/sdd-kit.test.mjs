@@ -39,7 +39,12 @@ test('sdd_upstream delegates cleanly to specify CLI and git without reimplementi
 
     const initRes = await runUpstream({ action: 'specify_init', cwd }, mockRunner);
     assert.equal(initRes.ok, true);
-    assert.ok(calls.some((c) => c[0] === 'specify' && c[1] === 'init' && c.includes('--integration-options=--skills')));
+    const initCall = calls.find((c) => c[0] === 'specify' && c[1] === 'init');
+    assert.ok(initCall, 'expected a specify init call');
+    for (const flag of ['--non-interactive', '--force', '--ignore-agent-tools']) {
+      assert.ok(initCall.includes(flag), `expected ${flag} in: ${initCall.join(' ')}`);
+    }
+    assert.ok(!initCall.includes('--integration-options=--skills'), 'must not emit deprecated --skills by default');
 
     const bugRes = await runUpstream({ action: 'install_bug_ext', cwd }, mockRunner);
     assert.equal(bugRes.ok, true);
@@ -47,6 +52,14 @@ test('sdd_upstream delegates cleanly to specify CLI and git without reimplementi
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
+});
+
+test('specify_init emits --skills only on explicit opt-in', async () => {
+  const calls = [];
+  const mockRunner = async (cmd, args) => { calls.push([cmd, ...args]); return { ok: true, code: 0, stdout: '', stderr: '' }; };
+  await runUpstream({ action: 'specify_init', cwd: process.cwd(), useSkills: true }, mockRunner);
+  const initCall = calls.find((c) => c[0] === 'specify' && c[1] === 'init');
+  assert.ok(initCall.includes('--integration-options=--skills'));
 });
 
 test('sdd_bridge inspects features & bugs, installs EARS overrides, checks tasks, and syncs specs/INDEX.md', async () => {

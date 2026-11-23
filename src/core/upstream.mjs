@@ -112,12 +112,12 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
 
   if (action === 'specify_init') {
     const integration = args.integration || 'claude';
-    const cliArgs = ['init', '--here', '--integration', integration];
-    if (args.useSkills !== false) {
+    const cliArgs = [
+      'init', '--here', '--integration', integration,
+      '--non-interactive', '--force', '--ignore-agent-tools',
+    ];
+    if (args.useSkills === true) {
       cliArgs.push('--integration-options=--skills');
-    }
-    if (args.force) {
-      cliArgs.push('--force');
     }
     const res = await runner('specify', cliArgs, { cwd });
     return { action, cwd, command: `specify ${cliArgs.join(' ')}`, ...res };
