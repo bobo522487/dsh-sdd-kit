@@ -2,7 +2,7 @@
 
 > **Zero Fork, Thin Glue.**
 > A Linus-minimalist SDD bridge plugin for **DeepSeek Harness (DSH)**:
-> **GitHub Spec Kit** decides *what* to build (`specify` CLI), **obra/superpowers** decides *how* to build (live Git mirror), and **`dsh-sdd-kit`** glues them together with **2 skills + 2 thin Host tools**.
+> **GitHub Spec Kit** decides *what* to build (`specify` CLI), **obra/superpowers** decides *how* to build (live Git mirror), and **`dsh-sdd-kit`** glues them together with **3 skills + 2 thin Host tools**.
 
 ## Why This Architecture?
 
@@ -29,7 +29,7 @@ dsh plugin --profile desktop add https://github.com/<your-username>/dsh-sdd-kit
 Or from a local `.tgz` tarball:
 
 ```bash
-dsh plugin --profile web add ./dsh-sdd-kit-0.2.0.tgz
+dsh plugin --profile web add ./dsh-sdd-kit-0.3.0.tgz
 ```
 
 Restart DSH after installing, then run `/sdd-setup` in your project.

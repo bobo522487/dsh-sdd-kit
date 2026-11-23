@@ -24,7 +24,7 @@ description: "Task list for the SDD unified update command feature"
 **Purpose**: 在命令表面出现前完成治理状态核验与发布元数据更新。
 
 - [x] T001 核验 [.specify/memory/constitution.md](.specify/memory/constitution.md) 已为 v2.1.0，且原则 I 明确允许三个命名技能（`sdd-setup`、`sdd-implement`、`sdd-update`）与两个 Host 工具（`sdd_upstream`、`sdd_bridge`），并包含 v2.0.0 迁移说明与中文优先原则 VI。本任务仅核验，不得重新修正或降级章程。
-- [ ] T002 [P] 更新发布元数据与注释：将 `package.json` 版本设为 `0.3.0`，更新 `cordis.patch.yml` 中的 `v0.2.0`/旧版双技能注释，并将 `README.md` 中的 `2 skills + 2 thin Host tools` 标语改为 `3 skills + 2 thin Host tools`。
+- [x] T002 [P] 更新发布元数据与注释：将 `package.json` 版本设为 `0.3.0`，更新 `cordis.patch.yml` 中的 `v0.2.0`/旧版双技能注释，并将 `README.md` 中的 `2 skills + 2 thin Host tools` 标语改为 `3 skills + 2 thin Host tools`。
 
 ---
 
