@@ -1,0 +1,1 @@
+../../../.specify/extensions/superpowers-hooks/.specify-dev/agent-commands/dsh/speckit-superpowers-hooks-after-bug-fix/SKILL.md

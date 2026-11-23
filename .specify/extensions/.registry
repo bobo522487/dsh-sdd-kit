@@ -8,18 +8,31 @@
       "enabled": true,
       "priority": 10,
       "registered_commands": {
-        "claude": [
+        "dsh": [
           "speckit.bug.assess",
           "speckit.bug.fix",
           "speckit.bug.test"
         ]
       },
-      "registered_skills": [
-        "speckit-bug-assess",
-        "speckit-bug-fix",
-        "speckit-bug-test"
-      ],
+      "registered_skills": [],
       "installed_at": "2026-11-23T04:13:14.721568+00:00"
+    },
+    "superpowers-hooks": {
+      "version": "0.1.0",
+      "source": "local",
+      "manifest_hash": "sha256:75dcbf5c3d07e9a518f80b581c27a3f11e7658579860c9f3c06c29592e6e9fcc",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "dsh": [
+          "speckit.superpowers-hooks.before-implement",
+          "speckit.superpowers-hooks.after-implement",
+          "speckit.superpowers-hooks.before-bug-fix",
+          "speckit.superpowers-hooks.after-bug-fix"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-11-23T11:36:02.627427+00:00"
     }
   }
 }

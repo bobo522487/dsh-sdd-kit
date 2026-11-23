@@ -1,5 +1,42 @@
 installed:
 - bug
+- superpowers-hooks
 settings:
   auto_execute_hooks: true
-hooks: {}
+hooks:
+  before_implement:
+  - extension: superpowers-hooks
+    command: speckit.superpowers-hooks.before-implement
+    enabled: true
+    optional: false
+    priority: 5
+    prompt: Execute speckit.superpowers-hooks.before-implement?
+    description: 强制加载 test-driven-development 与 systematic-debugging
+    condition: null
+  after_implement:
+  - extension: superpowers-hooks
+    command: speckit.superpowers-hooks.after-implement
+    enabled: true
+    optional: false
+    priority: 15
+    prompt: Execute speckit.superpowers-hooks.after-implement?
+    description: 强制加载 verification-before-completion 与 requesting-code-review
+    condition: null
+  before_bug_fix:
+  - extension: superpowers-hooks
+    command: speckit.superpowers-hooks.before-bug-fix
+    enabled: true
+    optional: false
+    priority: 5
+    prompt: Execute speckit.superpowers-hooks.before-bug-fix?
+    description: 强制加载 systematic-debugging 与 test-driven-development
+    condition: null
+  after_bug_fix:
+  - extension: superpowers-hooks
+    command: speckit.superpowers-hooks.after-bug-fix
+    enabled: true
+    optional: false
+    priority: 15
+    prompt: Execute speckit.superpowers-hooks.after-bug-fix?
+    description: 强制加载 verification-before-completion 与 requesting-code-review
+    condition: null
