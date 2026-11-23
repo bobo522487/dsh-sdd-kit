@@ -72,7 +72,7 @@ description: "Task list for the SDD unified update command feature"
 
 - [x] T014 [P] 在仓库根目录运行 `npm test` 并记录通过输出；增加耗时校验：对 `runUpdate` 的全量当前场景计时，断言在五分钟阈值内完成并记录网络/缓存前提（见 [spec.md:42](specs/001-sdd-update-command/spec.md#L42)）；修复 `test/sdd-kit.test.mjs`、`src/core/update.mjs`、`src/core/kit-copy.mjs` 中的回归直至全绿。
 - [x] T015 [P] Validate the profile-copy and restart drill in `specs/001-sdd-update-command/quickstart.md` against a temp `DSH_PROFILE_DIR`; correct the documented path, allowlist or hardlink caveat in that file if behavior differs.
-- [ ] T016 [P] 对 [.specify/memory/constitution.md](.specify/memory/constitution.md) 与 [specs/001-sdd-update-command/spec.md](specs/001-sdd-update-command/spec.md) 做最终合规复核：确认三技能/两工具表面一致、REQ-02/AC-02 措辞一致，并按章程 VI 检查新增与修订内容为中文；必要时修正 `README.md` 与 `cordis.patch.yml`。
+- [x] T016 [P] 对 [.specify/memory/constitution.md](.specify/memory/constitution.md) 与 [specs/001-sdd-update-command/spec.md](specs/001-sdd-update-command/spec.md) 做最终合规复核：确认三技能/两工具表面一致、REQ-02/AC-02 措辞一致，并按章程 VI 检查新增与修订内容为中文；必要时修正 `README.md` 与 `cordis.patch.yml`。
 
 ---
 
@@ -160,3 +160,13 @@ description: "Task list for the SDD unified update command feature"
 - Verify each test fails before implementing its behavior.
 - No task calls `specify_init`, `install_bug_ext`, or any `sdd_bridge` mutator; that is a hard boundary from `spec.md:26-27`.
 - `tasks.md` is a Phase 2 `/speckit-tasks` artifact; no implementation code was written by task generation.
+
+---
+
+## Phase 5: Convergence
+
+- [ ] T017 **CRITICAL**：按章程「技术与集成约束」把当前源码安全刷新到 `/home/bobo/.dsh/profiles/web/node_modules/dsh-sdd-kit`，验证 profile 中出现 `sdd-update` 技能、`package.json` 为 `0.3.0`、`src/register.mjs` 含 `update_all`，并向用户报告需要重启 DSH per Constitution 技术与集成约束 (missing)
+- [ ] T018 修正 `README.md:40` 中关于检出目录“自动发现”的误导表述，明确 `dshKitSourceDir` 必须显式传入、缺失时该组件会失败 per README.md:40 / REQ-05 (contradicts)
+- [ ] T019 把 `specs/001-sdd-update-command/quickstart.md:78-96` 的手工恢复流程改为暂存 + 逐条目重命名的硬链接安全流程，或明确标注原地复制的破坏性前提 per plan: profile-copy 安全决策 (partial)
+- [ ] T020 对齐 `specs/001-sdd-update-command/contracts/sdd-update.contract.md` §3 与 `plan.md:25` 的依赖注入说明：要么实现 `runner`/`fs`/`crypto` 注入，要么把文档改为实现实际支持的 `runUpstream`/`refreshKit`/`env`/`homedir` per plan:contract §3 (partial)
+- [ ] T021 校正 `plan.md:19,25,34,38,40`、`research.md:15,50,70,84`、`tasks.md:12,14,152` 中因章程中文化而失效的行号引用，保持原有语义不变 per plan/research/tasks 引用 (partial)
