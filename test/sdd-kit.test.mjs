@@ -457,6 +457,7 @@ test('sdd_upstream routes action "update_all" to runUpdate without profile-copy 
   assert.match(tool.parameters.action.description, /update_all/);
   assert.equal(tool.parameters.dshKitSourceDir, undefined, 'the self-copy parameter must be gone');
   assert.equal(tool.parameters.dshProfileDir, undefined, 'the profile-copy parameter must be gone');
+  assert.equal(tool.parameters.force, undefined, 'the deprecated no-op force parameter must be gone');
 
   const result = await tool.execute({ action: 'update_all', cwd: '/tmp/demo' });
 

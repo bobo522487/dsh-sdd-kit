@@ -35,10 +35,6 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'boolean',
             description: 'Opt in to the deprecated --integration-options=--skills flag (default false; new spec-kit installs skills by default).',
           },
-          force: {
-            type: 'boolean',
-            description: 'Deprecated/no-op: specify_init always passes --force now.',
-          },
           python: {
             type: 'string',
             description: 'Python interpreter for fresh specify-cli installs (default 3.14; override if your stable Python differs).',

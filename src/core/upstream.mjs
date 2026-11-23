@@ -196,7 +196,6 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
       hooks: [...HOOKS_EXTENSION_EVENTS],
       restartRequired: false,
     };
-    if (args.force === false) report.forceIgnored = true;
     return report;
   }
 

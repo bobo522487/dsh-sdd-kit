@@ -3,3 +3,6 @@ node_modules/
 *.zip
 .DS_Store
 .env
+
+# EARS 模板的安装产物（唯一可编辑源是 overrides/spec-template.md，由 /sdd-setup 幂等安装）
+.specify/templates/overrides/
