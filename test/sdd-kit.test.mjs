@@ -1060,3 +1060,99 @@ test('sdd_upstream exposes install_hooks_ext and extensionDir to the model', () 
   assert.ok(upstream.parameters.action.description.includes('install_hooks_ext'));
   assert.ok(upstream.parameters.extensionDir, 'extensionDir must be a declared parameter');
 });
+
+const HOOK_COMMAND_SECTIONS = [
+  '## 何时触发',
+  '## 上游依赖检查',
+  '## 必须加载的技能',
+  '## 执行纪律',
+  '## 出口条件',
+];
+
+async function readHookCommand(file) {
+  return fs.readFile(path.join(EXTENSION_DIR, 'commands', file), 'utf8');
+}
+
+function assertHookCommandShape(body, file) {
+  assert.match(body, /^---\ndescription: \S.*\n---\n/, `${file} must open with a description-only frontmatter`);
+  const frontmatter = body.slice(0, body.indexOf('\n---', 4));
+  assert.equal(/^allowed-tools:/m.test(frontmatter), false, `${file} must not declare allowed-tools (INV-7)`);
+  assert.equal(/^model:/m.test(frontmatter), false, `${file} must not declare model (INV-7)`);
+  assert.equal(/\$ARGUMENTS/.test(body), false, `${file} must not use $ARGUMENTS (INV-8)`);
+  for (const section of HOOK_COMMAND_SECTIONS) {
+    assert.ok(body.includes(section), `${file} must contain ${section}`);
+  }
+  assert.ok(
+    body.includes('~/.dsh/upstream/superpowers/skills'),
+    `${file} must name the Superpowers skill root for the missing-dependency check (INV-5)`
+  );
+  assert.ok(
+    body.split('\n').length <= 61,
+    `${file} must stay within 60 lines (INV-9), got ${body.split('\n').length}`
+  );
+}
+
+test('US1 hook commands inject TDD discipline and converge follow-up', async () => {
+  const before = await readHookCommand('speckit.superpowers-hooks.before-implement.md');
+  const after = await readHookCommand('speckit.superpowers-hooks.after-implement.md');
+
+  assertHookCommandShape(before, 'before-implement');
+  assertHookCommandShape(after, 'after-implement');
+
+  assert.match(before, /`test-driven-development`/, 'before-implement must load test-driven-development by name');
+  assert.match(before, /`systematic-debugging`/, 'before-implement must load systematic-debugging by name');
+  assert.match(before, /Red/, 'before-implement must name the Red stage');
+  assert.match(before, /Green/, 'before-implement must name the Green stage');
+  assert.match(before, /npm test/, 'before-implement must gate on npm test');
+  assert.match(before, /git commit/, 'before-implement must require one atomic commit per task');
+
+  assert.match(after, /`verification-before-completion`/, 'after-implement must load verification-before-completion');
+  assert.match(after, /`requesting-code-review`/, 'after-implement must load requesting-code-review');
+  assert.match(after, /阶段一/, 'after-implement must describe the first review stage');
+  assert.match(after, /阶段二/, 'after-implement must describe the second review stage');
+  assert.equal(
+    (after.match(/__SPECKIT_COMMAND_CONVERGE__/g) || []).length,
+    1,
+    'after-implement must reference converge through the CLI placeholder exactly once (INV-6)'
+  );
+  assert.equal(
+    /\/speckit[.-]converge/.test(after),
+    false,
+    'after-implement must not hardcode a slash/dot command form (INV-6)'
+  );
+
+  for (const [file, body] of [['before-implement', before], ['after-implement', after]]) {
+    assert.equal(
+      /Red-Green-Refactor 的具体步骤|假设检验五步法/.test(body),
+      false,
+      `${file} must not inline upstream discipline prose (INV-4)`
+    );
+  }
+});
+
+test('US2 hook commands inject debugging discipline and bug-test follow-up', async () => {
+  const before = await readHookCommand('speckit.superpowers-hooks.before-bug-fix.md');
+  const after = await readHookCommand('speckit.superpowers-hooks.after-bug-fix.md');
+
+  assertHookCommandShape(before, 'before-bug-fix');
+  assertHookCommandShape(after, 'after-bug-fix');
+
+  assert.match(before, /`systematic-debugging`/, 'before-bug-fix must load systematic-debugging by name');
+  assert.match(before, /`test-driven-development`/, 'before-bug-fix must load test-driven-development by name');
+  assert.match(before, /复现/, 'before-bug-fix must require a reproducing test');
+
+  assert.match(after, /`verification-before-completion`/, 'after-bug-fix must load verification-before-completion');
+  assert.match(after, /`requesting-code-review`/, 'after-bug-fix must load requesting-code-review');
+  assert.match(after, /阶段一/, 'after-bug-fix must describe the first review stage');
+  assert.match(after, /阶段二/, 'after-bug-fix must describe the second review stage');
+  assert.equal(
+    (after.match(/__SPECKIT_COMMAND_BUG_TEST__/g) || []).length,
+    1,
+    'after-bug-fix must reference bug-test through the CLI placeholder exactly once (INV-6)'
+  );
+  assert.equal(
+    /\/speckit[.-]bug-test/.test(after),
+    false,
+    'after-bug-fix must not hardcode a slash/dot command form (INV-6)'
+  );
+});

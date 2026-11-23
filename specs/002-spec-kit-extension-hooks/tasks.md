@@ -61,12 +61,12 @@ description: "Task list for Spec Kit 原生扩展钩子层（Hooks 取代 /sdd-i
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] 在 `test/sdd-kit.test.mjs` 新增 US1 命令文件测试：断言两个文件存在、frontmatter 仅有非空 `description`、含 `## 何时触发`/`## 上游依赖检查`/`## 必须加载的技能`/`## 执行纪律`/`## 出口条件` 五段（`data-model.md` 的 `E2` 文件结构与 INV-5）、正文出现 `test-driven-development` 与 `systematic-debugging` 技能名（`E2.command` 中 `before-implement` 行）、正文不含上游纪律正文副本（INV-4）、`after-implement.md` 含 `__SPECKIT_COMMAND_CONVERGE__` 占位符（INV-6，禁止硬写 `/speckit.converge`）、每文件 ≤ 60 行
+- [x] T010 [P] [US1] 在 `test/sdd-kit.test.mjs` 新增 US1 命令文件测试：断言两个文件存在、frontmatter 仅有非空 `description`、含 `## 何时触发`/`## 上游依赖检查`/`## 必须加载的技能`/`## 执行纪律`/`## 出口条件` 五段（`data-model.md` 的 `E2` 文件结构与 INV-5）、正文出现 `test-driven-development` 与 `systematic-debugging` 技能名（`E2.command` 中 `before-implement` 行）、正文不含上游纪律正文副本（INV-4）、`after-implement.md` 含 `__SPECKIT_COMMAND_CONVERGE__` 占位符（INV-6，禁止硬写 `/speckit.converge`）、每文件 ≤ 60 行
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.before-implement.md`：五段结构；按名称引用 `test-driven-development`（Red→Green→Refactor）与 `systematic-debugging`（非预期失败先定根因）；出口条件为「所选任务测试红→绿 + `npm test` 通过 + 已产生一次原子提交」；禁止一次实现多任务/跳过红阶段/未过测试即勾选任务（契约 [hook-commands.md](./contracts/hook-commands.md) §3.1）
-- [ ] T012 [US1] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.after-implement.md`：五段结构；按名称引用 `verification-before-completion` 与 `requesting-code-review`；两阶段自审（阶段一对照 `spec.md` 的 REQ/AC，阶段二对照章程的 TDD/原子提交/零新增依赖/零分叉），每阶段产出「通过/不通过 + 证据」；自审通过后衔接 `__SPECKIT_COMMAND_CONVERGE__`（契约 §3.2）
+- [x] T011 [US1] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.before-implement.md`：五段结构；按名称引用 `test-driven-development`（Red→Green→Refactor）与 `systematic-debugging`（非预期失败先定根因）；出口条件为「所选任务测试红→绿 + `npm test` 通过 + 已产生一次原子提交」；禁止一次实现多任务/跳过红阶段/未过测试即勾选任务（契约 [hook-commands.md](./contracts/hook-commands.md) §3.1）
+- [x] T012 [US1] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.after-implement.md`：五段结构；按名称引用 `verification-before-completion` 与 `requesting-code-review`；两阶段自审（阶段一对照 `spec.md` 的 REQ/AC，阶段二对照章程的 TDD/原子提交/零新增依赖/零分叉），每阶段产出「通过/不通过 + 证据」；自审通过后衔接 `__SPECKIT_COMMAND_CONVERGE__`（契约 §3.2）
 
 **Checkpoint**: US1 独立可验证——两个文件的内容断言全绿，且装到临时项目后 `/speckit.implement` 会渲染出强制预钩子。
 
@@ -80,12 +80,12 @@ description: "Task list for Spec Kit 原生扩展钩子层（Hooks 取代 /sdd-i
 
 ### Tests for User Story 2
 
-- [ ] T013 [P] [US2] 在 `test/sdd-kit.test.mjs` 新增 US2 命令文件测试：断言两文件存在且五段齐全（`data-model.md` 的 `E2` 文件结构与 INV-5）、正文出现 `systematic-debugging` 与 `test-driven-development`（`E2.command` 中 `before-bug-fix` 行）、不含纪律正文副本（INV-4）、`after-bug-fix.md` 含 `__SPECKIT_COMMAND_BUG_TEST__` 占位符（INV-6）、每文件 ≤ 60 行
+- [x] T013 [P] [US2] 在 `test/sdd-kit.test.mjs` 新增 US2 命令文件测试：断言两文件存在且五段齐全（`data-model.md` 的 `E2` 文件结构与 INV-5）、正文出现 `systematic-debugging` 与 `test-driven-development`（`E2.command` 中 `before-bug-fix` 行）、不含纪律正文副本（INV-4）、`after-bug-fix.md` 含 `__SPECKIT_COMMAND_BUG_TEST__` 占位符（INV-6）、每文件 ≤ 60 行
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.before-bug-fix.md`：五段结构；按名称引用 `systematic-debugging`（先复现、再定根因、禁止猜测式修补）与 `test-driven-development`（先写能复现缺陷的失败测试）；出口条件为「失败测试先红、修复后转绿」；禁止在未复现缺陷前改源码（契约 [hook-commands.md](./contracts/hook-commands.md) §3.3）
-- [ ] T015 [US2] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.after-bug-fix.md`：五段结构；按名称引用 `verification-before-completion` 与 `requesting-code-review`；两阶段自审（阶段一对照评估报告的修复方案与 AC，阶段二对照章程纪律）；自审通过后衔接 `__SPECKIT_COMMAND_BUG_TEST__`（契约 §3.4）
+- [x] T014 [US2] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.before-bug-fix.md`：五段结构；按名称引用 `systematic-debugging`（先复现、再定根因、禁止猜测式修补）与 `test-driven-development`（先写能复现缺陷的失败测试）；出口条件为「失败测试先红、修复后转绿」；禁止在未复现缺陷前改源码（契约 [hook-commands.md](./contracts/hook-commands.md) §3.3）
+- [x] T015 [US2] 编写 `spec-kit-extension/commands/speckit.superpowers-hooks.after-bug-fix.md`：五段结构；按名称引用 `verification-before-completion` 与 `requesting-code-review`；两阶段自审（阶段一对照评估报告的修复方案与 AC，阶段二对照章程纪律）；自审通过后衔接 `__SPECKIT_COMMAND_BUG_TEST__`（契约 §3.4）
 
 **Checkpoint**: US1 与 US2 均独立可验证，四个命令文件与清单的 `provides.commands` 构成双射（`data-model.md` 的 INV-1）。
 
