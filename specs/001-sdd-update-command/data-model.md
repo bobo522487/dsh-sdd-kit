@@ -4,7 +4,7 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Contract: [sdd-update.contract.m
 
 ## Overview
 
-本命令无状态：读取当前标识、委托既有更新器、重新读取标识，并返回一份不可变报告。不引入数据库、缓存或持久状态文件。下文所有值均可 JSON 序列化，因为 Host 工具用 `JSON.stringify` 渲染结果（`src/register.mjs:4-6`）。
+本命令无状态：读取当前标识、委托既有更新器、重新读取标识，并返回一份不可变报告。不引入数据库、缓存或持久状态文件。下文所有值均可 JSON 序列化，因为 Host 工具用 `JSON.stringify` 渲染结果（`src/register.mjs:5-7`）。
 
 ## Enums
 

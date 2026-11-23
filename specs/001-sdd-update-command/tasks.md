@@ -9,9 +9,9 @@ description: "Task list for the SDD unified update command feature"
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/sdd-update.contract.md, quickstart.md, `.specify/memory/constitution.md`
 
-**Tests**: Included because the spec defines AC-01..AC-06 as automated acceptance criteria and the constitution requires strict Red → Green → Refactor (`constitution.md:36-42`).
+**Tests**: Included because the spec defines AC-01..AC-06 as automated acceptance criteria and the constitution requires strict Red → Green → Refactor (`constitution.md:46-50`).
 
-**Organization**: One P1 user story (the spec contains a single user story at `spec.md:5-12`); tasks are grouped into Setup, Foundational, User Story 1, and Polish. Every task must be one atomic commit on the current branch (`constitution.md:44-49`).
+**Organization**: One P1 user story (the spec contains a single user story at `spec.md:5-12`); tasks are grouped into Setup, Foundational, User Story 1, and Polish. Every task must be one atomic commit on the current branch (`constitution.md:52-55`).
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -149,7 +149,7 @@ description: "Task list for the SDD unified update command feature"
 
 ### Commit Discipline
 
-- One atomic Conventional Commit per completed task on the current branch (`main` unless explicitly changed by the user), per `constitution.md:44-49`. Never `git add -A`; stage only the files named in the task.
+- One atomic Conventional Commit per completed task on the current branch (`main` unless explicitly changed by the user), per `constitution.md:52-55`. Never `git add -A`; stage only the files named in the task.
 
 ---
 
@@ -169,4 +169,4 @@ description: "Task list for the SDD unified update command feature"
 - [x] T018 修正 `README.md:40` 中关于检出目录“自动发现”的误导表述，明确 `dshKitSourceDir` 必须显式传入、缺失时该组件会失败 per README.md:40 / REQ-05 (contradicts)
 - [x] T019 把 `specs/001-sdd-update-command/quickstart.md:78-96` 的手工恢复流程改为暂存 + 逐条目重命名的硬链接安全流程，或明确标注原地复制的破坏性前提 per plan: profile-copy 安全决策 (partial)
 - [x] T020 对齐 `specs/001-sdd-update-command/contracts/sdd-update.contract.md` §3 与 `plan.md:25` 的依赖注入说明：要么实现 `runner`/`fs`/`crypto` 注入，要么把文档改为实现实际支持的 `runUpstream`/`refreshKit`/`env`/`homedir` per plan:contract §3 (partial)
-- [ ] T021 校正 `plan.md:19,25,34,38,40`、`research.md:15,50,70,84`、`tasks.md:12,14,152` 中因章程中文化而失效的行号引用，保持原有语义不变 per plan/research/tasks 引用 (partial)
+- [x] T021 校正 `plan.md:19,25,34,38,40`、`research.md:15,50,70,84`、`tasks.md:12,14,152` 中因章程中文化而失效的行号引用，保持原有语义不变 per plan/research/tasks 引用 (partial)

@@ -809,3 +809,76 @@ test('contract injection points match the deps the implementation actually reads
     assert.ok(!documented.includes(key), `contract must not document unsupported deps.${key}`);
   }
 });
+
+async function firstExisting(candidates) {
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+test('artifact line references point at the content they cite', async () => {
+  const artifacts = [
+    'specs/001-sdd-update-command/plan.md',
+    'specs/001-sdd-update-command/research.md',
+    'specs/001-sdd-update-command/tasks.md',
+    'specs/001-sdd-update-command/data-model.md',
+  ];
+  const aliases = { 'constitution.md': '.specify/memory/constitution.md' };
+  const cache = new Map();
+  const readLines = async (absolute) => {
+    if (!cache.has(absolute)) cache.set(absolute, (await fs.readFile(absolute, 'utf8')).split('\n'));
+    return cache.get(absolute);
+  };
+
+  const anchors = [
+    ['constitution.md', 24, 37, '零分叉'],
+    ['constitution.md', 46, 50, '严格测试先行'],
+    ['constitution.md', 52, 55, '原子提交'],
+    ['constitution.md', 57, 63, '可升级'],
+    ['constitution.md', 62, 62, '重启 DSH'],
+    ['constitution.md', 78, 78, 'Node.js >=18'],
+    ['constitution.md', 81, 83, 'node_modules/dsh-sdd-kit'],
+    ['constitution.md', 99, 105, '治理'],
+    ['src/register.mjs', 9, 9, 'registerSddTools'],
+    ['src/register.mjs', 5, 7, 'renderJsonText'],
+    ['test/sdd-kit.test.mjs', 16, 59, 'snapshotTree'],
+    ['test/sdd-kit.test.mjs', 161, 200, 'registerSddTools'],
+  ];
+  for (const [file, start, end, needle] of anchors) {
+    const absolute = path.join(PKG_ROOT, aliases[file] || file);
+    const slice = (await readLines(absolute)).slice(start - 1, end).join('\n');
+    assert.ok(slice.includes(needle), `${file}:${start}-${end} must contain ${needle}`);
+  }
+
+  const reference = /([\w./-]+\.(?:md|mjs|yml|json)):(\d+)(?:-(\d+))?/g;
+  for (const artifact of artifacts) {
+    const artifactPath = path.join(PKG_ROOT, artifact);
+    const text = (await readLines(artifactPath)).join('\n');
+    for (const match of text.matchAll(reference)) {
+      const [, refPath, rawStart, rawEnd] = match;
+      const candidates = [];
+      if (path.isAbsolute(refPath)) candidates.push(refPath);
+      else {
+        if (aliases[refPath]) candidates.push(path.join(PKG_ROOT, aliases[refPath]));
+        candidates.push(path.join(PKG_ROOT, refPath), path.join(path.dirname(artifactPath), refPath));
+      }
+      const resolved = await firstExisting(candidates);
+      if (!resolved) continue; // reference into an external checkout, not this repo
+      const targetLines = await readLines(resolved);
+      const start = Number(rawStart);
+      const end = rawEnd ? Number(rawEnd) : start;
+      const label = `${refPath}:${rawStart}${rawEnd ? `-${rawEnd}` : ''}`;
+      assert.ok(
+        start >= 1 && end <= targetLines.length && start <= end,
+        `${artifact} cites ${label} outside ${targetLines.length} lines`
+      );
+      assert.ok(targetLines[start - 1].trim().length > 0, `${artifact} cites blank line ${label}`);
+    }
+  }
+});

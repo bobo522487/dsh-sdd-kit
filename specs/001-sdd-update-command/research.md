@@ -10,14 +10,14 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 - 本插件的斜杠命令是 Cordis 挂载的技能，而非 Host 工具：`/home/bobo/Projects/dsh-sdd-kit/cordis.patch.yml:1-4` 挂载桥接技能，`:5-11` 配置 `@deepseek-ai/dsh-skill-filesystem` 的 `bundledSkillDir` → 打包的 `skills/` 目录。`package.json:13-20` 打包整个目录。
 - 既有技能遵循同一契约：`/home/bobo/Projects/dsh-sdd-kit/skills/sdd-setup/SKILL.md:1-7` 与 `/home/bobo/Projects/dsh-sdd-kit/skills/sdd-implement/SKILL.md:1-7`，即 frontmatter `name` / `description` / `disable-model-invocation: true` 与 H1 `/<name>`。
 - DSH 的手势匹配是精确的、以空白为边界的 `/name` 正则：`/home/bobo/.nvm/versions/node/v26.13.1/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-tool-skill/src/index.ts:422-449`，正则在第 429 行。不存在技能别名或子命令机制。
-- 此处 Host 工具仅供模型调用：`/home/bobo/Projects/dsh-sdd-kit/src/register.mjs:8-109` 恰好注册 `sdd_upstream`（第 14 行）与 `sdd_bridge`（第 66 行）；`/home/bobo/Projects/dsh-sdd-kit/src/index.mjs:1-9` 只注入 `tools`，从不使用 `ctx.commands`。
+- 此处 Host 工具仅供模型调用：`/home/bobo/Projects/dsh-sdd-kit/src/register.mjs:9-123` 恰好注册 `sdd_upstream`（第 16 行）与 `sdd_bridge`（第 80 行）；`/home/bobo/Projects/dsh-sdd-kit/src/index.mjs:1-9` 只注入 `tools`，从不使用 `ctx.commands`。
 - 章程状态：此前 `.specify/memory/constitution.md` 的“两个技能”上限已通过独立治理命令修订，当前 v2.1.0 原则 I 允许三个命名技能；`test/sdd-kit.test.mjs` 的技能断言已由 T005 更新为 `['sdd-implement','sdd-setup','sdd-update']`。薄胶水条款仍满足，因为该技能不含任何更新算法。
-- 修正机制：`/home/bobo/Projects/dsh-sdd-kit/.specify/memory/constitution.md:89-97` 要求版本行 + Sync Impact Report、负责人批准、迁移说明，且重定义原则须升 MAJOR。用户对 `/sdd-update` 的字面要求即为 plan 中记录的授权依据。
+- 修正机制：`/home/bobo/Projects/dsh-sdd-kit/.specify/memory/constitution.md:99-105` 要求版本行 + Sync Impact Report、负责人批准、迁移说明，且重定义原则须升 MAJOR。用户对 `/sdd-update` 的字面要求即为 plan 中记录的授权依据。
 
 **Alternatives rejected**:
 | Alternative | Why rejected |
 | :--- | :--- |
-| `/sdd-setup update` 旗标/子命令 | DSH 无子命令手势（`dsh-tool-skill/src/index.ts:429`）；且可能重跑原则 V 禁止的 setup 语义（`constitution.md:51-59`）。 |
+| `/sdd-setup update` 旗标/子命令 | DSH 无子命令手势（`dsh-tool-skill/src/index.ts:429`）；且可能重跑原则 V 禁止的 setup 语义（`constitution.md:57-63`）。 |
 | 只新增 `update_all` 动作，不加第三个技能 | 章程上干净，并作为 Host 工具基底保留，但无法产生精确的 `/sdd-update` 用户手势。 |
 | 技能 frontmatter 别名 | `dsh-skill-filesystem` 无别名字段（`.../dsh-skill-filesystem/README.md:34-38`）；内置别名仅限第一方。 |
 | `ctx.commands.register({ name: 'sdd-update' })` | 确实存在独立的 DSH Human Command 注册表（`.../dsh-commands/README.md:28-50`），但 `src/index.mjs:5` 需新增注入，且会引入未枚举的第三表面、缺少 ACP 等价能力，仅限 UI。仅作退路。 |
@@ -47,7 +47,7 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 **Decision**: 要求显式 `dshKitSourceDir`（本地检出，例如 `/home/bobo/Projects/dsh-sdd-kit`）；目标路径由 `$DSH_PROFILE_DIR/node_modules/dsh-sdd-kit` 推导，回退到 `~/.dsh/profiles/${DSH_PROFILE:-web}/node_modules/dsh-sdd-kit`。只复制 `package.json:13-20` 的打包载荷 allowlist —— `src/`、`skills/`、`overrides/`、`cordis.patch.yml`、`README.md`、`LICENSE` —— 外加 `package.json` 元数据（npm 总会附带）。校验源包含 `package.json` 且 `name === 'dsh-sdd-kit'`，并含 `src/index.mjs`。使用仿照 `src/core/bridge.mjs:25-32` 的 `assertInside` 风格守卫：源 ≠ 目标、源不在目标内、目标不在源内、每个被复制条目均位于两个根之内。先把所有文件暂存到目标旁的临时目录，校验暂存树哈希，再用 `fs.rename` 逐条目换入。绝不 `rm -rf` 目标；只在该条目被换入前删除对应的 allowlist 条目。
 
 **Rationale / evidence**:
-- 章程规定安装即普通目录复制，路径为 `/home/bobo/Projects/dsh-sdd-kit/../../.dsh/profiles/web/node_modules/dsh-sdd-kit`（`.specify/memory/constitution.md:66-69`，文档写作 `/home/bobo/.dsh/profiles/web/node_modules/dsh-sdd-kit`）；源码变更必须复制到该处，工具代码变更时须请求重启。规范假设当前本地源为事实来源（`spec.md:46`）。
+- 章程规定安装即普通目录复制，路径为 `/home/bobo/Projects/dsh-sdd-kit/../../.dsh/profiles/web/node_modules/dsh-sdd-kit`（`.specify/memory/constitution.md:81-83`，文档写作 `/home/bobo/.dsh/profiles/web/node_modules/dsh-sdd-kit`）；源码变更必须复制到该处，工具代码变更时须请求重启。规范假设当前本地源为事实来源（`spec.md:46`）。
 - 来自更新调研的关键风险：已安装文件与 pnpm 内容寻址存储硬链接（链接数为 2，指向 `/home/bobo/.local/share/pnpm/store/v11/files/84/60ce…`）。直接对目标执行 `fs.writeFile` / `fs.copyFile` 会污染共享存储及所有共享它的 profile。`fs.rename` 暂存文件只替换目录项并打断硬链接。
 - `.modules.yaml` 仍固定较旧的 `dsh-sdd-kit` tarball，而文件内容已与源码 HEAD 一致；未来 `dsh plugin` 安装可能覆盖手工副本。这是迁移说明，不构成改变命令事实来源语义的理由。
 - `dshKitSourceDir` 缺失或非法 → REQ-05（`spec.md:20`）：为 dsh-sdd-kit 记录清晰错误，仍尝试并报告 Spec Kit 与 Superpowers。
@@ -67,7 +67,7 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 
 **Decision**: 当以下任一成立时设 `requiresRestart = true`：(a) dsh-kit profile 树哈希变化；(b) Superpowers 更新器返回 `mode === 'clone'`；(c) 两次 `status` 之间 Superpowers 的 `skillCount` 变化。仅升级 Spec Kit CLI 不需要重启。最终报告始终说明“Restart DSH to load updated tools/skills”或“No restart required”。
 
-**Rationale**: `constitution.md:57-58` 与 `:68-69`、`README.md:35`、`skills/sdd-setup/SKILL.md:16` 都要求在 profile/工具变更或首次 Superpowers 技能变更后重启。REQ-07（`spec.md:22`）与 AC-06（`spec.md:36`）要求面向用户的说明；自动重启是明确的 Non-Goal（`spec.md:26`）。
+**Rationale**: `constitution.md:62` 与 `:81-83`、`README.md:35`、`skills/sdd-setup/SKILL.md:16` 都要求在 profile/工具变更或首次 Superpowers 技能变更后重启。REQ-07（`spec.md:22`）与 AC-06（`spec.md:36`）要求面向用户的说明；自动重启是明确的 Non-Goal（`spec.md:26`）。
 
 ## 6. Test strategy
 
@@ -81,7 +81,7 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 7. 重启：profile 变化或 Superpowers 克隆/技能数变化 → `requiresRestart: true` 与报告文案（AC-06）。
 8. 把 `test/sdd-kit.test.mjs:140-155` 的精确技能断言改为 `['sdd-implement','sdd-setup','sdd-update']`；`:118-138` 的 Host 工具断言仍为两个工具。
 
-**Rationale**: 严格 TDD 不可协商（constitution.md:36-42），且现有套件已提供临时目录、注入 runner 与精确表面断言，可在不新增依赖的前提下扩展。
+**Rationale**: 严格 TDD 不可协商（constitution.md:46-50），且现有套件已提供临时目录、注入 runner 与精确表面断言，可在不新增依赖的前提下扩展。
 
 ## 7. Open risks / migration notes
 
