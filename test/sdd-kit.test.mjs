@@ -1349,3 +1349,162 @@ test('US4 the retired /sdd-implement entry point leaves no trace in shipped surf
     );
   }
 });
+
+async function readExtensionsYml(cwd) {
+  return fs.readFile(path.join(cwd, '.specify', 'extensions.yml'), 'utf8');
+}
+
+function hookCommandsOf(cfg) {
+  return cfg
+    .split('\n')
+    .filter((line) => /^\s+command: speckit\.superpowers-hooks\./.test(line))
+    .map((line) => line.trim().replace('command: ', ''));
+}
+
+function installedEntriesOf(cfg) {
+  const lines = cfg.split('\n');
+  const start = lines.findIndex((line) => /^installed:/.test(line));
+  assert.notEqual(start, -1, 'extensions.yml must carry an installed: block');
+  const entries = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^[a-z_]+:/.test(line)) break;
+    const match = line.match(/^\s*-\s*(\S+)\s*$/);
+    if (match) entries.push(match[1]);
+  }
+  return entries;
+}
+
+async function specifyAvailable() {
+  const probe = await runUpstream({ action: 'status', cwd: process.cwd() });
+  return probe.specifyCli.installed;
+}
+
+test('US5 reinstalling the hooks extension stays idempotent', async (t) => {
+  if (!(await specifyAvailable())) {
+    t.skip('specify CLI is not installed');
+    return;
+  }
+
+  const cwd = await makeTempDir();
+  try {
+    const init = await runUpstream({ action: 'specify_init', cwd });
+    assert.equal(init.ok, true, `specify init failed: ${init.stderr}`);
+
+    const first = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: EXTENSION_DIR });
+    assert.equal(first.ok, true, `first install failed: ${first.stderr}`);
+    const afterFirst = await readExtensionsYml(cwd);
+
+    const second = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: EXTENSION_DIR });
+    assert.equal(second.ok, true, `reinstall failed: ${second.stderr}`);
+    const afterSecond = await readExtensionsYml(cwd);
+
+    assert.deepEqual(
+      hookCommandsOf(afterSecond),
+      [
+        'speckit.superpowers-hooks.before-implement',
+        'speckit.superpowers-hooks.after-implement',
+        'speckit.superpowers-hooks.before-bug-fix',
+        'speckit.superpowers-hooks.after-bug-fix',
+      ],
+      'INV-7: every event must carry exactly one entry after a reinstall'
+    );
+    assert.deepEqual(installedEntriesOf(afterSecond), ['superpowers-hooks'], 'INV-10: installed must not duplicate');
+    assert.equal(
+      (afterSecond.match(/optional: false/g) || []).length,
+      4,
+      'a reinstall must not duplicate hook entries'
+    );
+
+    const events = (cfg) => cfg.split('\n').filter((line) => /^  [a-z_]+:$/.test(line)).map((line) => line.trim());
+    assert.deepEqual(events(afterSecond), events(afterFirst), 'INV-8: a reinstall must not add orphan event keys');
+    assert.deepEqual(
+      events(afterSecond),
+      ['before_implement:', 'after_implement:', 'before_bug_fix:', 'after_bug_fix:']
+    );
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('US5 removing the extension rolls the project back to a hook-free state', async (t) => {
+  if (!(await specifyAvailable())) {
+    t.skip('specify CLI is not installed');
+    return;
+  }
+
+  const cwd = await makeTempDir();
+  try {
+    const init = await runUpstream({ action: 'specify_init', cwd });
+    assert.equal(init.ok, true, `specify init failed: ${init.stderr}`);
+    const installed = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: EXTENSION_DIR });
+    assert.equal(installed.ok, true, `install failed: ${installed.stderr}`);
+
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    await run('specify', ['extension', 'remove', 'superpowers-hooks', '--force'], { cwd });
+
+    const cfg = await readExtensionsYml(cwd);
+    assert.deepEqual(installedEntriesOf(cfg), [], 'INV-8: removal must drop the installed entry');
+    assert.deepEqual(hookCommandsOf(cfg), [], 'INV-8: removal must drop every hook entry');
+    assert.equal(
+      cfg.split('\n').filter((line) => /^  [a-z_]+:$/.test(line)).length,
+      0,
+      'INV-8: removal must not leave orphan event keys'
+    );
+
+    const skillDirs = await fs.readdir(path.join(cwd, '.dsh', 'skills'));
+    assert.equal(
+      skillDirs.some((name) => name.startsWith('speckit-superpowers-hooks-')),
+      false,
+      'AC-10: removal must delete the generated hook skills'
+    );
+    const backup = await fs.stat(path.join(cwd, '.specify', 'extensions', '.backup', 'superpowers-hooks'));
+    assert.ok(backup.isDirectory(), 'removal must back up the extension config');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('US5 the global hook switch and shared templates stay untouched', async (t) => {
+  if (!(await specifyAvailable())) {
+    t.skip('specify CLI is not installed');
+    return;
+  }
+
+  const cwd = await makeTempDir();
+  try {
+    const init = await runUpstream({ action: 'specify_init', cwd });
+    assert.equal(init.ok, true, `specify init failed: ${init.stderr}`);
+
+    const templatesBefore = await snapshotTree(path.join(cwd, '.specify', 'templates'));
+    const scriptsBefore = await snapshotTree(path.join(cwd, '.specify', 'scripts'));
+
+    // Seed an explicit "off" switch so the test proves the value is preserved, not just defaulted.
+    await fs.writeFile(
+      path.join(cwd, '.specify', 'extensions.yml'),
+      'installed: []\nsettings:\n  auto_execute_hooks: false\nhooks: {}\n',
+      'utf8'
+    );
+    const switchBefore = (await readExtensionsYml(cwd)).match(/auto_execute_hooks:\s*(\S+)/)?.[1];
+    assert.equal(switchBefore, 'false', 'the seeded switch must be off before installing');
+
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: EXTENSION_DIR });
+    assert.equal(report.ok, true, `install failed: ${report.stderr}`);
+
+    const switchAfter = (await readExtensionsYml(cwd)).match(/auto_execute_hooks:\s*(\S+)/)?.[1];
+    assert.equal(switchAfter, 'false', 'INV-9: the global switch must keep its original value');
+    assert.deepEqual(
+      await snapshotTree(path.join(cwd, '.specify', 'templates')),
+      templatesBefore,
+      'REQ-07: installing hooks must not touch shared templates'
+    );
+    assert.deepEqual(
+      await snapshotTree(path.join(cwd, '.specify', 'scripts')),
+      scriptsBefore,
+      'REQ-07: installing hooks must not touch shared scripts'
+    );
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});

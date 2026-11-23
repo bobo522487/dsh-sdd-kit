@@ -141,9 +141,9 @@ description: "Task list for Spec Kit 原生扩展钩子层（Hooks 取代 /sdd-i
 
 ### Tests for User Story 5
 
-- [ ] T029 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增幂等测试（CLI 可用时，否则 `t.skip`）：连跑两次 `install_hooks_ext` → 四事件各 1 条、`installed` 恰 1 项、无孤儿事件键（`data-model.md` 的 INV-7/INV-8/INV-10，AC-07）
-- [ ] T030 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增卸载测试（CLI 可用时，否则 `t.skip`）：`specify extension remove superpowers-hooks --force` → `installed` 不含本扩展、`hooks` 无本扩展条目、技能目录被删除、`.specify/extensions/.backup/superpowers-hooks/` 存在（`data-model.md` 的 INV-8，AC-10/REQ-12）
-- [ ] T031 [US5] 在 `test/sdd-kit.test.mjs` 新增全局开关与模板不变测试：安装前后 `.specify/extensions.yml` 的 `settings.auto_execute_hooks` 取值相同（`data-model.md` 的 INV-9，REQ-13/AC-09）；`.specify/templates/` 与 `.specify/scripts/` 的树快照前后一致（复用既有 `snapshotTree` helper，AC-08/REQ-07）
+- [x] T029 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增幂等测试（CLI 可用时，否则 `t.skip`）：连跑两次 `install_hooks_ext` → 四事件各 1 条、`installed` 恰 1 项、无孤儿事件键（`data-model.md` 的 INV-7/INV-8/INV-10，AC-07）
+- [x] T030 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增卸载测试（CLI 可用时，否则 `t.skip`）：`specify extension remove superpowers-hooks --force` → `installed` 不含本扩展、`hooks` 无本扩展条目、技能目录被删除、`.specify/extensions/.backup/superpowers-hooks/` 存在（`data-model.md` 的 INV-8，AC-10/REQ-12）
+- [x] T031 [US5] 在 `test/sdd-kit.test.mjs` 新增全局开关与模板不变测试：安装前后 `.specify/extensions.yml` 的 `settings.auto_execute_hooks` 取值相同（`data-model.md` 的 INV-9，REQ-13/AC-09）；`.specify/templates/` 与 `.specify/scripts/` 的树快照前后一致（复用既有 `snapshotTree` helper，AC-08/REQ-07）
 
 **Checkpoint**: 五个用户故事全部独立可验证，安装/重装/卸载三条生命周期闭合。
 
