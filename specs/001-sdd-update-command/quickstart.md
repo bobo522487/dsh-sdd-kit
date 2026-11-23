@@ -79,21 +79,36 @@ Restart DSH to load updated tools/skills.
 
 从源码检出目录执行：
 
+已安装副本中的文件可能与 pnpm store 共享存储（`nlink > 1`）。就地写入（例如 `cp -R` 覆盖同名文件）会顺着硬链接改动 store 中的共享内容，因此下面的流程始终先在暂存目录中构建新副本，再用 `mv` 逐条目换入。它绝不递归删除目标条目，也绝不在目标目录内原地写文件。
+
 ```bash
-# Adjust profile name if needed
+# Run from the dsh-sdd-kit source checkout.
 PROFILE_DIR="${DSH_PROFILE_DIR:-$HOME/.dsh/profiles/web}"
 DEST="$PROFILE_DIR/node_modules/dsh-sdd-kit"
+ENTRIES="src skills overrides cordis.patch.yml README.md LICENSE package.json"
 
-# Example: copy the packaged payload without touching .git/specs/.specify
-for entry in src skills overrides cordis.patch.yml README.md LICENSE package.json; do
-  rm -rf "$DEST/$entry"
-  cp -R "$entry" "$DEST/$entry"
+# 1. Stage a fresh copy next to the destination (same filesystem, so mv is atomic).
+STAGE="$(mktemp -d "$PROFILE_DIR/node_modules/.dsh-sdd-kit-stage-XXXXXX")"
+for entry in $ENTRIES; do
+  cp -R "$entry" "$STAGE/$entry"
 done
 
-# Then restart DSH so tools/skills reload.
+# 2. Move the current entries aside, then move the staged ones in.
+BACKUP="$(mktemp -d "$PROFILE_DIR/node_modules/.dsh-sdd-kit-backup-XXXXXX")"
+for entry in $ENTRIES; do
+  if [ -e "$DEST/$entry" ]; then mv "$DEST/$entry" "$BACKUP/$entry"; fi
+  mv "$STAGE/$entry" "$DEST/$entry"
+done
+
+# 3. Confirm the copy looks right, then discard the staging and backup directories.
+#    Deleting the backup only drops the extra hardlink; the pnpm store keeps its own.
+ls "$DEST"
+rm -r "$STAGE" "$BACKUP"
+
+# 4. Restart DSH so tools/skills reload.
 ```
 
-对于硬链接安全的自动刷新，建议在安装完成后运行 `/sdd-update`；它采用暂存加重命名的方式，而不是就地写入。
+若 `mv` 中途失败，可把 `$BACKUP` 中的条目移回 `$DEST`，再排查权限或符号链接问题。安装完成后，日常刷新请直接运行 `/sdd-update`：它执行同样的暂存加重命名流程，并额外报告每个组件的 `before → after`。
 
 ## Troubleshooting
 

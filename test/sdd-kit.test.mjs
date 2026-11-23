@@ -776,3 +776,15 @@ test('README states that dshKitSourceDir must be passed explicitly', async () =>
   assert.match(readme, /必须显式/, 'README must say the source directory has to be passed explicitly');
   assert.doesNotMatch(readme, /自动发现/, 'README must not imply the local checkout is discovered automatically');
 });
+
+test('quickstart manual recovery uses staged swaps instead of in-place copies', async () => {
+  const quickstart = await fs.readFile(
+    path.join(PKG_ROOT, 'specs/001-sdd-update-command/quickstart.md'),
+    'utf8'
+  );
+
+  assert.doesNotMatch(quickstart, /rm -rf/, 'quickstart must not delete profile entries in place');
+  assert.match(quickstart, /mktemp/, 'quickstart must stage the copy in a temporary directory');
+  assert.match(quickstart, /mv /, 'quickstart must swap entries in with mv/rename');
+  assert.match(quickstart, /nlink/, 'quickstart must explain the hardlink hazard it avoids');
+});
