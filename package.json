@@ -1,0 +1,47 @@
+{
+  "name": "dsh-sdd-kit",
+  "version": "0.2.0",
+  "description": "Zero-fork SDD bridge plugin for DeepSeek Harness (DSH): delegates 'what to build' to upstream GitHub Spec Kit (specify CLI) and 'how to build' to upstream obra/superpowers, with EARS/Non-Goals overrides, strict TDD, and atomic commits.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "overrides/",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sdd",
+    "spec-kit",
+    "superpowers",
+    "tdd",
+    "skills"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-skill-filesystem": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "scripts": {
+    "test": "node --test test/sdd-kit.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

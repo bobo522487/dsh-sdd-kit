@@ -1,0 +1,19 @@
+# DeepSeek Harness (DSH) bundle patch for dsh-sdd-kit v0.2.0
+# 1. Mounts this plugin's 2 bridge skills (/sdd-setup, /sdd-implement).
+# 2. Mounts upstream obra/superpowers skills directly from ~/.dsh/upstream/superpowers/skills (zero fork).
+# 3. Mounts the lightweight Host tool plugin (sdd_upstream, sdd_bridge).
+- insert:
+    - id: skill-filesystem-sdd-kit
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: sdd-kit
+        includeDefaultRoots: false
+        bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-sdd-kit/package.json')), 'skills')
+    - id: skill-filesystem-superpowers-upstream
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: superpowers-upstream
+        includeDefaultRoots: false
+        bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), '.dsh', 'upstream', 'superpowers', 'skills')
+    - id: dsh-sdd-kit
+      name: dsh-sdd-kit
