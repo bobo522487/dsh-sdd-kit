@@ -74,6 +74,10 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 
 > 若未来需要硬门禁（例如「未跑测试禁止 commit」），Spec Kit 的 Runtime Events（`pre_tool_use` 等）是现成的可选升级口；当前刻意不使用，保持软门禁。
 
+## 新克隆的仓库
+
+`.dsh/skills/` 与 `.specify/extensions*` 是安装产物，不入库。克隆后运行一次 `/sdd-setup` 即可幂等重建（specify-cli、Superpowers 镜像、bug 与 hooks 扩展、EARS 覆盖）。治理文档 `.specify/memory/constitution.md` 与上游脚本/模板仍在库中。
+
 ## 本地测试
 
 ```bash

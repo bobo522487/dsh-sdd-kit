@@ -570,6 +570,13 @@ test('release allowlist ships the Spec Kit extension source directory', async ()
   );
 });
 
+test('install outputs are gitignored so cross-platform reinstalls never churn the repo', async () => {
+  const ignore = await fs.readFile(path.join(PKG_ROOT, '.gitignore'), 'utf8');
+  for (const pattern of ['.dsh/', '.specify/extensions/', '.specify/extensions.yml', '.specify/integrations/*.manifest.json']) {
+    assert.ok(ignore.includes(pattern), `.gitignore must contain ${pattern}`);
+  }
+});
+
 const EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');
 const HOOK_COMMAND_FILES = [
   'speckit.superpowers-hooks.before-implement.md',

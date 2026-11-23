@@ -6,3 +6,10 @@ node_modules/
 
 # EARS 模板的安装产物（唯一可编辑源是 overrides/spec-template.md，由 /sdd-setup 幂等安装）
 .specify/templates/overrides/
+
+# 纯安装产物：由 /sdd-setup（sdd_upstream action:setup）幂等重建。
+# Windows 无 symlink 权限时 CLI 回退为副本、.registry 时间戳每次重装必变——入库即跨平台抖动。
+.dsh/
+.specify/extensions/
+.specify/extensions.yml
+.specify/integrations/*.manifest.json
