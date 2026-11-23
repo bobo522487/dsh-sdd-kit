@@ -14,16 +14,29 @@ export const DEFAULT_SUPERPOWERS_REPO = 'https://github.com/obra/superpowers.git
 /** Bundled Spec Kit extension source directory shipped inside this package. */
 export const BUNDLED_EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');
 
-/** Extension id/version mirrored from spec-kit-extension/extension.yml (kept as constants to avoid a YAML parser). */
-export const HOOKS_EXTENSION = Object.freeze({ id: 'superpowers-hooks', version: '0.1.0' });
-
-/** Hook events in the fixed order the extension declares them (data-model INV-11). */
-export const HOOKS_EXTENSION_EVENTS = Object.freeze([
-  'before_implement',
-  'after_implement',
-  'before_bug_fix',
-  'after_bug_fix',
-]);
+/**
+ * Read only the keys this plugin needs from the extension manifest.
+ * The manifest itself is validated by the specify CLI; this is a targeted
+ * fixed-key reader, not a YAML parser (zero-dependency constraint).
+ * Single source of truth: spec-kit-extension/extension.yml.
+ */
+async function readExtensionManifest(extensionDir) {
+  const raw = await fs.readFile(path.join(extensionDir, 'extension.yml'), 'utf8');
+  const id = raw.match(/^  id:\s*(\S+)\s*$/m)?.[1] ?? null;
+  const versionRaw = raw.match(/^  version:\s*(.+)$/m)?.[1] ?? null;
+  const version = versionRaw ? versionRaw.trim().replace(/^"|"$/g, '') : null;
+  const lines = raw.split(/\r?\n/);
+  const hooksStart = lines.findIndex((line) => /^hooks:\s*$/.test(line));
+  const events = [];
+  if (hooksStart >= 0) {
+    for (const line of lines.slice(hooksStart + 1)) {
+      if (/^\S/.test(line)) break;
+      const m = line.match(/^  ([a-z_]+):\s*$/);
+      if (m) events.push(m[1]);
+    }
+  }
+  return { id, version, events };
+}
 
 /** Expected integration for new projects; `.dsh/skills` is inside DSH's default skill roots. */
 export const EXPECTED_INTEGRATION = 'dsh';
@@ -184,19 +197,31 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
 
     const cliArgs = ['extension', 'add', '--dev', extensionDir, '--force'];
     const res = await runner('specify', cliArgs, { cwd });
+    if (!res.ok) {
+      return { action, cwd, extensionDir, command: `specify ${cliArgs.join(' ')}`, ...res };
+    }
+    const manifest = await readExtensionManifest(extensionDir).catch(() => null);
+    if (!manifest?.id || !manifest?.version || manifest.events.length === 0) {
+      return {
+        action,
+        cwd,
+        extensionDir,
+        ok: false,
+        error: `cannot read extension manifest at ${path.join(extensionDir, 'extension.yml')}`,
+      };
+    }
     const integration = await readIntegration(cwd);
-    const report = {
+    return {
       action,
       cwd,
       extensionDir,
       command: `specify ${cliArgs.join(' ')}`,
       ...res,
-      extension: { ...HOOKS_EXTENSION },
+      extension: { id: manifest.id, version: manifest.version },
       ...describeIntegration(integration),
-      hooks: [...HOOKS_EXTENSION_EVENTS],
+      hooks: [...manifest.events],
       restartRequired: false,
     };
-    return report;
   }
 
   if (action === 'switch_integration') {

@@ -578,6 +578,50 @@ const HOOK_COMMAND_FILES = [
 ];
 const HOOK_EVENTS = ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix'];
 
+async function seedExtensionManifest(dir, { id = 'superpowers-hooks', version = '0.1.0' } = {}) {
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, 'extension.yml'),
+    [
+      'schema_version: "1.0"',
+      'extension:',
+      `  id: ${id}`,
+      '  name: Demo Hooks',
+      `  version: "${version}"`,
+      'hooks:',
+      '  before_implement:',
+      '    command: speckit.demo.before-implement',
+      '    optional: false',
+      '  after_implement:',
+      '    command: speckit.demo.after-implement',
+      '    optional: false',
+      '  before_bug_fix:',
+      '    command: speckit.demo.before-bug-fix',
+      '    optional: false',
+      '  after_bug_fix:',
+      '    command: speckit.demo.after-bug-fix',
+      '    optional: false',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+}
+
+test('install_hooks_ext reads id/version/events from the manifest, not hardcoded constants', async () => {
+  const cwd = await makeTempDir();
+  const extensionDir = path.join(cwd, 'ext-src');
+  await seedExtensionManifest(extensionDir, { id: 'demo-hooks', version: '9.9.9' });
+  const mockRunner = async () => ({ ok: true, code: 0, stdout: 'installed', stderr: '' });
+  try {
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir }, mockRunner);
+    assert.equal(report.ok, true);
+    assert.deepEqual(report.extension, { id: 'demo-hooks', version: '9.9.9' });
+    assert.deepEqual(report.hooks, ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix']);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test('extension manifest declares four commands and four mandatory hooks', async () => {
   const manifest = await fs.readFile(path.join(EXTENSION_DIR, 'extension.yml'), 'utf8');
 
@@ -624,7 +668,7 @@ test('extension manifest declares four commands and four mandatory hooks', async
 test('install_hooks_ext delegates once with --dev and reports the four hooks', async () => {
   const cwd = await makeTempDir();
   const extensionDir = path.join(cwd, 'ext-src');
-  await fs.mkdir(extensionDir, { recursive: true });
+  await seedExtensionManifest(extensionDir);
   const calls = [];
   const mockRunner = async (cmd, args, options) => {
     calls.push({ cmd, args, options });
@@ -933,7 +977,7 @@ test('US3 specify_init defaults to the dsh integration and keeps the unattended 
 test('US3 install_hooks_ext derives the skills directory and mismatch report from integration', async () => {
   const extensionDirOf = async (cwd) => {
     const dir = path.join(cwd, 'ext-src');
-    await fs.mkdir(dir, { recursive: true });
+    await seedExtensionManifest(dir);
     return dir;
   };
   const okRunner = async () => ({ ok: true, code: 0, stdout: 'ok', stderr: '' });
