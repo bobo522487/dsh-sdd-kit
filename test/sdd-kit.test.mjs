@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
 import { runUpdate } from '../src/core/update.mjs';
+import { refreshInstalledKit } from '../src/core/kit-copy.mjs';
 import { registerSddTools } from '../src/register.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -292,5 +293,117 @@ test('runUpdate AC-02: all-current components are unchanged without effective ch
     assert.deepEqual(report.errors, []);
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-03: a Superpowers failure is isolated and still reports other components', async () => {
+  const cwd = await makeTempDir();
+  let specifyVersion = 'specify 1.3.1';
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: specifyVersion, error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'aaaaaaa', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      specifyVersion = 'specify 1.4.0';
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return {
+        action: 'sync_superpowers',
+        ok: false,
+        code: 128,
+        mode: 'pull',
+        skillCount: 3,
+        stdout: '',
+        stderr: 'fatal: could not read from remote repository',
+      };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const refreshKit = async () => ({
+    changed: true,
+    beforeHash: 'sha256:old',
+    afterHash: 'sha256:new',
+    changedFiles: ['skills/sdd-update/SKILL.md'],
+    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
+    mode: 'updated',
+  });
+
+  try {
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
+      { runUpstream: runUpstreamFake, refreshKit }
+    );
+    assert.equal(report.ok, false);
+    assert.deepEqual(
+      report.components.map((record) => record.component),
+      ['spec-kit', 'superpowers', 'dsh-sdd-kit']
+    );
+    assert.deepEqual(
+      report.components.map((record) => record.outcome),
+      ['updated', 'failed', 'updated']
+    );
+    assert.equal(report.components[1].error !== null, true);
+    assert.match(report.components[1].error.message, /Superpowers update failed:/);
+    assert.match(report.components[1].error.message, /could not read from remote repository/);
+    assert.equal(report.components[0].after, 'specify 1.4.0');
+    assert.equal(report.components[2].after, 'sha256:new');
+    assert.deepEqual(
+      report.errors.map((entry) => entry.component),
+      ['superpowers']
+    );
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-04: missing dsh-kit source fails that component but keeps upstream records', async () => {
+  const cwd = await makeTempDir();
+  const profileDir = await makeTempDir();
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+
+  try {
+    const report = await runUpdate(
+      { cwd, dshProfileDir: profileDir },
+      { runUpstream: runUpstreamFake }
+    );
+    assert.equal(report.ok, false);
+    assert.equal(report.components.length, 3);
+    assert.deepEqual(
+      report.components.map((record) => record.outcome),
+      ['unchanged', 'unchanged', 'failed']
+    );
+    assert.match(report.components[2].error.message, /No dsh-sdd-kit source configured/);
+    assert.deepEqual(
+      report.errors.map((entry) => entry.component),
+      ['dsh-sdd-kit']
+    );
+    assert.equal(report.errors[0].message, report.components[2].error.message);
+    assert.equal(report.requiresRestart, false);
+    assert.equal(await fs.stat(profileDir).then((s) => s.isDirectory()), true);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(profileDir, { recursive: true, force: true });
   }
 });

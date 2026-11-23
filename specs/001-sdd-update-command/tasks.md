@@ -51,7 +51,7 @@ description: "Task list for the SDD unified update command feature"
 
 - [x] T005 [US1] Update exact-surface assertions in `test/sdd-kit.test.mjs`: expect skill directories `['sdd-implement','sdd-setup','sdd-update']`, keep the two-tool assertion `['sdd_upstream','sdd_bridge']`, and keep frontmatter validation for `disable-model-invocation: true`.
 - [x] T006 [US1] Add failing AC-01/AC-02 tests to `test/sdd-kit.test.mjs` using the existing injected `runner` pattern: all-behind yields three `updated` records with before/after; all-current yields three `unchanged` records with no effective `uv tool upgrade|install` or `git pull|clone`.
-- [ ] T007 [US1] Add failing AC-03/AC-04 tests to `test/sdd-kit.test.mjs`: a mocked Superpowers `git pull` failure still produces Spec Kit and dsh-kit records, names Superpowers as failed, and sets overall `ok:false`; a missing `dshKitSourceDir` produces a clear dsh-kit error while upstream records remain.
+- [x] T007 [US1] Add failing AC-03/AC-04 tests to `test/sdd-kit.test.mjs`: a mocked Superpowers `git pull` failure still produces Spec Kit and dsh-kit records, names Superpowers as failed, and sets overall `ok:false`; a missing `dshKitSourceDir` produces a clear dsh-kit error while upstream records remain.
 - [ ] T008 [US1] Add failing AC-05/AC-06 tests to `test/sdd-kit.test.mjs`: recursively snapshot `specs/`, `.specify/`, `plan.md`, `tasks.md` and `src/app.js` in a temp cwd before/after `runUpdate` and assert equality plus no `specify init` / `specify extension add bug` calls; assert `requiresRestart` and restart guidance when the kit tree hash changes.
 
 **Implementation for User Story 1**
