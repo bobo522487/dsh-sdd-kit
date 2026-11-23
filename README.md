@@ -34,6 +34,12 @@ dsh plugin --profile web add ./dsh-sdd-kit-0.4.0.tgz
 
 安装后重启 DSH，然后在项目中运行 `/sdd-setup`。
 
+升级到新版本时请**重新 add 同一个来源**——git 依赖的锁文件指向具体 commit，`dsh plugin update` 会报 `Already up to date`：
+
+```bash
+dsh plugin --profile web add github:bobo522487/dsh-sdd-kit
+```
+
 ## 日常流程
 
 1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here --integration dsh` 与 `specify extension add bug`、装入本仓库内置的 `superpowers-hooks` 扩展、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
