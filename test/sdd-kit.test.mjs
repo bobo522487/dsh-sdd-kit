@@ -768,3 +768,11 @@ test('runUpdate completes an all-current pass well under the five-minute budget'
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
+
+test('README states that dshKitSourceDir must be passed explicitly', async () => {
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+
+  assert.match(readme, /dshKitSourceDir/);
+  assert.match(readme, /必须显式/, 'README must say the source directory has to be passed explicitly');
+  assert.doesNotMatch(readme, /自动发现/, 'README must not imply the local checkout is discovered automatically');
+});

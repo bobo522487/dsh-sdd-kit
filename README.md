@@ -37,7 +37,7 @@ dsh plugin --profile web add ./dsh-sdd-kit-0.3.0.tgz
 ## 日常流程
 
 1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here` 与 `specify extension add bug`、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
-2. **刷新全部三层**：`/sdd-update` 在一次调用中检查并更新三层——`specify-cli`、`~/.dsh/upstream/superpowers` 镜像，以及安装在当前 DSH profile 中的 dsh-sdd-kit 副本——并输出每个组件的 `before → after` 报告与所需的重启提示。若本地检出无法被自动发现，请传入 `dshKitSourceDir=/path/to/dsh-sdd-kit`。
+2. **刷新全部三层**：`/sdd-update` 在一次调用中检查并更新三层——`specify-cli`、`~/.dsh/upstream/superpowers` 镜像，以及安装在当前 DSH profile 中的 dsh-sdd-kit 副本——并输出每个组件的 `before → after` 报告与所需的重启提示。该技能不会自动查找本地检出：必须显式传入 `dshKitSourceDir=/path/to/dsh-sdd-kit`，否则 dsh-sdd-kit 组件会以 “No dsh-sdd-kit source configured” 失败，其余两层仍照常报告。
 3. **开发特性**：
    - 用原生 Spec Kit 规划：`/speckit.constitution` → `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze`
    - 用 `/sdd-implement` 执行（全流程严格 TDD + 在当前分支上按任务原子提交 → 原生 `/speckit.converge` + 同步 `specs/INDEX.md`）。
