@@ -931,3 +931,132 @@ test('release allowlist ships the Spec Kit extension source directory', async ()
     await fs.rm(seededRoot, { recursive: true, force: true });
   }
 });
+
+const EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');
+const HOOK_COMMAND_FILES = [
+  'speckit.superpowers-hooks.before-implement.md',
+  'speckit.superpowers-hooks.after-implement.md',
+  'speckit.superpowers-hooks.before-bug-fix.md',
+  'speckit.superpowers-hooks.after-bug-fix.md',
+];
+const HOOK_EVENTS = ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix'];
+
+test('extension manifest declares four commands and four mandatory hooks', async () => {
+  const manifest = await fs.readFile(path.join(EXTENSION_DIR, 'extension.yml'), 'utf8');
+
+  assert.match(manifest, /^schema_version:\s*"1\.0"$/m);
+  assert.match(manifest, /^\s+id:\s*superpowers-hooks$/m);
+  assert.match(manifest, /^\s+name:\s*\S+/m);
+  assert.match(manifest, /^\s+description:\s*\S+/m);
+  assert.match(manifest, /^\s+author:\s*\S+/m);
+  assert.match(manifest, /^\s+version:\s*"0\.1\.0"$/m);
+  assert.match(manifest, /^\s+speckit_version:\s*"[>=<^~0-9.\s]+"$/m);
+
+  for (const event of HOOK_EVENTS) {
+    assert.match(manifest, new RegExp(`^  ${event}:$`, 'm'), `manifest must declare hooks.${event}`);
+  }
+  const declaredEvents = [...manifest.matchAll(/^  ([a-z_]+):$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    declaredEvents.filter((name) => name.includes('_')),
+    HOOK_EVENTS,
+    'manifest must declare exactly the four implement/bug-fix hook events'
+  );
+
+  assert.equal(
+    (manifest.match(/^\s+optional:\s*false$/gm) || []).length,
+    4,
+    'all four hooks must be optional: false so Spec Kit renders **Automatic Hook**'
+  );
+  assert.equal(manifest.includes('events:'), false, 'must not declare runtime events (INV-2)');
+  assert.equal(manifest.includes('templates:'), false, 'must not inject templates (INV-2)');
+  assert.equal(manifest.includes('scripts:'), false, 'must not inject scripts (INV-2)');
+  assert.equal(/^settings:/m.test(manifest), false, 'must not write project settings (INV-3)');
+
+  for (const file of HOOK_COMMAND_FILES) {
+    const command = file.replace(/\.md$/, '');
+    assert.ok(manifest.includes(`name: ${command}`), `provides.commands must declare ${command}`);
+    assert.ok(manifest.includes(`file: commands/${file}`), `provides.commands must point at commands/${file}`);
+  }
+  assert.equal(
+    (manifest.match(/^\s+- name: speckit\.superpowers-hooks\./gm) || []).length,
+    4,
+    'provides.commands must declare exactly four commands (INV-1)'
+  );
+});
+
+test('install_hooks_ext delegates once with --dev and reports the four hooks', async () => {
+  const cwd = await makeTempDir();
+  const extensionDir = path.join(cwd, 'ext-src');
+  await fs.mkdir(extensionDir, { recursive: true });
+  const calls = [];
+  const mockRunner = async (cmd, args, options) => {
+    calls.push({ cmd, args, options });
+    return { ok: true, code: 0, stdout: 'Extension installed successfully!', stderr: '' };
+  };
+
+  try {
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir }, mockRunner);
+    assert.equal(calls.length, 1, 'must delegate exactly once');
+    assert.equal(calls[0].cmd, 'specify');
+    assert.deepEqual(calls[0].args, ['extension', 'add', '--dev', extensionDir, '--force']);
+    assert.equal(calls[0].options.cwd, cwd);
+
+    assert.equal(report.action, 'install_hooks_ext');
+    assert.equal(report.ok, true);
+    assert.equal(report.cwd, cwd);
+    assert.equal(report.extensionDir, extensionDir);
+    assert.match(report.command, /^specify extension add --dev .+ --force$/);
+    assert.deepEqual(report.extension, { id: 'superpowers-hooks', version: '0.1.0' });
+    assert.deepEqual(report.hooks, HOOK_EVENTS);
+    assert.equal(typeof report.restartRequired, 'boolean');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_hooks_ext refuses a missing extension source without calling specify', async () => {
+  const cwd = await makeTempDir();
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return { ok: true, code: 0, stdout: '', stderr: '' };
+  };
+
+  try {
+    const missing = path.join(cwd, 'nope');
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: missing }, mockRunner);
+    assert.equal(calls.length, 0, 'must not shell out when the source directory is missing');
+    assert.equal(report.ok, false);
+    assert.match(report.error, /extension source not found at /);
+    assert.equal(report.extensionDir, missing);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_hooks_ext surfaces CLI failures without throwing', async () => {
+  const cwd = await makeTempDir();
+  const extensionDir = path.join(cwd, 'ext-src');
+  await fs.mkdir(extensionDir, { recursive: true });
+  const mockRunner = async () => ({ ok: false, code: 1, stdout: '', stderr: 'Invalid command name' });
+
+  try {
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir }, mockRunner);
+    assert.equal(report.ok, false);
+    assert.equal(report.code, 1);
+    assert.equal(report.stderr, 'Invalid command name');
+    assert.equal(report.error, undefined, 'CLI failures keep raw stderr instead of a synthesized error');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('sdd_upstream exposes install_hooks_ext and extensionDir to the model', () => {
+  const registered = [];
+  const ctx = { tools: { register: (tool) => { registered.push(tool); return () => {}; } } };
+  registerSddTools(ctx, (definition) => definition);
+
+  const upstream = registered.find((tool) => tool.name === 'sdd_upstream');
+  assert.ok(upstream.parameters.action.description.includes('install_hooks_ext'));
+  assert.ok(upstream.parameters.extensionDir, 'extensionDir must be a declared parameter');
+});

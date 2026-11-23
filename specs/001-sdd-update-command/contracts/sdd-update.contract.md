@@ -97,7 +97,7 @@
 ### Explicit non-actions
 
 `update_all` 不得分发到、技能也不得调用：
-- `sdd_upstream` 的 `specify_init` 或 `install_bug_ext` action（`src/core/upstream.mjs:114-130`）；
+- `sdd_upstream` 的 `specify_init` 或 `install_bug_ext` action（`src/core/upstream.mjs:155-172`）；
 - 任何 `sdd_bridge` 变更操作：`install_overrides`、`check_task`、`sync_index`（`src/core/bridge.mjs:142-230`）；
 - 任何自动 DSH 重启或交互式确认提示。
 
@@ -141,7 +141,7 @@ export async function refreshInstalledKit(args = {}, deps = {}) -> KitCopyResult
 | 源校验失败（缺少 name/index、符号链接、路径逃逸） | `dsh-sdd-kit` | `failed` | `Invalid dsh-sdd-kit source:` |
 | 暂存复制或重命名失败 | `dsh-sdd-kit` | `failed` | `dsh-sdd-kit profile copy failed:` |
 
-错误会随报告返回，而不会用于中止整个调用。工具本身在组件级失败时不应抛出异常；只有程序员错误（未知 action）才沿用现有行为（`src/core/upstream.mjs:132-134`）。
+错误会随报告返回，而不会用于中止整个调用。工具本身在组件级失败时不应抛出异常；只有程序员错误（未知 action）才沿用现有行为（`src/core/upstream.mjs:217-219`）。
 
 ## 5. Acceptance traceability
 

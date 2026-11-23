@@ -2,11 +2,41 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 export const DEFAULT_SUPERPOWERS_REPO = 'https://github.com/obra/superpowers.git';
+
+/** Bundled Spec Kit extension source directory shipped inside this package. */
+export const BUNDLED_EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');
+
+/** Extension id/version mirrored from spec-kit-extension/extension.yml (kept as constants to avoid a YAML parser). */
+export const HOOKS_EXTENSION = Object.freeze({ id: 'superpowers-hooks', version: '0.1.0' });
+
+/** Hook events in the fixed order the extension declares them (data-model INV-11). */
+export const HOOKS_EXTENSION_EVENTS = Object.freeze([
+  'before_implement',
+  'after_implement',
+  'before_bug_fix',
+  'after_bug_fix',
+]);
+
+/** Expected integration for new projects; `.dsh/skills` is inside DSH's default skill roots. */
+export const EXPECTED_INTEGRATION = 'dsh';
+
+const SKILLS_DIR_BY_INTEGRATION = Object.freeze({
+  dsh: '.dsh/skills',
+  claude: '.claude/skills',
+});
+
+const INTEGRATION_MISMATCH_NOTE =
+  '当前项目的 Spec Kit 技能落在非 DSH 技能根内，DSH 可能看不到 /speckit-* 命令。'
+  + '显式执行 `specify integration switch dsh` 可切换：未修改的托管文件会被卸载重装，'
+  + '被本地修改过的文件会保留为残留，.specify/extensions.yml、templates、scripts 不受影响。';
 
 export function getDefaultSuperpowersDir() {
   return path.join(os.homedir(), '.dsh', 'upstream', 'superpowers');
@@ -36,6 +66,17 @@ async function exists(p) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function readIntegration(cwd) {
+  try {
+    const raw = await fs.readFile(path.join(cwd, '.specify', 'init-options.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    const value = parsed?.integration || parsed?.ai;
+    return typeof value === 'string' && value.trim() ? value.trim() : EXPECTED_INTEGRATION;
+  } catch {
+    return EXPECTED_INTEGRATION;
   }
 }
 
@@ -129,7 +170,51 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     return { action, cwd, command: 'specify extension add bug', ...res };
   }
 
+  if (action === 'install_hooks_ext') {
+    const extensionDir = path.resolve(args.extensionDir || BUNDLED_EXTENSION_DIR);
+    if (!(await exists(extensionDir))) {
+      return {
+        action,
+        cwd,
+        extensionDir,
+        ok: false,
+        error: `extension source not found at ${extensionDir}`,
+      };
+    }
+
+    const cliArgs = ['extension', 'add', '--dev', extensionDir, '--force'];
+    const res = await runner('specify', cliArgs, { cwd });
+    const integration = await readIntegration(cwd);
+    const skillsDir = SKILLS_DIR_BY_INTEGRATION[integration] || '.dsh/skills';
+    const skillsDirGuessed = !SKILLS_DIR_BY_INTEGRATION[integration];
+    const report = {
+      action,
+      cwd,
+      extensionDir,
+      command: `specify ${cliArgs.join(' ')}`,
+      ...res,
+      extension: { ...HOOKS_EXTENSION },
+      integration,
+      skillsDir,
+      skillsDirInDshRoots: integration === EXPECTED_INTEGRATION,
+      integrationMismatch:
+        integration === EXPECTED_INTEGRATION
+          ? null
+          : {
+              current: integration,
+              expected: EXPECTED_INTEGRATION,
+              switchCommand: `specify integration switch ${EXPECTED_INTEGRATION}`,
+              note: INTEGRATION_MISMATCH_NOTE,
+            },
+      hooks: [...HOOKS_EXTENSION_EVENTS],
+      restartRequired: false,
+    };
+    if (skillsDirGuessed) report.skillsDirGuessed = true;
+    if (args.force === false) report.forceIgnored = true;
+    return report;
+  }
+
   throw new Error(
-    `Unknown sdd_upstream action "${action}". Expected one of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext.`
+    `Unknown sdd_upstream action "${action}". Expected one of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext.`
   );
 }

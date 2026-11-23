@@ -18,7 +18,7 @@
 
 **Language/Version**：Node.js >=18，使用原生 ESM（`package.json:44-46`、constitution.md:78）；不使用 TypeScript，不使用转译器。
 
-**Primary Dependencies**：仅 Node 内置模块（`node:fs/promises`、`node:path`、`node:os`、`node:crypto`、经现有 runner 使用的 `node:child_process`）。现有内部 API：`src/core/upstream.mjs:54` 中的 `runUpstream(args, runner)`、`runBridge`（仅只读用法）、`src/register.mjs:9` 中的 `registerSddTools`。上游事实来源仍为 `specify` CLI 与 `~/.dsh/upstream/superpowers` Git 镜像。不新增 npm 依赖（constitution.md:78）。
+**Primary Dependencies**：仅 Node 内置模块（`node:fs/promises`、`node:path`、`node:os`、`node:crypto`、经现有 runner 使用的 `node:child_process`）。现有内部 API：`src/core/upstream.mjs:95` 中的 `runUpstream(args, runner)`、`runBridge`（仅只读用法）、`src/register.mjs:9` 中的 `registerSddTools`。上游事实来源仍为 `specify` CLI 与 `~/.dsh/upstream/superpowers` Git 镜像。不新增 npm 依赖（constitution.md:78）。
 
 **Storage**：仅本地文件系统。读写目标：Superpowers 镜像（`~/.dsh/upstream/superpowers`）、已安装的 profile 副本（`$DSH_PROFILE_DIR/node_modules/dsh-sdd-kit`，回退为 `~/.dsh/profiles/${DSH_PROFILE:-web}/node_modules/dsh-sdd-kit`），以及该 profile 副本旁的临时暂存目录。无数据库。`cwd` 下的项目文件（`specs/`、`plan.md`、`tasks.md`、应用源码、`.specify/`）为只读或不被触碰。
 
@@ -28,12 +28,12 @@
 
 **Project Type**: DSH 插件：当前章程已允许 3 个面向用户的技能 + 2 个轻量 Host 工具；本功能新增编排模块和 profile-copy 胶水模块，不引入并行更新器。
 
-**Performance Goals**: 单次非交互调用检查全部三个组件并在五分钟内完成（[spec.md:28](specs/001-sdd-update-command/spec.md#L28)、[spec.md:36](specs/001-sdd-update-command/spec.md#L36)）。现有上游命令已有 120 s 单命令超时（`src/core/upstream.mjs:19`）；T014 增加耗时验证与网络/缓存前提记录。
+**Performance Goals**: 单次非交互调用检查全部三个组件并在五分钟内完成（[spec.md:28](specs/001-sdd-update-command/spec.md#L28)、[spec.md:36](specs/001-sdd-update-command/spec.md#L36)）。现有上游命令已有 120 s 单命令超时（`src/core/upstream.mjs:49`）；T014 增加耗时验证与网络/缓存前提记录。
 
 **Constraints**:
 - 零分叉：MUST 委托给现有 `runUpstream` 动作；MUST NOT 重新实现 `specify`/`git` 更新逻辑（constitution.md:24-37；spec.md:27、:47）。
 - Surface cap: 章程 v2.1.0 已允许三个命名技能 + 两个 Host 工具，本功能不新增工具、不新增命令机制（见 Constitution Check）。
-- 不从 `/sdd-update` 调用 `specify_init` 或 `install_bug_ext`；它们会写入 `.specify/`（src/core/upstream.mjs:114-130），并会破坏 REQ-06（spec.md:21）。
+- 不从 `/sdd-update` 调用 `specify_init` 或 `install_bug_ext`；它们会写入 `.specify/`（src/core/upstream.mjs:155-172），并会破坏 REQ-06（spec.md:21）。
 - 不调用 `sdd_bridge` 的变更类操作（`install_overrides`、`check_task`、`sync_index`，见 src/core/bridge.mjs:142-230）。
 - profile 文件以硬链接指向 pnpm 内容寻址存储；绝不原地写入，绝不对整个目标执行 `rm -rf`（constitution.md:81-83；来自更新调研）。
 - 仅凭版本号无法检测漂移：`package.json` 由 T002 升到 `0.3.0`，但已安装的 profile 副本可能仍携带版本相同或不同的旧目录树，因此变更检测 MUST 使用树哈希。

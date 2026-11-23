@@ -21,7 +21,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'string',
             required: true,
             description:
-              'One of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, update_all.',
+              'One of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, update_all.',
           },
           cwd: {
             type: 'string',
@@ -29,7 +29,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           },
           integration: {
             type: 'string',
-            description: 'Spec Kit integration key for specify_init (default "claude").',
+            description: 'Spec Kit integration key for specify_init (default "dsh", which writes .dsh/skills inside DSH default skill roots).',
           },
           useSkills: {
             type: 'boolean',
@@ -60,6 +60,11 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'string',
             description:
               'DSH profile root for action "update_all" (defaults to $DSH_PROFILE_DIR, then ~/.dsh/profiles/${DSH_PROFILE:-web}).',
+          },
+          extensionDir: {
+            type: 'string',
+            description:
+              'Override the Spec Kit extension source directory for action "install_hooks_ext" (defaults to the bundled spec-kit-extension/ inside this package).',
           },
         },
         output: {

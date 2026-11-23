@@ -12,8 +12,8 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Contract: [sdd-update.contract.m
 
 | Value | Meaning | Identifier source |
 | :--- | :--- | :--- |
-| `spec-kit` | GitHub Spec Kit 的 `specify` CLI | `status.specifyCli.version`（`src/core/upstream.mjs:62,:79`） |
-| `superpowers` | 本地 `obra/superpowers` Git 镜像 | `status.superpowers.head` 短 SHA，可选 `skillCount`（`src/core/upstream.mjs:67-74,:82-87`） |
+| `spec-kit` | GitHub Spec Kit 的 `specify` CLI | `status.specifyCli.version`（`src/core/upstream.mjs:103,:120`） |
+| `superpowers` | 本地 `obra/superpowers` Git 镜像 | `status.superpowers.head` 短 SHA，可选 `skillCount`（`src/core/upstream.mjs:108-115,:123-128`） |
 | `dsh-sdd-kit` | 已安装的 DSH profile 副本 | 对 allowlist 文件计算的 SHA-256 树哈希（新增） |
 
 ### Outcome
@@ -78,8 +78,8 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Contract: [sdd-update.contract.m
 | `cwd` | `string` | no | `process.cwd()` | 仓库根目录；只读边界。 |
 | `dshKitSourceDir` | `string` | no | `null` | 本地 dsh-sdd-kit 源检出。缺失 → 为 `dsh-sdd-kit` 产生 REQ-05 失败记录。 |
 | `dshProfileDir` | `string` | no | `$DSH_PROFILE_DIR`，其次 `~/.dsh/profiles/${DSH_PROFILE:-web}` | DSH profile 根目录；目标为 `<profileDir>/node_modules/dsh-sdd-kit`。 |
-| `superpowersDir` | `string` | no | `getDefaultSuperpowersDir()`（`src/core/upstream.mjs:11-13`） | 供 `status` / `sync_superpowers` 使用的镜像路径。 |
-| `repoUrl` | `string` | no | `DEFAULT_SUPERPOWERS_REPO`（`src/core/upstream.mjs:9`） | 仅在需要首次克隆时使用。 |
+| `superpowersDir` | `string` | no | `getDefaultSuperpowersDir()`（`src/core/upstream.mjs:41-43`） | 供 `status` / `sync_superpowers` 使用的镜像路径。 |
+| `repoUrl` | `string` | no | `DEFAULT_SUPERPOWERS_REPO`（`src/core/upstream.mjs:12`） | 仅在需要首次克隆时使用。 |
 | `python` | `string` | no | `'3.14'` | 全新安装 `specify-cli` 时的稳定 Python 覆盖值。 |
 
 ### KitCopyConfig

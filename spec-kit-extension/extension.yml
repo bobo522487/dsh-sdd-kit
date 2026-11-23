@@ -1,0 +1,44 @@
+schema_version: "1.0"
+extension:
+  id: superpowers-hooks
+  name: Superpowers Hooks
+  description: 把 Superpowers 执行纪律织入原生 /speckit.implement 与 /speckit-bug-fix
+  author: dsh-sdd-kit
+  version: "0.1.0"
+requires:
+  speckit_version: ">=1.4.0"
+provides:
+  commands:
+    - name: speckit.superpowers-hooks.before-implement
+      file: commands/speckit.superpowers-hooks.before-implement.md
+      description: 实现前注入严格 TDD 与根因调试纪律
+    - name: speckit.superpowers-hooks.after-implement
+      file: commands/speckit.superpowers-hooks.after-implement.md
+      description: 实现后两阶段自审并衔接 /speckit-converge
+    - name: speckit.superpowers-hooks.before-bug-fix
+      file: commands/speckit.superpowers-hooks.before-bug-fix.md
+      description: 修复前注入系统化调试与复现测试纪律
+    - name: speckit.superpowers-hooks.after-bug-fix
+      file: commands/speckit.superpowers-hooks.after-bug-fix.md
+      description: 修复后两阶段自审并衔接 /speckit-bug-test
+hooks:
+  before_implement:
+    command: speckit.superpowers-hooks.before-implement
+    optional: false
+    priority: 5
+    description: 强制加载 test-driven-development 与 systematic-debugging
+  after_implement:
+    command: speckit.superpowers-hooks.after-implement
+    optional: false
+    priority: 15
+    description: 强制加载 verification-before-completion 与 requesting-code-review
+  before_bug_fix:
+    command: speckit.superpowers-hooks.before-bug-fix
+    optional: false
+    priority: 5
+    description: 强制加载 systematic-debugging 与 test-driven-development
+  after_bug_fix:
+    command: speckit.superpowers-hooks.after-bug-fix
+    optional: false
+    priority: 15
+    description: 强制加载 verification-before-completion 与 requesting-code-review

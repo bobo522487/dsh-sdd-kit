@@ -27,17 +27,17 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 **Decision**: 在 `src/core/update.mjs` 实现 `runUpdate(args, deps)`。仅复用 `runUpstream` 的 `status`、`specify_upgrade`、`sync_superpowers` 动作，外加 `src/core/kit-copy.mjs` 中新的 `refreshInstalledKit` 胶水。在 `src/register.mjs` 增加 `action: "update_all"` 分派。此路径绝不调用会写入的 setup 命令。
 
 **Rationale / evidence**:
-- `runUpstream(args = {}, runner = defaultRunner)` 位于 `/home/bobo/Projects/dsh-sdd-kit/src/core/upstream.mjs:54`；第二参数允许测试注入依赖。默认 runner 失败时返回 `{ok:false,...}`（`:15-31`）而不抛错，故调用方必须检查 `ok`。
-- 默认 Superpowers 镜像路径为 `~/.dsh/upstream/superpowers`，由 `src/core/upstream.mjs:9-13` 的 `getDefaultSuperpowersDir()` 提供；不硬编码机器相关路径。
+- `runUpstream(args = {}, runner = defaultRunner)` 位于 `/home/bobo/Projects/dsh-sdd-kit/src/core/upstream.mjs:95`；第二参数允许测试注入依赖。默认 runner 失败时返回 `{ok:false,...}`（`:45-61`）而不抛错，故调用方必须检查 `ok`。
+- 默认 Superpowers 镜像路径为 `~/.dsh/upstream/superpowers`，由 `src/core/upstream.mjs:41-43` 的 `getDefaultSuperpowersDir()` 提供；不硬编码机器相关路径。
 - 标识可得性（通过两次 `status` 调用取得 before/after）：
 
 | Component | Before | Updater | After | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| Spec Kit CLI | `status.specifyCli.version`，来自 `specify --version`（`src/core/upstream.mjs:62,:79`）；`uv.version` / `git.version` 见 `:63-64,:80-81` | `specify_upgrade`（`:104-112`）返回 `mode`、`python`、`command`、`ok/code/stdout/stderr`，但不返回版本 | 重跑 `status` → `specifyCli.version` | 全新安装固定稳定 Python（默认 `3.14`，可覆盖）。 |
-| Superpowers mirror | `status.superpowers.head`，即 `git -C <dir> rev-parse --short HEAD` 的短 SHA（`:67-74,:82-87`），另有 `skillCount`、`installed`、`dir` | `sync_superpowers`（`:91-102`）返回 `mode: 'pull'|'clone'`、`skillCount`、`ok/...` | 重跑 `status` → 新的 `head` / `skillCount` | 首次克隆会改变已挂载技能；需要重启。 |
+| Spec Kit CLI | `status.specifyCli.version`，来自 `specify --version`（`src/core/upstream.mjs:103,:120`）；`uv.version` / `git.version` 见 `:104-105,:121-122` | `specify_upgrade`（`:145-153`）返回 `mode`、`python`、`command`、`ok/code/stdout/stderr`，但不返回版本 | 重跑 `status` → `specifyCli.version` | 全新安装固定稳定 Python（默认 `3.14`，可覆盖）。 |
+| Superpowers mirror | `status.superpowers.head`，即 `git -C <dir> rev-parse --short HEAD` 的短 SHA（`:108-115,:123-128`），另有 `skillCount`、`installed`、`dir` | `sync_superpowers`（`:91-102`）返回 `mode: 'pull'|'clone'`、`skillCount`、`ok/...` | 重跑 `status` → 新的 `head` / `skillCount` | 首次克隆会改变已挂载技能；需要重启。 |
 | dsh-sdd-kit | 对 allowlist 相对路径与内容计算 SHA-256 树哈希；`package.json` 版本仅作信息展示（`package.json:3`，`0.3.0`） | `refreshInstalledKit`（新增） | 复制后重新哈希；返回 `{changedFiles, mode}` | 已安装目录无 `.git`，其版本无法证明树一致，故以哈希为准。 |
 
-- `/sdd-update` 禁止调用：`specify_init`（`src/core/upstream.mjs:114-125`，会传 `--force` 并写入 `.specify/`）与 `install_bug_ext`（`:127-130`，执行 `specify extension add bug`）；以及全部 `sdd_bridge` 写入动作：`installOverrides`（`src/core/bridge.mjs:142-153`）、`checkTask`（`:155-196`）、`syncIndex`（`:198-230`）。这些会违反 REQ-06（`spec.md:21`）与 `spec.md:26-27` 的 Non-Goals。`inspectRepo`（`src/core/bridge.mjs:61-140`）为只读，但本命令不需要。
+- `/sdd-update` 禁止调用：`specify_init`（`src/core/upstream.mjs:155-167`，会传 `--force` 并写入 `.specify/`）与 `install_bug_ext`（`:168-172`，执行 `specify extension add bug`）；以及全部 `sdd_bridge` 写入动作：`installOverrides`（`src/core/bridge.mjs:142-153`）、`checkTask`（`:155-196`）、`syncIndex`（`:198-230`）。这些会违反 REQ-06（`spec.md:21`）与 `spec.md:26-27` 的 Non-Goals。`inspectRepo`（`src/core/bridge.mjs:61-140`）为只读，但本命令不需要。
 - REQ-02 采用幂等更新器 + 标识比较，因为薄上游表面没有只读的“最新版本”探测。`git pull --ff-only` 与 `uv tool upgrade specify-cli` 在已最新时即为空操作。严格的 `git ls-remote` / PyPI 查询会重复上游网络逻辑（违反零分叉）。可观测的 AC-02 得以保留：结果为 `unchanged` 且无有效变化；`specify_upgrade` 命令调用本身仍作为薄上游委托保留。
 
 **Alternatives rejected**: 解析 `pull`/`uv` 的 stdout（脆弱）；新增只读的 `check_latest` 上游动作（新增并行网络逻辑）；版本等于本地就跳过调用更新器（无网络则无法得知“最新”）。
@@ -59,7 +59,7 @@ Date: 2026-11-23 | Spec: [spec.md](./spec.md) | Constitution: [constitution.md](
 
 **Decision**: 三个组件任务彼此独立执行（例如 `Promise.allSettled`）并各自 `try/catch`；始终返回三条记录。结果取 `unchanged` | `updated` | `failed`。仅当所有结果均为 `unchanged` 或 `updated` 时总体 `ok` 为 true。包含 `errors[]`（组件名 + 消息）与 `requiresRestart` 布尔值。
 
-**Rationale**: REQ-03（`spec.md:18`）与 AC-03（`spec.md:33`）要求单个失败不得中断其他组件，且总体失败必须可见。上游失败以 `{ok:false}` 返回（`src/core/upstream.mjs:23-30`），kit 复制失败在本地返回或抛出；两者都必须归一化为同一记录形状。绝不把失败组件藏在总体成功之下（Non-Goal `spec.md:27`）。
+**Rationale**: REQ-03（`spec.md:18`）与 AC-03（`spec.md:33`）要求单个失败不得中断其他组件，且总体失败必须可见。上游失败以 `{ok:false}` 返回（`src/core/upstream.mjs:53-60`），kit 复制失败在本地返回或抛出；两者都必须归一化为同一记录形状。绝不把失败组件藏在总体成功之下（Non-Goal `spec.md:27`）。
 
 **Alternatives rejected**: 顺序 `await` 并在首个错误抛出（违反 REQ-03）；单一聚合 try/catch（丢失逐组件识别）。
 
