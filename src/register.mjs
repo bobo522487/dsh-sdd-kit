@@ -15,7 +15,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
       defineTool({
         name: 'sdd_upstream',
         description:
-          'Delegate directly to upstream GitHub Spec Kit (specify CLI) and sync the local obra/superpowers Git mirror (~/.dsh/upstream/superpowers) without reimplementing either tool. Use action "update_all" to check and update Spec Kit, Superpowers, and the installed dsh-sdd-kit profile copy in one invocation.',
+          'Delegate directly to upstream GitHub Spec Kit (specify CLI) and sync the local obra/superpowers Git mirror (~/.dsh/upstream/superpowers) without reimplementing either tool. Use action "update_all" to check and update both upstream layers (Spec Kit + Superpowers) in one invocation; upgrading dsh-sdd-kit itself is the package manager\'s job (dsh plugin update dsh-sdd-kit --latest, then restart DSH).',
         parameters: {
           action: {
             type: 'string',
@@ -50,16 +50,6 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           repoUrl: {
             type: 'string',
             description: 'Override upstream superpowers git URL.',
-          },
-          dshKitSourceDir: {
-            type: 'string',
-            description:
-              'Local dsh-sdd-kit checkout to copy into the DSH profile for action "update_all" (required for that component).',
-          },
-          dshProfileDir: {
-            type: 'string',
-            description:
-              'DSH profile root for action "update_all" (defaults to $DSH_PROFILE_DIR, then ~/.dsh/profiles/${DSH_PROFILE:-web}).',
           },
           extensionDir: {
             type: 'string',

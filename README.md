@@ -51,7 +51,7 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 ## 日常流程
 
 1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here --integration dsh` 与 `specify extension add bug`、装入本仓库内置的 `superpowers-hooks` 扩展、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
-2. **刷新全部三层**：`/sdd-update` 在一次调用中检查并更新三层——`specify-cli`、`~/.dsh/upstream/superpowers` 镜像，以及安装在当前 DSH profile 中的 dsh-sdd-kit 副本——并输出每个组件的 `before → after` 报告与所需的重启提示。该技能不会自动查找本地检出：必须显式传入 `dshKitSourceDir=/path/to/dsh-sdd-kit`，否则 dsh-sdd-kit 组件会以 “No dsh-sdd-kit source configured” 失败，其余两层仍照常报告。
+2. **刷新两层上游**：`/sdd-update` 在一次调用中检查并更新两层上游——`specify-cli` 与 `~/.dsh/upstream/superpowers` 镜像——并输出每个组件的 `before → after` 报告与所需的重启提示。**插件自身不在其职责内**：升级 dsh-sdd-kit 请走上文的包管理器路径（`dsh plugin --profile <profile> update dsh-sdd-kit --latest` + 重启 DSH），插件不复制、不替换已安装的 profile 副本。
 3. **开发特性**：
    - 用原生 Spec Kit 规划：`/speckit.constitution` → `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze`
    - 用原生 `/speckit.implement` 执行。内置扩展的 `before_implement` 钩子会在写第一行源码前自动拉起 Superpowers 的严格 TDD 与根因调试纪律，`after_implement` 钩子在完成后做两阶段自审并提示 `/speckit.converge`；每个任务仍在当前分支上原子提交。

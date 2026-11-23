@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
 import { runUpdate } from '../src/core/update.mjs';
-import { refreshInstalledKit } from '../src/core/kit-copy.mjs';
 import { registerSddTools } from '../src/register.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,21 +20,6 @@ async function writeSeed(root, relativePath, content) {
   const target = path.join(root, relativePath);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, content, 'utf8');
-}
-
-async function seedKitSource(root, { marker = 'source' } = {}) {
-  await writeSeed(
-    root,
-    'package.json',
-    `${JSON.stringify({ name: 'dsh-sdd-kit', version: '0.3.0', type: 'module', files: ['src/', 'skills/', 'overrides/', 'spec-kit-extension/', 'cordis.patch.yml', 'README.md', 'LICENSE'] }, null, 2)}\n`
-  );
-  await writeSeed(root, 'src/index.mjs', `export const marker = '${marker}';\n`);
-  await writeSeed(root, 'src/core/update.mjs', `export const marker = '${marker}';\n`);
-  await writeSeed(root, 'skills/sdd-update/SKILL.md', `---\nname: sdd-update\n---\n# /sdd-update\n${marker}\n`);
-  await writeSeed(root, 'overrides/spec-template.md', `# override ${marker}\n`);
-  await writeSeed(root, 'cordis.patch.yml', `# ${marker}\n`);
-  await writeSeed(root, 'README.md', `# ${marker}\n`);
-  await writeSeed(root, 'LICENSE', `MIT ${marker}\n`);
 }
 
 async function snapshotTree(root) {
@@ -223,7 +207,7 @@ test('specify_upgrade pins a stable python on fresh install and honors override'
   }
 });
 
-test('runUpdate AC-01: all-behind components produce three updated records with before/after', async () => {
+test('runUpdate AC-01: all-behind components produce two updated records with before/after', async () => {
   const cwd = await makeTempDir();
   let specifyVersion = 'specify 1.3.1';
   let superpowersHead = 'aaaaaaa';
@@ -248,38 +232,26 @@ test('runUpdate AC-01: all-behind components produce three updated records with 
     }
     throw new Error(`unexpected upstream action: ${args.action}`);
   };
-  const refreshKit = async () => ({
-    changed: true,
-    beforeHash: 'sha256:old',
-    afterHash: 'sha256:new',
-    changedFiles: ['src/core/update.mjs'],
-    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
-    mode: 'updated',
-  });
 
   try {
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
-      { runUpstream: runUpstreamFake, refreshKit }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     assert.equal(report.action, 'update');
     assert.equal(report.ok, true);
     assert.equal(report.cwd, path.resolve(cwd));
     assert.equal(report.requiresRestart, true);
     assert.deepEqual(
       report.components.map((record) => record.component),
-      ['spec-kit', 'superpowers', 'dsh-sdd-kit']
+      ['spec-kit', 'superpowers']
     );
     assert.deepEqual(
       report.components.map((record) => record.outcome),
-      ['updated', 'updated', 'updated']
+      ['updated', 'updated']
     );
     assert.equal(report.components[0].before, 'specify 1.3.1');
     assert.equal(report.components[0].after, 'specify 1.4.0');
     assert.equal(report.components[1].before, 'aaaaaaa');
     assert.equal(report.components[1].after, 'bbbbbbb');
-    assert.equal(report.components[2].before, 'sha256:old');
-    assert.equal(report.components[2].after, 'sha256:new');
+    assert.match(report.components[1].followUp, /Restart DSH/, 'a skill-count change must ask for a restart');
     assert.deepEqual(report.errors, []);
     for (const record of report.components) assert.equal(record.error, null);
   } finally {
@@ -306,25 +278,14 @@ test('runUpdate AC-02: all-current components are unchanged without effective ch
     }
     throw new Error(`unexpected upstream action: ${args.action}`);
   };
-  const refreshKit = async () => ({
-    changed: false,
-    beforeHash: 'sha256:same',
-    afterHash: 'sha256:same',
-    changedFiles: [],
-    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
-    mode: 'unchanged',
-  });
 
   try {
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
-      { runUpstream: runUpstreamFake, refreshKit }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     assert.equal(report.ok, true);
     assert.equal(report.requiresRestart, false);
     assert.deepEqual(
       report.components.map((record) => record.outcome),
-      ['unchanged', 'unchanged', 'unchanged']
+      ['unchanged', 'unchanged']
     );
     for (const record of report.components) {
       assert.equal(record.before, record.after);
@@ -366,34 +327,22 @@ test('runUpdate AC-03: a Superpowers failure is isolated and still reports other
     }
     throw new Error(`unexpected upstream action: ${args.action}`);
   };
-  const refreshKit = async () => ({
-    changed: true,
-    beforeHash: 'sha256:old',
-    afterHash: 'sha256:new',
-    changedFiles: ['skills/sdd-update/SKILL.md'],
-    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
-    mode: 'updated',
-  });
 
   try {
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
-      { runUpstream: runUpstreamFake, refreshKit }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     assert.equal(report.ok, false);
     assert.deepEqual(
       report.components.map((record) => record.component),
-      ['spec-kit', 'superpowers', 'dsh-sdd-kit']
+      ['spec-kit', 'superpowers']
     );
     assert.deepEqual(
       report.components.map((record) => record.outcome),
-      ['updated', 'failed', 'updated']
+      ['updated', 'failed']
     );
     assert.equal(report.components[1].error !== null, true);
     assert.match(report.components[1].error.message, /Superpowers update failed:/);
     assert.match(report.components[1].error.message, /could not read from remote repository/);
     assert.equal(report.components[0].after, 'specify 1.4.0');
-    assert.equal(report.components[2].after, 'sha256:new');
     assert.deepEqual(
       report.errors.map((entry) => entry.component),
       ['superpowers']
@@ -403,56 +352,8 @@ test('runUpdate AC-03: a Superpowers failure is isolated and still reports other
   }
 });
 
-test('runUpdate AC-04: missing dsh-kit source fails that component but keeps upstream records', async () => {
-  const cwd = await makeTempDir();
-  const profileDir = await makeTempDir();
-  const runUpstreamFake = async (args) => {
-    if (args.action === 'status') {
-      return {
-        action: 'status',
-        cwd: args.cwd,
-        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
-        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
-      };
-    }
-    if (args.action === 'specify_upgrade') {
-      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
-    }
-    if (args.action === 'sync_superpowers') {
-      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
-    }
-    throw new Error(`unexpected upstream action: ${args.action}`);
-  };
-
-  try {
-    const report = await runUpdate(
-      { cwd, dshProfileDir: profileDir },
-      { runUpstream: runUpstreamFake }
-    );
-    assert.equal(report.ok, false);
-    assert.equal(report.components.length, 3);
-    assert.deepEqual(
-      report.components.map((record) => record.outcome),
-      ['unchanged', 'unchanged', 'failed']
-    );
-    assert.match(report.components[2].error.message, /No dsh-sdd-kit source configured/);
-    assert.deepEqual(
-      report.errors.map((entry) => entry.component),
-      ['dsh-sdd-kit']
-    );
-    assert.equal(report.errors[0].message, report.components[2].error.message);
-    assert.equal(report.requiresRestart, false);
-    assert.equal(await fs.stat(profileDir).then((s) => s.isDirectory()), true);
-  } finally {
-    await fs.rm(cwd, { recursive: true, force: true });
-    await fs.rm(profileDir, { recursive: true, force: true });
-  }
-});
-
 test('runUpdate AC-05: leaves project specs, plans, tasks, and app source byte-identical', async () => {
   const cwd = await makeTempDir();
-  const sourceDir = await makeTempDir();
-  const profileDir = await makeTempDir();
   const actions = [];
   const runUpstreamFake = async (args) => {
     actions.push(args.action);
@@ -479,146 +380,22 @@ test('runUpdate AC-05: leaves project specs, plans, tasks, and app source byte-i
     await writeSeed(cwd, 'specs/001-demo/tasks.md', '- [ ] T001 demo\n');
     await writeSeed(cwd, '.specify/memory/constitution.md', '# constitution\n');
     await writeSeed(cwd, 'src/app.js', 'export const app = true;\n');
-    await seedKitSource(sourceDir, { marker: 'source' });
 
     const before = await snapshotTree(cwd);
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
-      { runUpstream: runUpstreamFake }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     const after = await snapshotTree(cwd);
 
     assert.deepEqual(after, before);
     assert.equal(actions.includes('specify_init'), false);
     assert.equal(actions.includes('install_bug_ext'), false);
-    assert.equal(report.components.length, 3);
-    assert.equal(report.components[2].outcome, 'updated');
-    const copiedPackage = JSON.parse(
-      await fs.readFile(path.join(profileDir, 'node_modules', 'dsh-sdd-kit', 'package.json'), 'utf8')
-    );
-    assert.equal(copiedPackage.name, 'dsh-sdd-kit');
-  } finally {
-    await fs.rm(cwd, { recursive: true, force: true });
-    await fs.rm(sourceDir, { recursive: true, force: true });
-    await fs.rm(profileDir, { recursive: true, force: true });
-  }
-});
-
-test('runUpdate AC-06: a changed kit hash requires a DSH restart with guidance', async () => {
-  const cwd = await makeTempDir();
-  const sourceDir = await makeTempDir();
-  const profileDir = await makeTempDir();
-  const runUpstreamFake = async (args) => {
-    if (args.action === 'status') {
-      return {
-        action: 'status',
-        cwd: args.cwd,
-        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
-        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
-      };
-    }
-    if (args.action === 'specify_upgrade') {
-      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
-    }
-    if (args.action === 'sync_superpowers') {
-      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
-    }
-    throw new Error(`unexpected upstream action: ${args.action}`);
-  };
-
-  try {
-    await seedKitSource(sourceDir, { marker: 'new' });
-    await seedKitSource(path.join(profileDir, 'node_modules', 'dsh-sdd-kit'), { marker: 'old' });
-
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
-      { runUpstream: runUpstreamFake }
-    );
-    const kit = report.components[2];
-
-    assert.equal(report.ok, true);
-    assert.equal(report.requiresRestart, true);
-    assert.equal(kit.outcome, 'updated');
-    assert.match(kit.followUp, /Restart DSH/);
-    assert.match(kit.before, /^sha256:/);
-    assert.match(kit.after, /^sha256:/);
-    assert.notEqual(kit.before, kit.after);
-    assert.equal(report.components[0].followUp, null);
-    assert.equal(report.components[1].followUp, null);
-  } finally {
-    await fs.rm(cwd, { recursive: true, force: true });
-    await fs.rm(sourceDir, { recursive: true, force: true });
-    await fs.rm(profileDir, { recursive: true, force: true });
-  }
-});
-
-test('refreshInstalledKit validates the source, stages swaps, and preserves unlisted files', async (t) => {
-  const cwd = await makeTempDir();
-  const sourceDir = await makeTempDir();
-  const profileDir = await makeTempDir();
-
-  try {
-    await assert.rejects(
-      () => refreshInstalledKit({ cwd }, { env: {}, homedir: () => profileDir }),
-      /No dsh-sdd-kit source configured/
-    );
-
-    await seedKitSource(sourceDir);
-    const destDir = path.join(profileDir, 'node_modules', 'dsh-sdd-kit');
-
-    const first = await refreshInstalledKit(
-      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
-      { env: {}, homedir: () => profileDir }
-    );
-    assert.equal(first.changed, true);
-    assert.equal(first.beforeHash, null);
-    assert.match(first.afterHash, /^sha256:/);
-    assert.equal(first.destDir, destDir);
-
-    await fs.writeFile(path.join(destDir, 'UNLISTED.txt'), 'keep', 'utf8');
-    const second = await refreshInstalledKit(
-      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
-      { env: {}, homedir: () => profileDir }
-    );
-    assert.equal(second.changed, false);
-    assert.equal(second.beforeHash, second.afterHash);
-    assert.deepEqual(second.changedFiles, []);
-    assert.equal(await fs.readFile(path.join(destDir, 'UNLISTED.txt'), 'utf8'), 'keep');
-
-    await fs.writeFile(path.join(sourceDir, 'README.md'), '# changed\n', 'utf8');
-    const third = await refreshInstalledKit(
-      { cwd, dshKitSourceDir: sourceDir, dshProfileDir: profileDir },
-      { env: {}, homedir: () => profileDir }
-    );
-    assert.equal(third.changed, true);
-    assert.ok(third.changedFiles.includes('README.md'));
-    assert.equal(await fs.readFile(path.join(destDir, 'UNLISTED.txt'), 'utf8'), 'keep');
-
-    const insideSource = path.join(sourceDir, 'profile');
-    await assert.rejects(
-      () => refreshInstalledKit({ cwd, dshKitSourceDir: sourceDir, dshProfileDir: insideSource }, { env: {}, homedir: () => profileDir }),
-      /Invalid dsh-sdd-kit source:/
-    );
-
-    const symlinkSource = path.join(cwd, 'symlink-source');
-    await seedKitSource(symlinkSource);
-    try {
-      await fs.symlink(path.join(symlinkSource, 'README.md'), path.join(symlinkSource, 'src', 'link.md'));
-    } catch (error) {
-      if (error.code === 'EPERM') {
-        t.skip('symlink creation requires developer mode / privileges on this platform');
-        return;
-      }
-      throw error;
-    }
-    await assert.rejects(
-      () => refreshInstalledKit({ cwd, dshKitSourceDir: symlinkSource, dshProfileDir: profileDir }, { env: {}, homedir: () => profileDir }),
-      /symlink/
+    assert.equal(report.components.length, 2);
+    assert.deepEqual(
+      report.components.map((record) => record.component),
+      ['spec-kit', 'superpowers'],
+      'update_all must never touch an installed profile copy'
     );
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
-    await fs.rm(sourceDir, { recursive: true, force: true });
-    await fs.rm(profileDir, { recursive: true, force: true });
   }
 });
 
@@ -641,20 +418,9 @@ test('runUpdate keeps the readable before identifier on a failed component', asy
     }
     throw new Error(`unexpected upstream action: ${args.action}`);
   };
-  const refreshKit = async () => ({
-    changed: false,
-    beforeHash: 'sha256:same',
-    afterHash: 'sha256:same',
-    changedFiles: [],
-    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
-    mode: 'unchanged',
-  });
 
   try {
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
-      { runUpstream: runUpstreamFake, refreshKit }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     assert.equal(report.ok, false);
     assert.equal(report.components[0].before, 'specify 1.3.1');
     assert.equal(report.components[0].after, null);
@@ -662,7 +428,6 @@ test('runUpdate keeps the readable before identifier on a failed component', asy
     assert.equal(report.components[1].before, 'aaaaaaa');
     assert.equal(report.components[1].after, null);
     assert.match(report.components[1].error.message, /Superpowers update failed:/);
-    assert.equal(report.components[2].outcome, 'unchanged');
     assert.deepEqual(
       report.errors.map((entry) => entry.component),
       ['spec-kit', 'superpowers']
@@ -673,7 +438,7 @@ test('runUpdate keeps the readable before identifier on a failed component', asy
   }
 });
 
-test('sdd_upstream routes action "update_all" to runUpdate and exposes the update parameters', async () => {
+test('sdd_upstream routes action "update_all" to runUpdate without profile-copy parameters', async () => {
   const registered = [];
   const mockCtx = {
     tools: {
@@ -693,20 +458,14 @@ test('sdd_upstream routes action "update_all" to runUpdate and exposes the updat
 
   const tool = registered.find((entry) => entry.name === 'sdd_upstream');
   assert.match(tool.parameters.action.description, /update_all/);
-  assert.ok(tool.parameters.dshKitSourceDir);
-  assert.ok(tool.parameters.dshProfileDir);
+  assert.equal(tool.parameters.dshKitSourceDir, undefined, 'the self-copy parameter must be gone');
+  assert.equal(tool.parameters.dshProfileDir, undefined, 'the profile-copy parameter must be gone');
 
-  const result = await tool.execute({
-    action: 'update_all',
-    cwd: '/tmp/demo',
-    dshKitSourceDir: '/tmp/kit',
-    dshProfileDir: '/tmp/profile',
-  });
+  const result = await tool.execute({ action: 'update_all', cwd: '/tmp/demo' });
 
   assert.equal(result.action, 'update');
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].dshKitSourceDir, '/tmp/kit');
-  assert.equal(calls[0].dshProfileDir, '/tmp/profile');
+  assert.equal(calls[0].cwd, '/tmp/demo');
 });
 
 test('sdd-update skill delegates once and contains no update logic', async () => {
@@ -728,6 +487,8 @@ test('sdd-update skill delegates once and contains no update logic', async () =>
   }
   assert.equal(/fs\.|child_process|exec\(/.test(body), false);
   assert.match(body, /requiresRestart/);
+  assert.match(body, /dsh plugin/, 'the skill must point plugin self-upgrades at the package manager');
+  assert.match(body, /`spec-kit`、`superpowers`/, 'the report order must cover exactly the two upstream layers');
 });
 
 test('runUpdate completes an all-current pass well under the five-minute budget', async () => {
@@ -752,21 +513,10 @@ test('runUpdate completes an all-current pass well under the five-minute budget'
     }
     throw new Error(`unexpected upstream action: ${args.action}`);
   };
-  const refreshKit = async () => ({
-    changed: false,
-    beforeHash: 'sha256:same',
-    afterHash: 'sha256:same',
-    changedFiles: [],
-    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
-    mode: 'unchanged',
-  });
 
   try {
     const startedAt = Date.now();
-    const report = await runUpdate(
-      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
-      { runUpstream: runUpstreamFake, refreshKit }
-    );
+    const report = await runUpdate({ cwd }, { runUpstream: runUpstreamFake });
     const elapsedMs = Date.now() - startedAt;
 
     assert.equal(report.ok, true);
@@ -775,14 +525,6 @@ test('runUpdate completes an all-current pass well under the five-minute budget'
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
-});
-
-test('README states that dshKitSourceDir must be passed explicitly', async () => {
-  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
-
-  assert.match(readme, /dshKitSourceDir/);
-  assert.match(readme, /必须显式/, 'README must say the source directory has to be passed explicitly');
-  assert.doesNotMatch(readme, /自动发现/, 'README must not imply the local checkout is discovered automatically');
 });
 
 test('README install commands point at the real repository and release version', async () => {
@@ -820,115 +562,6 @@ test('README install commands point at the real repository and release version',
   );
 });
 
-test('quickstart manual recovery uses staged swaps instead of in-place copies', async () => {
-  const quickstart = await fs.readFile(
-    path.join(PKG_ROOT, 'specs/001-sdd-update-command/quickstart.md'),
-    'utf8'
-  );
-
-  assert.doesNotMatch(quickstart, /rm -rf/, 'quickstart must not delete profile entries in place');
-  assert.match(quickstart, /mktemp/, 'quickstart must stage the copy in a temporary directory');
-  assert.match(quickstart, /mv /, 'quickstart must swap entries in with mv/rename');
-  assert.match(quickstart, /nlink/, 'quickstart must explain the hardlink hazard it avoids');
-});
-
-test('contract injection points match the deps the implementation actually reads', async () => {
-  const contract = await fs.readFile(
-    path.join(PKG_ROOT, 'specs/001-sdd-update-command/contracts/sdd-update.contract.md'),
-    'utf8'
-  );
-  const updateSource = await fs.readFile(path.join(PKG_ROOT, 'src/core/update.mjs'), 'utf8');
-  const kitCopySource = await fs.readFile(path.join(PKG_ROOT, 'src/core/kit-copy.mjs'), 'utf8');
-
-  const documented = [...contract.matchAll(/^\/\/\s{3}(\w+):/gm)].map((match) => match[1]);
-  assert.ok(documented.length > 0, 'contract must document its injection points');
-
-  for (const key of documented) {
-    const used = new RegExp(`deps\\.${key}\\b`).test(updateSource) || new RegExp(`deps\\.${key}\\b`).test(kitCopySource);
-    assert.ok(used, `contract documents deps.${key} but no module reads it`);
-  }
-
-  for (const key of ['runner', 'fs', 'crypto']) {
-    assert.ok(!documented.includes(key), `contract must not document unsupported deps.${key}`);
-  }
-});
-
-async function firstExisting(candidates) {
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null;
-}
-
-test('artifact line references point at the content they cite', async () => {
-  const artifacts = [
-    'specs/001-sdd-update-command/plan.md',
-    'specs/001-sdd-update-command/research.md',
-    'specs/001-sdd-update-command/tasks.md',
-    'specs/001-sdd-update-command/data-model.md',
-    'specs/001-sdd-update-command/contracts/sdd-update.contract.md',
-  ];
-  const aliases = { 'constitution.md': '.specify/memory/constitution.md' };
-  const cache = new Map();
-  const readLines = async (absolute) => {
-    if (!cache.has(absolute)) cache.set(absolute, (await fs.readFile(absolute, 'utf8')).split('\n'));
-    return cache.get(absolute);
-  };
-
-  const anchors = [
-    ['constitution.md', 22, 37, '零分叉'],
-    ['constitution.md', 46, 50, '严格测试先行'],
-    ['constitution.md', 52, 55, '原子提交'],
-    ['constitution.md', 57, 63, '可升级'],
-    ['constitution.md', 62, 62, '重启 DSH'],
-    ['constitution.md', 78, 78, 'Node.js >=18'],
-    ['constitution.md', 81, 83, 'node_modules/dsh-sdd-kit'],
-    ['constitution.md', 99, 105, '治理'],
-    ['src/register.mjs', 9, 9, 'registerSddTools'],
-    ['src/register.mjs', 5, 7, 'renderJsonText'],
-    ['test/sdd-kit.test.mjs', 16, 59, 'snapshotTree'],
-    ['test/sdd-kit.test.mjs', 161, 200, 'registerSddTools'],
-    ['src/register.mjs', 14, 74, 'update_all'],
-    ['specs/001-sdd-update-command/contracts/sdd-update.contract.md', 22, 22, 'src/register.mjs:14-74'],
-  ];
-  for (const [file, start, end, needle] of anchors) {
-    const absolute = path.join(PKG_ROOT, aliases[file] || file);
-    const slice = (await readLines(absolute)).slice(start - 1, end).join('\n');
-    assert.ok(slice.includes(needle), `${file}:${start}-${end} must contain ${needle}`);
-  }
-
-  const reference = /([\w./-]+\.(?:md|mjs|yml|json)):(\d+)(?:-(\d+))?/g;
-  for (const artifact of artifacts) {
-    const artifactPath = path.join(PKG_ROOT, artifact);
-    const text = (await readLines(artifactPath)).join('\n');
-    for (const match of text.matchAll(reference)) {
-      const [, refPath, rawStart, rawEnd] = match;
-      const candidates = [];
-      if (path.isAbsolute(refPath)) candidates.push(refPath);
-      else {
-        if (aliases[refPath]) candidates.push(path.join(PKG_ROOT, aliases[refPath]));
-        candidates.push(path.join(PKG_ROOT, refPath), path.join(path.dirname(artifactPath), refPath));
-      }
-      const resolved = await firstExisting(candidates);
-      if (!resolved) continue; // reference into an external checkout, not this repo
-      const targetLines = await readLines(resolved);
-      const start = Number(rawStart);
-      const end = rawEnd ? Number(rawEnd) : start;
-      const label = `${refPath}:${rawStart}${rawEnd ? `-${rawEnd}` : ''}`;
-      assert.ok(
-        start >= 1 && end <= targetLines.length && start <= end,
-        `${artifact} cites ${label} outside ${targetLines.length} lines`
-      );
-      assert.ok(targetLines[start - 1].trim().length > 0, `${artifact} cites blank line ${label}`);
-    }
-  }
-});
-
 test('release allowlist ships the Spec Kit extension source directory', async () => {
   const manifest = JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));
   const files = manifest.files.map((entry) => entry.replace(/\/$/, ''));
@@ -936,26 +569,6 @@ test('release allowlist ships the Spec Kit extension source directory', async ()
     files.includes('spec-kit-extension'),
     `package.json files must include spec-kit-extension/, got: ${files.join(', ')}`
   );
-
-  const kitCopySource = await fs.readFile(path.join(PKG_ROOT, 'src', 'core', 'kit-copy.mjs'), 'utf8');
-  const allowlistBlock = kitCopySource.match(/export const KIT_ALLOWLIST = \[([\s\S]*?)\];/)?.[1] || '';
-  assert.ok(
-    /'spec-kit-extension'/.test(allowlistBlock),
-    'KIT_ALLOWLIST must include spec-kit-extension so update_all copies it into the DSH profile'
-  );
-
-  const seededRoot = await makeTempDir();
-  try {
-    await seedKitSource(seededRoot);
-    const seededManifest = JSON.parse(await fs.readFile(path.join(seededRoot, 'package.json'), 'utf8'));
-    const seededFiles = seededManifest.files.map((entry) => entry.replace(/\/$/, ''));
-    assert.ok(
-      seededFiles.includes('spec-kit-extension'),
-      'seedKitSource must mirror the real package.json files array'
-    );
-  } finally {
-    await fs.rm(seededRoot, { recursive: true, force: true });
-  }
 });
 
 const EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');

@@ -1,9 +1,10 @@
 import path from 'node:path';
 
 import { runUpstream } from './upstream.mjs';
-import { refreshInstalledKit } from './kit-copy.mjs';
 
-export const COMPONENT_NAMES = ['spec-kit', 'superpowers', 'dsh-sdd-kit'];
+// 插件自身的安装与升级归 DSH 包管理器（dsh plugin add/update --latest），
+// 本模块只刷新两层上游：specify CLI 与 obra/superpowers 镜像。
+export const COMPONENT_NAMES = ['spec-kit', 'superpowers'];
 export const OUTCOMES = ['unchanged', 'updated', 'failed'];
 
 const RESTART_FOLLOW_UP = 'Restart DSH to load updated tools/skills';
@@ -125,31 +126,12 @@ async function updateSuperpowers(upstream, args) {
   };
 }
 
-async function updateInstalledKit(refreshKit, args) {
-  const result = await refreshKit({
-    cwd: args.cwd,
-    dshKitSourceDir: args.dshKitSourceDir,
-    dshProfileDir: args.dshProfileDir,
-  });
-
-  return {
-    before: result?.beforeHash ?? null,
-    after: result?.afterHash ?? null,
-    outcome: result?.changed ? 'updated' : 'unchanged',
-    followUp: result?.changed ? 'Restart DSH to load the updated dsh-sdd-kit plugin' : null,
-    error: null,
-  };
-}
-
 export async function runUpdate(args = {}, deps = {}) {
   const upstream = deps.runUpstream ?? runUpstream;
-  const refreshKit = deps.refreshKit ?? refreshInstalledKit;
   const cwd = path.resolve(args.cwd || process.cwd());
 
   const resolvedArgs = {
     cwd,
-    dshKitSourceDir: args.dshKitSourceDir,
-    dshProfileDir: args.dshProfileDir,
     superpowersDir: args.superpowersDir,
     repoUrl: args.repoUrl,
     python: args.python,
@@ -158,7 +140,6 @@ export async function runUpdate(args = {}, deps = {}) {
   const tasks = [
     () => updateSpecKit(upstream, resolvedArgs),
     () => updateSuperpowers(upstream, resolvedArgs),
-    () => updateInstalledKit(refreshKit, resolvedArgs),
   ];
 
   const settled = await Promise.allSettled(tasks.map((task) => task()));
