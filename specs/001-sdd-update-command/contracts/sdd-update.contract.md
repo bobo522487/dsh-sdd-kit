@@ -19,7 +19,7 @@
 
 ## 2. Host tool action
 
-现有工具 `sdd_upstream`（`src/register.mjs:14-59`）新增一个 action。工具名称与数量均不改变。
+现有工具 `sdd_upstream`（`src/register.mjs:14-74`）新增一个 action。工具名称与数量均不改变。
 
 ### Request
 

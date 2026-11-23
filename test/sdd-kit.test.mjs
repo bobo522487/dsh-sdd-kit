@@ -828,6 +828,7 @@ test('artifact line references point at the content they cite', async () => {
     'specs/001-sdd-update-command/research.md',
     'specs/001-sdd-update-command/tasks.md',
     'specs/001-sdd-update-command/data-model.md',
+    'specs/001-sdd-update-command/contracts/sdd-update.contract.md',
   ];
   const aliases = { 'constitution.md': '.specify/memory/constitution.md' };
   const cache = new Map();
@@ -849,6 +850,8 @@ test('artifact line references point at the content they cite', async () => {
     ['src/register.mjs', 5, 7, 'renderJsonText'],
     ['test/sdd-kit.test.mjs', 16, 59, 'snapshotTree'],
     ['test/sdd-kit.test.mjs', 161, 200, 'registerSddTools'],
+    ['src/register.mjs', 14, 74, 'update_all'],
+    ['specs/001-sdd-update-command/contracts/sdd-update.contract.md', 22, 22, 'src/register.mjs:14-74'],
   ];
   for (const [file, start, end, needle] of anchors) {
     const absolute = path.join(PKG_ROOT, aliases[file] || file);
