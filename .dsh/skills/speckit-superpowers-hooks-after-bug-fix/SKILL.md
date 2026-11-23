@@ -1,1 +1,44 @@
-../../../.specify/extensions/superpowers-hooks/.specify-dev/agent-commands/dsh/speckit-superpowers-hooks-after-bug-fix/SKILL.md
+---
+name: speckit-superpowers-hooks-after-bug-fix
+description: 在 /speckit-bug-fix 写完修复报告后执行两阶段自审并衔接验证命令
+compatibility: Requires spec-kit project structure with .specify/ directory
+metadata:
+  author: dsh-sdd-kit
+  source: superpowers-hooks:commands/speckit.superpowers-hooks.after-bug-fix.md
+  version: 0.1.0
+---
+
+# Superpowers Hooks · 修复后
+
+## 何时触发
+
+`/speckit-bug-fix` 写完 `.specify/bugs/<slug>/fix.md` 之后、命令返回之前。
+
+## 上游依赖检查
+
+先确认 `~/.dsh/upstream/superpowers/skills` 存在，且下列技能目录齐全。
+缺失任一项时，报告缺失的技能名、完整路径与修复命令 `/sdd-setup`（会重新同步上游镜像）并停止，不得凭记忆代替或自行编造自审结论。
+
+## 必须加载的技能
+
+| 技能名 | 加载方式 | 用途 |
+|---|---|---|
+| `verification-before-completion` | `skill` 工具，名称精确匹配 | 先跑命令取证据再下结论 |
+| `requesting-code-review` | `skill` 工具，名称精确匹配 | 结构化自查清单 |
+
+## 执行纪律
+
+两阶段自审，只规定顺序，不重述技能正文：
+
+1. **阶段一 · 缺陷闭环**：复现测试仍为绿、原始失败场景已消失、没有新增失败测试；对照评估报告与 `fix.md` 的验收条件逐条核对。
+2. **阶段二 · 副作用审查**：改动范围是否超出评估报告、是否有回归风险、提交是否原子、是否引入新依赖。
+3. 每个阶段都产出「通过 / 不通过 + 证据」，证据必须是实际命令与其输出（加载 `verification-before-completion` 后按其要求执行）。
+4. 两阶段均通过后，提示用户执行 `/speckit-bug-test` 完成验证。
+5. 任一阶段不通过时，列出缺口并回到 `/speckit-bug-fix`。
+
+## 出口条件
+
+- 两阶段自审都有明确结论与可复现证据；
+- 已在上文明确提示执行验证命令（占位符已按当前 agent 风格渲染）。
+
+无证据不得宣告缺陷已修复。
