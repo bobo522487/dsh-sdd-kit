@@ -552,7 +552,7 @@ test('runUpdate AC-06: a changed kit hash requires a DSH restart with guidance',
   }
 });
 
-test('refreshInstalledKit validates the source, stages swaps, and preserves unlisted files', async () => {
+test('refreshInstalledKit validates the source, stages swaps, and preserves unlisted files', async (t) => {
   const cwd = await makeTempDir();
   const sourceDir = await makeTempDir();
   const profileDir = await makeTempDir();
@@ -602,7 +602,15 @@ test('refreshInstalledKit validates the source, stages swaps, and preserves unli
 
     const symlinkSource = path.join(cwd, 'symlink-source');
     await seedKitSource(symlinkSource);
-    await fs.symlink(path.join(symlinkSource, 'README.md'), path.join(symlinkSource, 'src', 'link.md'));
+    try {
+      await fs.symlink(path.join(symlinkSource, 'README.md'), path.join(symlinkSource, 'src', 'link.md'));
+    } catch (error) {
+      if (error.code === 'EPERM') {
+        t.skip('symlink creation requires developer mode / privileges on this platform');
+        return;
+      }
+      throw error;
+    }
     await assert.rejects(
       () => refreshInstalledKit({ cwd, dshKitSourceDir: symlinkSource, dshProfileDir: profileDir }, { env: {}, homedir: () => profileDir }),
       /symlink/
@@ -1189,7 +1197,7 @@ async function readHookCommand(file) {
 }
 
 function assertHookCommandShape(body, file) {
-  assert.match(body, /^---\ndescription: \S.*\n---\n/, `${file} must open with a description-only frontmatter`);
+  assert.match(body, /^---\r?\ndescription: \S[^\n]*\r?\n---\r?\n/, `${file} must open with a description-only frontmatter`);
   const frontmatter = body.slice(0, body.indexOf('\n---', 4));
   assert.equal(/^allowed-tools:/m.test(frontmatter), false, `${file} must not declare allowed-tools (INV-7)`);
   assert.equal(/^model:/m.test(frontmatter), false, `${file} must not declare model (INV-7)`);
