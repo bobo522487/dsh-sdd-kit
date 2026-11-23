@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
+import { runUpdate } from '../src/core/update.mjs';
 import { registerSddTools } from '../src/register.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -175,6 +176,120 @@ test('specify_upgrade pins a stable python on fresh install and honors override'
     assert.equal(ovr.python, '3.12');
     uvCall = calls.find((c) => c[0] === 'uv');
     assert.ok(uvCall.includes('3.12'));
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-01: all-behind components produce three updated records with before/after', async () => {
+  const cwd = await makeTempDir();
+  let specifyVersion = 'specify 1.3.1';
+  let superpowersHead = 'aaaaaaa';
+  let superpowersSkillCount = 2;
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: specifyVersion, error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: superpowersHead, skillCount: superpowersSkillCount },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      specifyVersion = 'specify 1.4.0';
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      superpowersHead = 'bbbbbbb';
+      superpowersSkillCount = 3;
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const refreshKit = async () => ({
+    changed: true,
+    beforeHash: 'sha256:old',
+    afterHash: 'sha256:new',
+    changedFiles: ['src/core/update.mjs'],
+    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
+    mode: 'updated',
+  });
+
+  try {
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
+      { runUpstream: runUpstreamFake, refreshKit }
+    );
+    assert.equal(report.action, 'update');
+    assert.equal(report.ok, true);
+    assert.equal(report.cwd, path.resolve(cwd));
+    assert.equal(report.requiresRestart, true);
+    assert.deepEqual(
+      report.components.map((record) => record.component),
+      ['spec-kit', 'superpowers', 'dsh-sdd-kit']
+    );
+    assert.deepEqual(
+      report.components.map((record) => record.outcome),
+      ['updated', 'updated', 'updated']
+    );
+    assert.equal(report.components[0].before, 'specify 1.3.1');
+    assert.equal(report.components[0].after, 'specify 1.4.0');
+    assert.equal(report.components[1].before, 'aaaaaaa');
+    assert.equal(report.components[1].after, 'bbbbbbb');
+    assert.equal(report.components[2].before, 'sha256:old');
+    assert.equal(report.components[2].after, 'sha256:new');
+    assert.deepEqual(report.errors, []);
+    for (const record of report.components) assert.equal(record.error, null);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('runUpdate AC-02: all-current components are unchanged without effective changes', async () => {
+  const cwd = await makeTempDir();
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: 'already current', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: 'Already up to date.', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const refreshKit = async () => ({
+    changed: false,
+    beforeHash: 'sha256:same',
+    afterHash: 'sha256:same',
+    changedFiles: [],
+    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
+    mode: 'unchanged',
+  });
+
+  try {
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
+      { runUpstream: runUpstreamFake, refreshKit }
+    );
+    assert.equal(report.ok, true);
+    assert.equal(report.requiresRestart, false);
+    assert.deepEqual(
+      report.components.map((record) => record.outcome),
+      ['unchanged', 'unchanged', 'unchanged']
+    );
+    for (const record of report.components) {
+      assert.equal(record.before, record.after);
+      assert.equal(record.followUp, null);
+      assert.equal(record.error, null);
+    }
+    assert.deepEqual(report.errors, []);
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
