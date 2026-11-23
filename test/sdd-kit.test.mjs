@@ -1156,3 +1156,173 @@ test('US2 hook commands inject debugging discipline and bug-test follow-up', asy
     'after-bug-fix must not hardcode a slash/dot command form (INV-6)'
   );
 });
+
+test('US3 specify_init defaults to the dsh integration and keeps the unattended flags', async () => {
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    return { ok: true, code: 0, stdout: '', stderr: '' };
+  };
+
+  await runUpstream({ action: 'specify_init', cwd: process.cwd() }, mockRunner);
+  const initCall = calls.find((c) => c[0] === 'specify' && c[1] === 'init');
+  assert.ok(initCall, 'expected a specify init call');
+  assert.equal(
+    initCall[initCall.indexOf('--integration') + 1],
+    'dsh',
+    'REQ-14: specify_init must default to --integration dsh'
+  );
+  for (const flag of ['--non-interactive', '--force', '--ignore-agent-tools']) {
+    assert.ok(initCall.includes(flag), `expected ${flag} in: ${initCall.join(' ')}`);
+  }
+
+  calls.length = 0;
+  await runUpstream({ action: 'specify_init', cwd: process.cwd(), integration: 'claude' }, mockRunner);
+  const override = calls.find((c) => c[0] === 'specify' && c[1] === 'init');
+  assert.equal(
+    override[override.indexOf('--integration') + 1],
+    'claude',
+    'an explicit integration argument must still win'
+  );
+});
+
+test('US3 install_hooks_ext derives the skills directory and mismatch report from integration', async () => {
+  const extensionDirOf = async (cwd) => {
+    const dir = path.join(cwd, 'ext-src');
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  };
+  const okRunner = async () => ({ ok: true, code: 0, stdout: 'ok', stderr: '' });
+
+  const dshCwd = await makeTempDir();
+  const claudeCwd = await makeTempDir();
+  try {
+    await fs.mkdir(path.join(dshCwd, '.specify'), { recursive: true });
+    await fs.writeFile(
+      path.join(dshCwd, '.specify', 'init-options.json'),
+      JSON.stringify({ ai: 'dsh', integration: 'dsh' })
+    );
+    const dshReport = await runUpstream(
+      { action: 'install_hooks_ext', cwd: dshCwd, extensionDir: await extensionDirOf(dshCwd) },
+      okRunner
+    );
+    assert.equal(dshReport.integration, 'dsh');
+    assert.equal(dshReport.skillsDir, '.dsh/skills');
+    assert.equal(dshReport.skillsDirInDshRoots, true);
+    assert.equal(dshReport.integrationMismatch, null);
+    assert.equal(dshReport.skillsDirGuessed, undefined);
+
+    await fs.mkdir(path.join(claudeCwd, '.specify'), { recursive: true });
+    await fs.writeFile(
+      path.join(claudeCwd, '.specify', 'init-options.json'),
+      JSON.stringify({ ai: 'claude', integration: 'claude' })
+    );
+    const claudeReport = await runUpstream(
+      { action: 'install_hooks_ext', cwd: claudeCwd, extensionDir: await extensionDirOf(claudeCwd) },
+      okRunner
+    );
+    assert.equal(claudeReport.integration, 'claude');
+    assert.equal(claudeReport.skillsDir, '.claude/skills');
+    assert.equal(claudeReport.skillsDirInDshRoots, false);
+    assert.ok(claudeReport.integrationMismatch, 'REQ-15: a non-dsh project must surface a mismatch report');
+    assert.equal(claudeReport.integrationMismatch.current, 'claude');
+    assert.equal(claudeReport.integrationMismatch.expected, 'dsh');
+    assert.equal(
+      claudeReport.integrationMismatch.switchCommand,
+      'specify integration switch dsh'
+    );
+  } finally {
+    await fs.rm(dshCwd, { recursive: true, force: true });
+    await fs.rm(claudeCwd, { recursive: true, force: true });
+  }
+});
+
+test('US3 sdd-setup installs the hooks extension and reports integration mismatches', async () => {
+  const body = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
+
+  assert.equal(
+    (body.match(/install_hooks_ext/g) || []).length,
+    1,
+    'sdd-setup must install the bundled extension exactly once'
+  );
+  assert.match(body, /hasSpecifyDir/, 'sdd-setup must gate specify_init on hasSpecifyDir');
+  assert.match(body, /specify integration switch dsh/, 'sdd-setup must surface the explicit switch command');
+  assert.match(body, /integrationMismatch/, 'sdd-setup must branch on the mismatch report');
+  assert.equal(
+    /--integration claude/.test(body),
+    false,
+    'sdd-setup must no longer document a hardcoded claude integration'
+  );
+});
+
+test('US3 end-to-end install writes the extension into the dsh skill root', async (t) => {
+  const probe = await runUpstream({ action: 'status', cwd: process.cwd() });
+  if (!probe.specifyCli.installed) {
+    t.skip('specify CLI is not installed');
+    return;
+  }
+
+  const cwd = await makeTempDir();
+  try {
+    const init = await runUpstream({ action: 'specify_init', cwd });
+    assert.equal(init.ok, true, `specify init failed: ${init.stderr}`);
+
+    const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: EXTENSION_DIR });
+    assert.equal(report.ok, true, `install_hooks_ext failed: ${report.stderr}`);
+    assert.equal(report.integration, 'dsh');
+    assert.equal(report.skillsDir, '.dsh/skills');
+
+    for (const event of HOOK_EVENTS) {
+      const skillName = `speckit-superpowers-hooks-${event.replace(/_/g, '-')}`;
+      const stat = await fs.stat(path.join(cwd, '.dsh', 'skills', skillName, 'SKILL.md'));
+      assert.ok(stat.isFile(), `expected .dsh/skills/${skillName}/SKILL.md`);
+    }
+
+    const claudeEntries = await fs.readdir(path.join(cwd, '.claude')).catch(() => null);
+    assert.equal(claudeEntries, null, 'AC-12: a fresh dsh project must not create .claude/');
+
+    const options = JSON.parse(
+      await fs.readFile(path.join(cwd, '.specify', 'init-options.json'), 'utf8')
+    );
+    assert.equal(options.integration, 'dsh');
+    assert.equal(options.ai, 'dsh');
+
+    const cfg = await fs.readFile(path.join(cwd, '.specify', 'extensions.yml'), 'utf8');
+    assert.deepEqual(
+      cfg
+        .split('\n')
+        .filter((line) => /^\s+command: speckit\.superpowers-hooks\./.test(line))
+        .map((line) => line.trim().replace('command: ', '')),
+      [
+        'speckit.superpowers-hooks.before-implement',
+        'speckit.superpowers-hooks.after-implement',
+        'speckit.superpowers-hooks.before-bug-fix',
+        'speckit.superpowers-hooks.after-bug-fix',
+      ],
+      'AC-01: every hook event must carry exactly one extension entry'
+    );
+    assert.equal(
+      (cfg.match(/optional: false/g) || []).length,
+      4,
+      'every hook must be mandatory (REQ-06)'
+    );
+    assert.equal(
+      (cfg.match(/priority: 5/g) || []).length,
+      2,
+      'pre-hooks must run at priority 5'
+    );
+    assert.equal(
+      (cfg.match(/priority: 15/g) || []).length,
+      2,
+      'post-hooks must run at priority 15'
+    );
+    assert.equal(
+      (cfg.match(/condition: null/g) || []).length,
+      4,
+      'hooks must stay unconditional (REQ-07)'
+    );
+    assert.match(cfg, /auto_execute_hooks: true/, 'the global switch must stay untouched');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});

@@ -153,7 +153,7 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
   }
 
   if (action === 'specify_init') {
-    const integration = args.integration || 'claude';
+    const integration = args.integration || EXPECTED_INTEGRATION;
     const cliArgs = [
       'init', '--here', '--integration', integration,
       '--non-interactive', '--force', '--ignore-agent-tools',
