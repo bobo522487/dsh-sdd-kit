@@ -721,3 +721,50 @@ test('sdd-update skill delegates once and contains no update logic', async () =>
   assert.equal(/fs\.|child_process|exec\(/.test(body), false);
   assert.match(body, /requiresRestart/);
 });
+
+test('runUpdate completes an all-current pass well under the five-minute budget', async () => {
+  // Premise: identifiers are read locally; upstream calls are faked here so the
+  // measurement is deterministic. A real pass adds network latency bounded by the
+  // existing 120 s upstream timeout per command, still inside the 5-minute budget.
+  const cwd = await makeTempDir();
+  const runUpstreamFake = async (args) => {
+    if (args.action === 'status') {
+      return {
+        action: 'status',
+        cwd: args.cwd,
+        specifyCli: { installed: true, version: 'specify 1.4.0', error: null },
+        superpowers: { installed: true, dir: args.superpowersDir, head: 'bbbbbbb', skillCount: 3 },
+      };
+    }
+    if (args.action === 'specify_upgrade') {
+      return { action: 'specify_upgrade', ok: true, code: 0, mode: 'upgrade', stdout: '', stderr: '' };
+    }
+    if (args.action === 'sync_superpowers') {
+      return { action: 'sync_superpowers', ok: true, code: 0, mode: 'pull', skillCount: 3, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const refreshKit = async () => ({
+    changed: false,
+    beforeHash: 'sha256:same',
+    afterHash: 'sha256:same',
+    changedFiles: [],
+    destDir: '/tmp/profile/node_modules/dsh-sdd-kit',
+    mode: 'unchanged',
+  });
+
+  try {
+    const startedAt = Date.now();
+    const report = await runUpdate(
+      { cwd, dshKitSourceDir: '/tmp/kit-source', dshProfileDir: '/tmp/profile' },
+      { runUpstream: runUpstreamFake, refreshKit }
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(report.ok, true);
+    assert.equal(report.requiresRestart, false);
+    assert.ok(elapsedMs < 5 * 60 * 1000, `all-current pass took ${elapsedMs}ms, over the 5-minute budget`);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
