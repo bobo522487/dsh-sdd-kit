@@ -2,7 +2,7 @@
 
 > **零分叉，薄胶水（Zero Fork, Thin Glue）。**
 > 面向 **DeepSeek Harness（DSH）** 的极简 SDD 桥接插件：
-> **GitHub Spec Kit** 决定*做什么*（`specify` CLI），**obra/superpowers** 决定*怎么做*（实时 Git 镜像），**`dsh-sdd-kit`** 用 **3 个技能 + 2 个薄 Host 工具**把两者粘合起来。
+> **GitHub Spec Kit** 决定*做什么*（`specify` CLI），**obra/superpowers** 决定*怎么做*（实时 Git 镜像），**`dsh-sdd-kit`** 用 **2 个技能 + 2 个薄 Host 工具 + 1 个内置 Spec Kit 扩展**把两者粘合起来。
 
 ## 为什么采用这种架构？
 
@@ -36,7 +36,7 @@ dsh plugin --profile web add ./dsh-sdd-kit-0.3.0.tgz
 
 ## 日常流程
 
-1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here` 与 `specify extension add bug`、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
+1. **初始化 / 升级**：`/sdd-setup`（同步 `~/.dsh/upstream/superpowers`、检查或升级 `specify-cli`、执行 `specify init --here --integration dsh` 与 `specify extension add bug`、装入本仓库内置的 `superpowers-hooks` 扩展、安装 EARS/Non-Goals 模板覆盖）。init 以无人值守方式运行，跳过 agent 工具检查，并为安装固定稳定 Python。
 2. **刷新全部三层**：`/sdd-update` 在一次调用中检查并更新三层——`specify-cli`、`~/.dsh/upstream/superpowers` 镜像，以及安装在当前 DSH profile 中的 dsh-sdd-kit 副本——并输出每个组件的 `before → after` 报告与所需的重启提示。该技能不会自动查找本地检出：必须显式传入 `dshKitSourceDir=/path/to/dsh-sdd-kit`，否则 dsh-sdd-kit 组件会以 “No dsh-sdd-kit source configured” 失败，其余两层仍照常报告。
 3. **开发特性**：
    - 用原生 Spec Kit 规划：`/speckit.constitution` → `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze`

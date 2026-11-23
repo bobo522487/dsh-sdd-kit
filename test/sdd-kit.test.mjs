@@ -1353,6 +1353,21 @@ test('US4 the retired /sdd-implement entry point leaves no trace in shipped surf
       `skills/${entry.name}/SKILL.md must not reference the retired entry point (AC-05)`
     );
   }
+
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+  assert.match(readme, /2 个技能/, 'README must advertise two skills (AC-05)');
+  assert.equal(/3 个技能/.test(readme), false, 'README must not still advertise three skills (AC-05)');
+  assert.match(readme, /spec-kit-extension/, 'README must point at the bundled extension source');
+
+  const constitution = await fs.readFile(
+    path.join(PKG_ROOT, '.specify', 'memory', 'constitution.md'),
+    'utf8'
+  );
+  assert.match(
+    constitution,
+    /严格限定为两个命名技能/,
+    'the constitution must state the two-skill surface (AC-05)'
+  );
 });
 
 async function readExtensionsYml(cwd) {
