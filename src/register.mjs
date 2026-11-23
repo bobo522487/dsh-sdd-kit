@@ -1,6 +1,7 @@
 import { runUpstream } from './core/upstream.mjs';
 import { runBridge } from './core/bridge.mjs';
 import { runUpdate } from './core/update.mjs';
+import { runSetup } from './core/setup.mjs';
 
 function renderJsonText(_args, value) {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
@@ -9,6 +10,7 @@ function renderJsonText(_args, value) {
 export function registerSddTools(ctx, defineTool, deps = {}) {
   const disposers = [];
   const runUpdateImpl = deps.runUpdate ?? runUpdate;
+  const runSetupImpl = deps.runSetup ?? runSetup;
 
   disposers.push(
     ctx.tools.register(
@@ -21,11 +23,19 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'string',
             required: true,
             description:
-              'One of: status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+              'One of: setup, status, sync_superpowers, specify_upgrade, specify_init, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
           },
           cwd: {
             type: 'string',
             description: 'Repository root directory (defaults to process.cwd()).',
+          },
+          switchIntegration: {
+            type: 'boolean',
+            description: 'Explicit opt-in for action "setup": switch a non-dsh integration to dsh, then reinstall hooks (default false; the default path only reports the mismatch).',
+          },
+          upgrade: {
+            type: 'boolean',
+            description: 'For action "setup": force a specify-cli upgrade even when already installed (default false).',
           },
           integration: {
             type: 'string',
@@ -58,7 +68,9 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           render: renderJsonText,
         },
         async execute(args) {
-          if ((args?.action || '') === 'update_all') return runUpdateImpl(args);
+          const action = args?.action || '';
+          if (action === 'setup') return runSetupImpl(args);
+          if (action === 'update_all') return runUpdateImpl(args);
           return runUpstream(args);
         },
       })

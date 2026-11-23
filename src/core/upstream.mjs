@@ -179,8 +179,8 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
   }
 
   if (action === 'install_bug_ext') {
-    const res = await runner('specify', ['extension', 'add', 'bug'], { cwd });
-    return { action, cwd, command: 'specify extension add bug', ...res };
+    const res = await runner('specify', ['extension', 'add', 'bug', '--force'], { cwd });
+    return { action, cwd, command: 'specify extension add bug --force', ...res };
   }
 
   if (action === 'install_hooks_ext') {

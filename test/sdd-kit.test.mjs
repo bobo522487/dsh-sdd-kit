@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
 import { runUpdate } from '../src/core/update.mjs';
+import { runSetup } from '../src/core/setup.mjs';
 import { registerSddTools } from '../src/register.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -75,7 +76,7 @@ test('sdd_upstream delegates cleanly to specify CLI and git without reimplementi
 
     const bugRes = await runUpstream({ action: 'install_bug_ext', cwd }, mockRunner);
     assert.equal(bugRes.ok, true);
-    assert.ok(calls.some((c) => c.join(' ') === 'specify extension add bug'));
+    assert.ok(calls.some((c) => c.join(' ') === 'specify extension add bug --force'));
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
@@ -1025,48 +1026,27 @@ test('US3 install_hooks_ext derives the skills directory and mismatch report fro
   }
 });
 
-test('US3 sdd-setup installs the hooks extension and reports integration mismatches', async () => {
-  const body = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
-
-  assert.equal(
-    (body.match(/install_hooks_ext/g) || []).length,
-    1,
-    'sdd-setup must install the bundled extension exactly once'
-  );
-  assert.match(body, /hasSpecifyDir/, 'sdd-setup must gate specify_init on hasSpecifyDir');
-  assert.match(body, /specify integration switch dsh/, 'sdd-setup must surface the explicit switch command');
-  assert.match(body, /integrationMismatch/, 'sdd-setup must branch on the mismatch report');
-  assert.match(
-    body,
-    /sync fails[\s\S]{0,120}continue/,
-    'sdd-setup must keep installing the extension when the upstream sync fails (REQ-11)'
-  );
-  assert.equal(
-    /--integration claude/.test(body),
-    false,
-    'sdd-setup must no longer document a hardcoded claude integration'
-  );
+test('sdd-setup skill delegates once to the setup action and contains no state machine', async () => {
+  const raw = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
+  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  assert.equal((body.match(/sdd_upstream\(action: "setup"/g) || []).length, 1);
+  for (const forbidden of ['specify_init', 'install_bug_ext', 'install_hooks_ext', 'sync_superpowers', 'specify_upgrade', 'switch_integration', 'install_overrides']) {
+    assert.equal(body.includes(forbidden), false, `skill must not orchestrate ${forbidden} itself`);
+  }
+  assert.match(body, /switchIntegration/);
+  assert.match(body, /restartRequired/);
+  assert.match(body, /integrationMismatch/);
+  assert.equal(/fs\.|child_process|exec\(/.test(body), false);
 });
 
-test('US6 sdd-setup exposes the explicit integration switch without making it automatic', async () => {
-  const body = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
-
-  assert.match(body, /switch_integration/, 'REQ-16: the opt-in action must be documented in sdd-setup');
-  assert.match(
-    body,
-    /switchIntegration/,
-    'REQ-16: sdd-setup must name the explicit opt-in signal'
-  );
-  assert.match(
-    body,
-    /only when the user explicitly asks|explicit opt-in/i,
-    'REQ-15: the switch must stay opt-in, never automatic'
-  );
-  assert.match(
-    body,
-    /never run the switch yourself/i,
-    'REQ-15: the default path must still refuse to switch on its own'
-  );
+test('sdd_upstream exposes the setup action with opt-in switch and upgrade parameters', () => {
+  const registered = [];
+  const ctx = { tools: { register: (t) => { registered.push(t); return () => {}; } } };
+  registerSddTools(ctx, (d) => d);
+  const tool = registered.find((t) => t.name === 'sdd_upstream');
+  assert.match(tool.parameters.action.description, /\bsetup\b/);
+  assert.ok(tool.parameters.switchIntegration);
+  assert.ok(tool.parameters.upgrade);
 });
 
 test('US3 end-to-end install writes the extension into the dsh skill root', async (t) => {
@@ -1338,4 +1318,107 @@ test('US5 the global hook switch and shared templates stay untouched', async (t)
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
+});
+
+function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled = true, syncOk = true, mismatch = null } = {}) {
+  const calls = [];
+  let switched = false;
+  const upstream = async (args) => {
+    calls.push(args.action);
+    switch (args.action) {
+      case 'status':
+        return {
+          uv: { installed: uvInstalled },
+          specifyCli: { installed: specifyInstalled, version: 'specify 1.4.4.dev0' },
+          superpowers: { installed: true, head: 'abc1234', skillCount: 15 },
+        };
+      case 'sync_superpowers':
+        return syncOk ? { ok: true, mode: 'pull', skillCount: 15 } : { ok: false, code: 128, stderr: 'fatal: offline' };
+      case 'specify_upgrade': return { ok: true, mode: 'install' };
+      case 'specify_init': return { ok: true };
+      case 'install_bug_ext': return { ok: true };
+      case 'install_hooks_ext': {
+        const active = switched ? null : mismatch;
+        return {
+          ok: true,
+          extension: { id: 'superpowers-hooks', version: '0.1.0' },
+          hooks: ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix'],
+          integration: active ? 'claude' : 'dsh',
+          skillsDir: active ? '.claude/skills' : '.dsh/skills',
+          integrationMismatch: active,
+        };
+      }
+      case 'switch_integration':
+        switched = true;
+        return { ok: true, integration: 'dsh' };
+      default: throw new Error(`unexpected upstream action: ${args.action}`);
+    }
+  };
+  const bridge = async (args) =>
+    args.action === 'inspect'
+      ? { hasSpecifyDir, hasConstitution: true, hasEarsOverride: false, features: [], bugs: [] }
+      : { action: 'install_overrides', status: 'written' };
+  return { calls, deps: { runUpstream: upstream, runBridge: bridge } };
+}
+
+const SETUP_STEP_ORDER = [
+  'inspect', 'sync_superpowers', 'specify_cli', 'specify_init',
+  'install_bug_ext', 'install_hooks_ext', 'install_overrides',
+];
+
+test('runSetup: fresh project runs init and installs both extensions in order', async () => {
+  const { calls, deps } = setupFakes({ hasSpecifyDir: false, specifyInstalled: false });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  assert.equal(report.ok, true);
+  assert.deepEqual(report.steps.map((s) => s.name), SETUP_STEP_ORDER);
+  assert.equal(report.steps.find((s) => s.name === 'specify_init').status, 'performed');
+  assert.equal(report.steps.find((s) => s.name === 'specify_cli').status, 'performed');
+  assert.ok(calls.includes('install_bug_ext'), 'bug extension must be installed even on fresh init');
+  assert.ok(calls.includes('install_hooks_ext'));
+});
+
+test('runSetup: existing project skips init and stays idempotent across reruns', async () => {
+  const { calls, deps } = setupFakes({ hasSpecifyDir: true });
+  const first = await runSetup({ cwd: process.cwd() }, deps);
+  const second = await runSetup({ cwd: process.cwd() }, deps);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(calls.includes('specify_init'), false, 'REQ-15: never re-init an existing layout');
+  assert.deepEqual(
+    second.steps.map((s) => [s.name, s.status]),
+    first.steps.map((s) => [s.name, s.status])
+  );
+  assert.equal(second.steps.find((s) => s.name === 'specify_init').status, 'skipped');
+  assert.equal(second.steps.find((s) => s.name === 'install_bug_ext').status, 'performed', 'extensions are ensured on every run');
+});
+
+test('runSetup: a Superpowers sync failure does not abort the extension install (REQ-11)', async () => {
+  const { deps } = setupFakes({ syncOk: false });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.find((s) => s.name === 'sync_superpowers').status, 'failed');
+  assert.equal(report.steps.find((s) => s.name === 'install_hooks_ext').status, 'performed');
+});
+
+test('runSetup: missing uv stops before touching the repository', async () => {
+  const { calls, deps } = setupFakes({ hasSpecifyDir: false, uvInstalled: false });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  assert.equal(report.ok, false);
+  assert.equal(calls.includes('specify_init'), false);
+  assert.equal(calls.includes('install_bug_ext'), false);
+  assert.match(report.steps.find((s) => s.name === 'specify_cli').detail.hint, /uv/);
+});
+
+test('runSetup: integration switch happens only on explicit opt-in', async () => {
+  const mismatch = { current: 'claude', expected: 'dsh', switchCommand: 'specify integration switch dsh', note: 'x' };
+  const auto = setupFakes({ mismatch });
+  const reportAuto = await runSetup({ cwd: process.cwd() }, auto.deps);
+  assert.equal(auto.calls.includes('switch_integration'), false, 'default path must never switch');
+  assert.ok(reportAuto.integrationMismatch, 'mismatch must be reported, not silently fixed');
+
+  const optIn = setupFakes({ mismatch });
+  const reportOpt = await runSetup({ cwd: process.cwd(), switchIntegration: true }, optIn.deps);
+  assert.ok(optIn.calls.includes('switch_integration'));
+  assert.ok(optIn.calls.filter((a) => a === 'install_hooks_ext').length === 2, 'hooks must be regenerated after the switch');
+  assert.equal(reportOpt.integrationMismatch, null);
 });
