@@ -36,7 +36,7 @@ Restart DSH after installing, then run `/sdd-setup` in your project.
 
 ## Daily Workflow
 
-1. **Setup / Upgrade**: `/sdd-setup` (syncs `~/.dsh/upstream/superpowers`, checks/upgrades `specify-cli`, runs `specify init --here` + `specify extension add bug`, installs EARS/Non-Goals override).
+1. **Setup / Upgrade**: `/sdd-setup` (syncs `~/.dsh/upstream/superpowers`, checks/upgrades `specify-cli`, runs `specify init --here` + `specify extension add bug`, installs EARS/Non-Goals override). init runs unattended with agent-tool checks skipped and pins a stable Python for installs.
 2. **Build a Feature**:
    - Plan with native Spec Kit: `/speckit.constitution` → `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze`
    - Execute with `/sdd-implement` (strict TDD everywhere + atomic commit per task on current branch → native `/speckit.converge` + `specs/INDEX.md` sync).

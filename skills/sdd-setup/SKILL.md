@@ -15,10 +15,10 @@ One-command bootstrap and upgrade for the **Spec Kit (what) × Superpowers (how)
    - Call `sdd_upstream(action: "sync_superpowers")` to clone or `git pull --ff-only` `~/.dsh/upstream/superpowers`.
    - Remind the user to restart DSH once if this was the first clone (so the `superpowers-upstream` skill provider picks up all upstream skills).
 3. **Install or upgrade `specify-cli`**:
-   - If `specifyCli.installed` is `false` (or the user asked to upgrade), call `sdd_upstream(action: "specify_upgrade")`.
+   - If `specifyCli.installed` is `false` (or the user asked to upgrade), call `sdd_upstream(action: "specify_upgrade")`. Fresh installs pin a stable Python (`3.14` default, overridable via `python`) to avoid source-building on alpha interpreters.
    - If `uv` is missing, tell the user cleanly how to install `uv` and stop without guessing.
 4. **Initialize repository with Spec Kit**:
-   - If `hasSpecifyDir` is `false`, call `sdd_upstream(action: "specify_init")` (runs `specify init --here --integration claude --integration-options=--skills`).
+   - If `hasSpecifyDir` is `false`, call `sdd_upstream(action: "specify_init")` (passes `--integration claude --non-interactive --force --ignore-agent-tools`; skills are installed by default by current spec-kit).
    - Install Spec Kit's official bug-fixing extension by calling `sdd_upstream(action: "install_bug_ext")` (`specify extension add bug`).
 5. **Install EARS + Non-Goals override**:
    - Call `sdd_bridge(action: "install_overrides")` to place `.specify/templates/overrides/spec-template.md` (highest precedence in Spec Kit; preserved across `specify-cli` upgrades).
