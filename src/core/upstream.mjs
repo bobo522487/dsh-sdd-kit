@@ -102,12 +102,13 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
   }
 
   if (action === 'specify_upgrade') {
+    const python = args.python || '3.14';
     const check = await runner('specify', ['--version'], { cwd });
     const uvArgs = check.ok
       ? ['tool', 'upgrade', 'specify-cli']
-      : ['tool', 'install', 'specify-cli', '--from', 'git+https://github.com/github/spec-kit.git'];
+      : ['tool', 'install', 'specify-cli', '--from', 'git+https://github.com/github/spec-kit.git', '--python', python];
     const res = await runner('uv', uvArgs, { cwd });
-    return { action, mode: check.ok ? 'upgrade' : 'install', command: `uv ${uvArgs.join(' ')}`, ...res };
+    return { action, mode: check.ok ? 'upgrade' : 'install', python, command: `uv ${uvArgs.join(' ')}`, ...res };
   }
 
   if (action === 'specify_init') {

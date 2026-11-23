@@ -153,3 +153,29 @@ test('skills/ contains exactly 2 user-only bridge skills matching DSH frontmatte
     assert.match(fm, /^disable-model-invocation:\s*true$/m);
   }
 });
+
+test('specify_upgrade pins a stable python on fresh install and honors override', async () => {
+  const cwd = await makeTempDir();
+  const calls = [];
+  const mockRunner = async (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (cmd === 'specify' && args[0] === '--version') return { ok: false, code: 1, stdout: '', stderr: 'not found' };
+    return { ok: true, code: 0, stdout: '', stderr: '' };
+  };
+  try {
+    const def = await runUpstream({ action: 'specify_upgrade', cwd }, mockRunner);
+    assert.equal(def.mode, 'install');
+    assert.equal(def.python, '3.14');
+    let uvCall = calls.find((c) => c[0] === 'uv');
+    assert.ok(uvCall.includes('--python') && uvCall.includes('3.14'), `uv call: ${uvCall?.join(' ')}`);
+    assert.match(def.command, /--python 3\.14/);
+
+    calls.length = 0;
+    const ovr = await runUpstream({ action: 'specify_upgrade', cwd, python: '3.12' }, mockRunner);
+    assert.equal(ovr.python, '3.12');
+    uvCall = calls.find((c) => c[0] === 'uv');
+    assert.ok(uvCall.includes('3.12'));
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
