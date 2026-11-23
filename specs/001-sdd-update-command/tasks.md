@@ -175,4 +175,4 @@ description: "Task list for the SDD unified update command feature"
 
 ## Phase 6: Convergence
 
-- [ ] T022 校正 `specs/001-sdd-update-command/contracts/sdd-update.contract.md:22` 的 `src/register.mjs:14-59` 引用为完整的 `sdd_upstream` 注册块 `src/register.mjs:14-75`，并把 contracts 纳入行号回归测试的产物列表，避免同类失效引用再次遗漏 per 第二次 converge F1 (partial)
+- [x] T022 校正 `specs/001-sdd-update-command/contracts/sdd-update.contract.md:22` 的 `src/register.mjs:14-59` 引用为完整的 `sdd_upstream` 注册块 `src/register.mjs:14-75`，并把 contracts 纳入行号回归测试的产物列表，避免同类失效引用再次遗漏 per 第二次 converge F1 (partial)

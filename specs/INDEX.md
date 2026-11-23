@@ -4,4 +4,4 @@
 
 | Feature | Status | Spec | Plan |
 | :--- | :--- | :--- | :--- |
-| `001-sdd-update-command` | In Progress (16/21) | [spec.md](./001-sdd-update-command/spec.md) | [plan.md](./001-sdd-update-command/plan.md) |
+| `001-sdd-update-command` | Done | [spec.md](./001-sdd-update-command/spec.md) | [plan.md](./001-sdd-update-command/plan.md) |
