@@ -1,4 +1,4 @@
-# DeepSeek Harness (DSH) bundle patch for dsh-sdd-kit v0.5.0
+# DeepSeek Harness (DSH) bundle patch for dsh-sdd-kit v0.5.1
 # 1. 挂载本插件的 2 个桥接技能（/sdd-setup、/sdd-update）；执行纪律由 Spec Kit 原生扩展钩子注入。
 # 2. 直接从 ~/.dsh/upstream/superpowers/skills 挂载上游 obra/superpowers 技能（零分叉）。
 # 3. 挂载轻量 Host 工具插件（sdd_upstream、sdd_bridge）。

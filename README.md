@@ -16,7 +16,7 @@
 
 ## 安装到 DSH
 
-从 GitHub 安装（当前发布版本 [`v0.5.0`](https://github.com/bobo522487/dsh-sdd-kit/releases/tag/v0.5.0)）：
+从 GitHub 安装（当前发布版本 [`v0.5.1`](https://github.com/bobo522487/dsh-sdd-kit/releases/tag/v0.5.1)）：
 
 ```bash
 # Web profile
@@ -29,7 +29,7 @@ dsh plugin --profile desktop add https://github.com/bobo522487/dsh-sdd-kit
 或从本地 `.tgz` 压缩包安装：
 
 ```bash
-dsh plugin --profile web add ./dsh-sdd-kit-0.5.0.tgz
+dsh plugin --profile web add ./dsh-sdd-kit-0.5.1.tgz
 ```
 
 安装后重启 DSH，然后在项目中运行 `/sdd-setup`。
@@ -78,12 +78,14 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 
 `.dsh/skills/` 与 `.specify/extensions*` 是安装产物，不入库。克隆后运行一次 `/sdd-setup` 即可幂等重建（specify-cli、Superpowers 镜像、bug 与 hooks 扩展、EARS 覆盖）。治理文档 `.specify/memory/constitution.md` 与上游脚本/模板仍在库中。
 
+从把安装产物**入库**的旧版本（≤ v0.4.x）升级上来的仓库，`.specify/` 布局已存在，`/sdd-setup` 按 REQ-15 不会重跑 `specify init`。v0.5.1 起，setup 会额外检查 `.dsh/skills/speckit-implement/SKILL.md`：缺失时依次尝试 `specify integration upgrade <key>` 与 `specify integration install <key>` 重建原生命令技能（报告中的 `integration_commands` 步骤），两者都失败才标 `failed`。该修复在扩展安装之前执行，不会覆盖钩子注册。
+
 ## 支持矩阵
 
 | 平台 | 状态 |
 |---|---|
 | Linux / macOS / WSL | 一级支持（specify CLI 生成符号链接，bash 脚本原生） |
-| Windows 原生 | 已验证（44 测试全绿）；CLI 无 symlink 权限时钩子技能回退为内容一致的副本；`.specify/scripts/` 仅 bash 版本，Spec Kit 脚本步骤需 WSL/Git Bash |
+| Windows 原生 | 已验证（51 测试全绿）；CLI 无 symlink 权限时钩子技能回退为内容一致的副本；`.specify/scripts/` 仅 bash 版本，Spec Kit 脚本步骤需 WSL/Git Bash |
 
 `peerDependencies` 目前为 `"*"`：宿主 `@deepseek-ai/cordis`、`dsh-tools`、`dsh-skill-filesystem` 的实际版本下界待在可读取的 DSH profile 上核实后收紧（desktop profile 的宿主包内置于应用，profile 内不可读）。
 
