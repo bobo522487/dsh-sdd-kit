@@ -137,13 +137,13 @@ test('Cordis registerSddTools registers sdd_upstream and sdd_bridge with valid r
   }
 });
 
-test('skills/ contains exactly 2 user-only bridge skills matching DSH frontmatter contract', async () => {
+test('skills/ contains exactly 3 user-only bridge skills matching DSH frontmatter contract', async () => {
   const skillsDir = path.join(PKG_ROOT, 'skills');
   const dirs = (await fs.readdir(skillsDir, { withFileTypes: true }))
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort();
-  assert.deepEqual(dirs, ['sdd-implement', 'sdd-setup']);
+  assert.deepEqual(dirs, ['sdd-implement', 'sdd-setup', 'sdd-update']);
 
   for (const dir of dirs) {
     const raw = await fs.readFile(path.join(skillsDir, dir, 'SKILL.md'), 'utf8');
