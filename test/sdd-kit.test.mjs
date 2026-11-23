@@ -700,3 +700,24 @@ test('sdd_upstream routes action "update_all" to runUpdate and exposes the updat
   assert.equal(calls[0].dshKitSourceDir, '/tmp/kit');
   assert.equal(calls[0].dshProfileDir, '/tmp/profile');
 });
+
+test('sdd-update skill delegates once and contains no update logic', async () => {
+  const raw = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-update', 'SKILL.md'), 'utf8');
+  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+
+  assert.equal((body.match(/sdd_upstream\(action: "update_all"/g) || []).length, 1);
+  assert.match(body, /# \/sdd-update/);
+  for (const forbidden of [
+    'specify_upgrade',
+    'sync_superpowers',
+    'specify_init',
+    'install_bug_ext',
+    'install_overrides',
+    'check_task',
+    'sync_index',
+  ]) {
+    assert.equal(body.includes(forbidden), false, `skill must not reference ${forbidden}`);
+  }
+  assert.equal(/fs\.|child_process|exec\(/.test(body), false);
+  assert.match(body, /requiresRestart/);
+});
