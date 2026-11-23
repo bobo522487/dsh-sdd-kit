@@ -664,3 +664,39 @@ test('runUpdate keeps the readable before identifier on a failed component', asy
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
+
+test('sdd_upstream routes action "update_all" to runUpdate and exposes the update parameters', async () => {
+  const registered = [];
+  const mockCtx = {
+    tools: {
+      register(def) {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
+  const calls = [];
+  const fakeRunUpdate = async (args) => {
+    calls.push(args);
+    return { action: 'update', ok: true, components: [], requiresRestart: false, errors: [], cwd: args.cwd };
+  };
+
+  registerSddTools(mockCtx, (def) => def, { runUpdate: fakeRunUpdate });
+
+  const tool = registered.find((entry) => entry.name === 'sdd_upstream');
+  assert.match(tool.parameters.action.description, /update_all/);
+  assert.ok(tool.parameters.dshKitSourceDir);
+  assert.ok(tool.parameters.dshProfileDir);
+
+  const result = await tool.execute({
+    action: 'update_all',
+    cwd: '/tmp/demo',
+    dshKitSourceDir: '/tmp/kit',
+    dshProfileDir: '/tmp/profile',
+  });
+
+  assert.equal(result.action, 'update');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].dshKitSourceDir, '/tmp/kit');
+  assert.equal(calls[0].dshProfileDir, '/tmp/profile');
+});
