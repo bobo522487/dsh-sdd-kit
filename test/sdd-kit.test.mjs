@@ -792,6 +792,19 @@ test('README install commands point at the real repository and release version',
     new RegExp(`dsh-sdd-kit-${pkg.version.replaceAll('.', '\\.')}\\.tgz`),
     `README tarball example must match package.json version ${pkg.version}`
   );
+  assert.match(
+    readme,
+    new RegExp(`releases/tag/v${pkg.version.replaceAll('.', '\\.')}`),
+    `README release link must point at the current package.json version v${pkg.version}`
+  );
+
+  const cordis = await fs.readFile(path.join(PKG_ROOT, 'cordis.patch.yml'), 'utf8');
+  const header = cordis.split('\n')[0];
+  assert.match(
+    header,
+    new RegExp(`v${pkg.version.replaceAll('.', '\\.')}`),
+    `cordis.patch.yml header must name the current package.json version v${pkg.version}`
+  );
 });
 
 test('quickstart manual recovery uses staged swaps instead of in-place copies', async () => {
