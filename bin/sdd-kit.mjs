@@ -229,13 +229,24 @@ async function readSkillSummary(file, { source, provider }) {
     const match = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(frontmatter);
     return match?.[1].trim().replace(/^["']|["']$/g, '') ?? '';
   };
+  const nestedField = (parent, key) => {
+    const lines = frontmatter.split(/\r?\n/);
+    const start = lines.findIndex((line) => new RegExp(`^${parent}:\\s*$`).test(line));
+    if (start === -1) return '';
+    for (const line of lines.slice(start + 1)) {
+      if (/^\S/.test(line)) break;
+      const match = new RegExp(`^\\s+${key}:[ \\t]*(.*)$`).exec(line);
+      if (match) return match[1].trim().replace(/^["']|["']$/g, '');
+    }
+    return '';
+  };
   const name = field('name') || path.basename(path.dirname(file));
   return {
     name,
     description: field('description'),
     whenToUse: field('whenToUse') || field('when_to_use'),
-    source: field('source') || source,
-    provider: field('provider') || provider,
+    source: field('source') || nestedField('metadata', 'source') || source,
+    provider: field('provider') || nestedField('metadata', 'author') || provider,
     path: file,
     invocation: {
       userInvocable: !/^user-invocable:[ \t]*false\s*$/m.test(frontmatter),

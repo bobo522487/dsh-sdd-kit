@@ -163,6 +163,46 @@ test('doctor --trigger also reads user-level skills and keeps excluded entries l
   assert.equal(entry.skill.source, 'user');
 });
 
+test('doctor provenance distinguishes metadata-authored kit skills from real user skills (T103)', async () => {
+  const { repo, home } = await makeSkillTree({
+    project: {
+      name: 'speckit-implement',
+      frontmatter: [
+        'name: speckit-implement',
+        'description: execute implementation tasks',
+        'metadata:',
+        '  author: "github-spec-kit"',
+        '  source: "templates/commands/implement.md"',
+        '  version: "1.4.4.dev0"',
+      ].join('\n'),
+    },
+    user: {
+      name: 'my-private-skill',
+      frontmatter: 'name: my-private-skill\ndescription: debug failing test\nsource: user-dsh\nprovider: user\n',
+    },
+  });
+  const cli = invokeCli(
+    ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
+    { HOME: home }
+  );
+  const provenance = cli.stdout.runtime.items.find((entry) => entry.code === 'SKILL_PROVENANCE');
+  assert.ok(provenance, 'runtime zone must report skill provenance');
+  assert.ok(!provenance.userSkills.some((skill) => skill.name === 'speckit-implement'),
+    'a kit-authored skill inside .dsh/skills must not be marked as user-authored');
+  assert.ok(provenance.bundled.some((skill) => skill.name === 'speckit-implement'),
+    'a kit-authored skill must be classified with kit-managed skills');
+  assert.ok(provenance.userSkills.some((skill) => skill.name === 'my-private-skill'),
+    'a real user skill must remain labelled non-kit');
+
+  const scores = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
+  const kit = scores.scores.find((score) => score.skill.name === 'speckit-implement');
+  assert.equal(kit.skill.source, 'templates/commands/implement.md');
+  assert.equal(kit.skill.provider, 'github-spec-kit');
+  const user = scores.scores.find((score) => score.skill.name === 'my-private-skill');
+  assert.equal(user.skill.source, 'user-dsh');
+  assert.equal(user.skill.provider, 'user');
+});
+
 test('doctor --trigger falls back to packaged skills/ when no host skill dir exists (T077)', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-bundled-'));
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-empty-home-'));

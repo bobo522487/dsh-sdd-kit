@@ -301,7 +301,18 @@ async function skillVersionFromPath(skill) {
   return null;
 }
 
+function isKitManagedSkill(skill) {
+  const source = String(skill?.source ?? '').toLowerCase();
+  const provider = String(skill?.provider ?? '').toLowerCase();
+  if (['github-spec-kit', 'spec-kit-core', 'dsh-sdd-kit'].includes(provider)) return true;
+  return source.startsWith('templates/commands/')
+    || source.startsWith('speckit.')
+    || source.startsWith('bug:commands/')
+    || source.startsWith('superpowers-hooks:commands/');
+}
+
 function isUserSkill(skill) {
+  if (isKitManagedSkill(skill)) return false;
   const source = String(skill?.source ?? '').toLowerCase();
   const provider = String(skill?.provider ?? '').toLowerCase();
   const pathText = String(skill?.path ?? '').replace(/\\/g, '/').toLowerCase();
