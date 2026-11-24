@@ -50,6 +50,81 @@ function snippet(text) {
   return (text || '').slice(0, 2000);
 }
 
+/** `>=1.4.0` → [1, 4, 0]; anything unparsable → null. */
+function parseBound(text) {
+  const match = /(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(String(text ?? ''));
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+}
+
+/** Compare two [major, minor, patch] triples: -1, 0 or 1. */
+function compareTriples(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] < right[index]) return -1;
+    if (left[index] > right[index]) return 1;
+  }
+  return 0;
+}
+
+/**
+ * T090: report the gap between the floor we declare (`requires.speckit_version`
+ * in the extension manifest) and the toolchain actually present.
+ *
+ * A prerelease such as `1.4.4.dev0` is compared by its numeric triple, which is
+ * exactly what upstream's `version_satisfies` does for a `>=X` floor (see
+ * research R7): it satisfies `>=1.4.0` and fails `>=1.4.4`. Keeping the same rule
+ * here means the report and the installer never disagree.
+ */
+export function compareBound(declared, observed) {
+  const floor = parseBound(declared);
+  const actual = observed === null || observed === 'unknown' ? null : parseBound(observed);
+  if (floor === null || actual === null) {
+    return {
+      declared,
+      observed: observed ?? null,
+      needsAdjustment: false,
+      suggestedBound: declared,
+      reason: observed === null ? 'specify is not installed, nothing to compare' : 'unparsable version, nothing to compare',
+    };
+  }
+  const order = compareTriples(actual, floor);
+  const suggestedBound = `>=${actual.join('.')}`;
+  if (order > 0) {
+    return { declared, observed, needsAdjustment: false, suggestedBound: declared, reason: null };
+  }
+  // `1.4.4.dev0` carries a prerelease suffix. Upstream's `version_satisfies`
+  // (prereleases=True) still refuses it against a final-release floor of the
+  // same triple, so equality is not enough: the suffix decides (research R7).
+  if (order === 0) {
+    const prerelease = /^\d+(\.\d+){0,2}([.\-+][A-Za-z].*)$/.test(String(observed).trim());
+    if (!prerelease) {
+      return { declared, observed, needsAdjustment: false, suggestedBound: declared, reason: null };
+    }
+    return {
+      declared,
+      observed,
+      needsAdjustment: true,
+      suggestedBound,
+      reason: `the installed specify (${observed}) is a prerelease of ${actual.join('.')}, which does not satisfy the final-release floor (${declared}); pin a released version or declare ${suggestedBound}`,
+    };
+  }
+  return {
+    declared,
+    observed,
+    needsAdjustment: true,
+    suggestedBound,
+    reason: `the installed specify (${observed}) is below the declared floor (${declared}); either raise the floor to ${suggestedBound} or pin a newer toolchain`,
+  };
+}
+
+async function inspectVersionBound(observed) {
+  const declared = await fs
+    .readFile(path.join(EXTENSION_DIR, 'extension.yml'), 'utf8')
+    .then((text) => /speckit_version:\s*"([^"]+)"/.exec(text)?.[1] ?? null)
+    .catch(() => null);
+  return compareBound(declared, observed);
+}
+
 function check(id, ok, detail, stderr = null) {
   return { id, ok, detail, stderr: stderr ? snippet(stderr) : null };
 }
@@ -70,6 +145,11 @@ function emit(report, { json, keep }) {
     }
     lines.push(`Status: ${report.status}`);
   }
+  if (report.versionDrift) {
+    const drift = report.versionDrift;
+    lines.push(`Version bound: declared ${drift.declared ?? 'unknown'} observed ${drift.observed ?? 'unknown'}${drift.needsAdjustment ? ` → DRIFT, consider ${drift.suggestedBound}` : ''}`);
+    if (drift.needsAdjustment && drift.reason) lines.push(`  ${drift.reason}`);
+  }
   if (keep && report.tmpDir) lines.push(`Kept: ${report.tmpDir}`);
   process.stdout.write(`${lines.join('\n')}\n`);
 }
@@ -88,12 +168,14 @@ export async function verifyUpstream(options = {}) {
   for (const tool of ['specify', 'uv', 'git']) {
     versions[tool] = await probe(tool, ['--version']);
   }
+  const versionDrift = await inspectVersionBound(versions.specify);
   const missing = ['specify', 'uv', 'git'].filter((tool) => versions[tool] === null);
   if (missing.length > 0) {
     const report = {
       status: 'not_executed',
       reason: `${missing.join(', ')} not found on PATH`,
       versions,
+      versionDrift,
       checks: [],
       tmpDir: null,
     };
@@ -162,6 +244,7 @@ export async function verifyUpstream(options = {}) {
         ? `network: ${snippet(network).split('\n')[0]}`
         : (failed.length > 0 ? `${failed.length} contract check(s) failed` : null),
       versions,
+      versionDrift,
       checks,
       tmpDir: keep ? tmpDir : null,
     };

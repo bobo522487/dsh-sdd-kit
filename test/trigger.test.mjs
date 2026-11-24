@@ -67,3 +67,43 @@ test('100 visible skills are scored within one second without executing them (RE
   assert.equal(scored.length, 100);
   assert.ok(elapsedMs <= 1000, `scoring took ${elapsedMs.toFixed(1)}ms`);
 });
+
+test('ties use Unicode code points, not locale collation (phase 12 / T094)', () => {
+  const list = [
+    skill('a', { provider: 'plugin', description: 'unrelated' }),
+    skill('B', { provider: 'plugin', description: 'unrelated' }),
+  ];
+  const scored = scoreSkills('totally different words', list);
+  assert.deepEqual(scored.map((item) => item.skill.name), ['B', 'a']);
+});
+
+test('path then source are the final deterministic tie keys (T094)', () => {
+  const list = [
+    skill('same', { provider: 'plugin', path: '/z', source: 'alpha', description: 'unrelated' }),
+    skill('same', { provider: 'plugin', path: '/A', source: 'zeta', description: 'unrelated' }),
+    skill('same', { provider: 'plugin', path: '/A', source: 'Beta', description: 'unrelated' }),
+  ];
+  const first = scoreSkills('totally different words', list);
+  const reversed = scoreSkills('totally different words', [...list].reverse());
+  assert.deepEqual(first, reversed);
+  assert.deepEqual(
+    first.map((item) => [item.skill.path, item.skill.source]),
+    [['/A', 'Beta'], ['/A', 'zeta'], ['/z', 'alpha']]
+  );
+});
+
+test('excluded skills stay listed and flagged with the same ordering keys (T094)', () => {
+  const list = [
+    skill('internal', { path: '/b', source: 'user', invocation: { userInvocable: false, modelInvocable: true } }),
+    skill('internal', { path: '/a', source: 'user', invocation: { userInvocable: false, modelInvocable: true } }),
+    skill('public', { path: '/z', source: 'user' }),
+  ];
+  const scored = scoreSkills('nothing matches here', list);
+  assert.equal(scored.length, 3, 'excluded items are marked but still listed');
+  assert.equal(scored.filter((item) => item.excluded === 'not_user_invocable').length, 2);
+  assert.deepEqual(scored.map((item) => [item.skill.name, item.skill.path]), [
+    ['internal', '/a'],
+    ['internal', '/b'],
+    ['public', '/z'],
+  ]);
+});

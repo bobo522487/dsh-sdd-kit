@@ -4,6 +4,31 @@ on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
+  # T089: the matrix must also guard changes, not only the nightly clock. A
+  # regression in the CLI, the packaged extension or this workflow itself is
+  # caught on the pull request instead of the next morning.
+  pull_request:
+    paths:
+      - 'bin/**'
+      - 'src/**'
+      - 'test/**'
+      - 'spec-kit-extension/**'
+      - 'overrides/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/upstream-integration.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'bin/**'
+      - 'src/**'
+      - 'test/**'
+      - 'spec-kit-extension/**'
+      - 'overrides/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/upstream-integration.yml'
 
 jobs:
   matrix:
@@ -33,8 +58,14 @@ jobs:
         run: uv tool install specify-cli --force --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_REF}"
       - name: Pin the discipline mirror (pinned-mirror only)
         if: matrix.upstream == 'pinned-mirror'
-        run: git clone --depth 1 --branch "${SUPERPOWERS_REF}" https://github.com/obra/superpowers.git "$RUNNER_TEMP/superpowers-pinned"
-      - name: Install → init → extension → doctor smoke (REQ-40)
+        run: |
+          git clone --depth 1 --branch "${SUPERPOWERS_REF}" https://github.com/obra/superpowers.git "$RUNNER_TEMP/superpowers-pinned"
+          # T089: cloning is not pinning. The mirror reaches the CLI through the
+          # one env channel it documents (see src/core/candidates.mjs), and it is
+          # exported so every later step — doctor included — resolves the same
+          # checkout instead of whatever happens to sit in $HOME.
+          echo "DSH_SDD_KIT_SUPERPOWERS_DIR=$RUNNER_TEMP/superpowers-pinned" >> "$GITHUB_ENV"
+      - name: Install → init → extension → overrides → doctor smoke (REQ-40)
         run: |
           WORKDIR="$RUNNER_TEMP/sdd-${UPSTREAM_VARIANT}-${HOST_KEY}"
           mkdir -p "$WORKDIR"
@@ -43,7 +74,11 @@ jobs:
           # carries the extension under test: without it the repository and host
           # zones degrade to warnings and the smoke test proves nothing.
           (cd "$WORKDIR" && specify extension add --dev "$GITHUB_WORKSPACE/spec-kit-extension" --force)
-          (cd "$WORKDIR" && node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" doctor --json > doctor.json)
+          # `extension add` installs commands and hooks but never the managed
+          # spec-template override, so TEMPLATE_MISSING would be permanent.
+          # Install it through the product's own bridge, not with a bare cp.
+          node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" bridge --action install_overrides --cwd "$WORKDIR" --json > "$WORKDIR/overrides.json"
+          (cd "$WORKDIR" && node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" doctor --json --host "$HOST_KEY" > doctor.json)
           cat > "$RUNNER_TEMP/verify-doctor.mjs" <<'NODE'
           import fs from 'node:fs';
 
@@ -54,6 +89,16 @@ jobs:
           const ZONES = ['environment', 'host', 'repository', 'runtime', 'triggerDryRun'];
           const ALLOWED = ['pass', 'fail', 'skipped', 'not_executed'];
           const MUST_PASS = ['environment', 'host', 'repository', 'runtime'];
+          // T090: a green zone can still be hollow. These codes are the ones
+          // that prove the packaged extension really landed in the sample
+          // project, so they must be present AND pass.
+          const MUST_PASS_ITEMS = {
+            host: ['EXTENSION_STATE'],
+            repository: ['TEMPLATE_DRIFT', 'COMMAND_SKILLS'],
+          };
+          // T090: the warn variants mean the extension is half-installed; a
+          // warn must never be absorbed by the zone aggregate.
+          const FORBIDDEN_ITEMS = ['TEMPLATE_MISSING', 'TEMPLATE_PACKAGED_MISSING'];
 
           const file = process.argv[2];
           let report;
@@ -79,9 +124,22 @@ jobs:
             if (MUST_PASS.includes(zone) && status !== 'pass') {
               problems.push(`${zone}: status ${status}, but ${zone} must pass (skipped and not_executed are failures)`);
             }
-            for (const item of value.items ?? []) {
+            const items = value.items ?? [];
+            for (const item of items) {
               if (item?.status === 'fail') {
                 problems.push(`${zone}: failing item ${item.code ?? '(unnamed)'} — ${item.message ?? ''}`);
+              }
+              if (FORBIDDEN_ITEMS.includes(item?.code)) {
+                problems.push(`${zone}: item ${item.code} is a warning that must never appear here — ${item.message ?? ''}`);
+              }
+            }
+            const byCode = new Map(items.map((item) => [item?.code, item]));
+            for (const code of MUST_PASS_ITEMS[zone] ?? []) {
+              const item = byCode.get(code);
+              if (!item) {
+                problems.push(`${zone}: required item ${code} is missing`);
+              } else if (item.status !== 'pass') {
+                problems.push(`${zone}: item ${code} is ${item.status}, but it must pass — ${item.message ?? ''}`);
               }
             }
           }
@@ -97,4 +155,4 @@ jobs:
       - name: Verify the live upstream contract
         run: |
           node scripts/verify-upstream.mjs --json > /tmp/upstream-report.json
-          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + ' (not_executed is a failure, never a pass)' + (r.reason ? ' — ' + r.reason : '')); process.exit(1); }"
+          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + ' (not_executed is a failure, never a pass)' + (r.reason ? ' — ' + r.reason : '')); process.exit(1); } if (r.versionDrift && r.versionDrift.needsAdjustment) { console.error('upstream contract: version bound drift — ' + JSON.stringify(r.versionDrift)); process.exit(1); }"

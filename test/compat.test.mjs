@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { selectSuperpowersDir } from '../src/core/candidates.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -46,6 +47,24 @@ test('CLI and published files expose the host-neutral entry (REQ-05)', async () 
     'core package must not add runtime dependencies');
 });
 
+test('candidate environment keys and default path can be injected by a host adapter (T079)', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-candidates-inject-'));
+  const mirror = path.join(root, 'mirror');
+  await fs.mkdir(mirror, { recursive: true });
+
+  const injected = await selectSuperpowersDir(
+    { envKeys: { mirror: 'ADAPTER_MIRROR', home: 'ADAPTER_HOME' } },
+    { ADAPTER_MIRROR: mirror },
+  );
+  assert.equal(injected.reason, 'env');
+  assert.equal(injected.realPath, mirror);
+
+  const injectedDefault = await selectSuperpowersDir({ defaultDir: mirror }, {});
+  assert.equal(injectedDefault.reason, 'default');
+  assert.equal(injectedDefault.dir, mirror);
+  assert.equal(injectedDefault.fallback, false);
+});
+
 test('extension declares a version bound, four execution hooks, guard hooks and session_start event (REQ-24/REQ-23/REQ-27)', async () => {
   const raw = await fs.readFile(
     path.join(PKG_ROOT, 'spec-kit-extension', 'extension.yml'),
@@ -84,5 +103,130 @@ test('version bound failures happen at install time with no half-installed resid
     } finally {
       fsSync.rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+test('peer versions stay `*` until a host runtime exists, and the reason is recorded (T091)', async () => {
+  const pkg = await readPkg();
+  for (const [peer, range] of Object.entries(pkg.peerDependencies ?? {})) {
+    assert.equal(range, '*', `${peer} must stay "*" while no host runtime is installed here`);
+    assert.equal(pkg.peerDependenciesMeta?.[peer]?.optional, true, `${peer} must stay optional`);
+  }
+  // The `*` is a deliberate, documented decision, not an oversight: a tightened
+  // bound would make the plugin uninstallable for hosts we never measured.
+  const research = await fs.readFile(
+    path.join(PKG_ROOT, 'specs', '004-multihost-runtime-governance', 'research.md'),
+    'utf8'
+  );
+  assert.match(research, /peer 版本实测下界/, 'the open item must survive in the research report');
+  assert.match(research, /T091/, 'the T091 evidence must be recorded next to it');
+});
+
+test('declared bound and prerelease semantics are asserted on every run (T091)', async () => {
+  const { compareBound } = await import('../scripts/verify-upstream.mjs');
+  const manifest = await fs.readFile(path.join(PKG_ROOT, 'spec-kit-extension', 'extension.yml'), 'utf8');
+  const declared = /speckit_version:\s*"([^"]+)"/.exec(manifest)?.[1];
+  assert.equal(declared, '>=1.4.0', 'the extension must declare a real floor, never "*"');
+
+  // The three LOW_BOUND_CASES, decided without a toolchain: this is the part
+  // that used to be skipped together with the live install probe.
+  const belowImpossible = compareBound('>=99.0.0', '1.4.4.dev0');
+  assert.equal(belowImpossible.needsAdjustment, true);
+  assert.equal(belowImpossible.suggestedBound, '>=1.4.4');
+
+  const belowFinal = compareBound('>=1.4.4', '1.4.4.dev0');
+  assert.equal(belowFinal.needsAdjustment, true, 'a prerelease must not satisfy a final-release floor');
+
+  const satisfied = compareBound('>=1.4.0', '1.4.4.dev0');
+  assert.equal(satisfied.needsAdjustment, false, 'a prerelease of a satisfying release is inside the floor');
+  assert.equal(satisfied.suggestedBound, '>=1.4.0');
+
+  // A missing toolchain is not drift: it is simply not executed.
+  const absent = compareBound('>=1.4.0', null);
+  assert.equal(absent.needsAdjustment, false);
+  assert.equal(absent.observed, null);
+});
+
+const HOOK_COMMANDS = [
+  'speckit-superpowers-hooks-before-implement',
+  'speckit-superpowers-hooks-after-implement',
+  'speckit-superpowers-hooks-before-bug-fix',
+  'speckit-superpowers-hooks-after-bug-fix',
+  'speckit-superpowers-hooks-guard',
+  'speckit-superpowers-hooks-guidance',
+];
+const HOOK_EVENTS = [
+  'before_implement',
+  'after_implement',
+  'before_bug_fix',
+  'after_bug_fix',
+  'before_clarify',
+  'before_plan',
+];
+
+test('the packaged extension ships every hook, the guard and the guidance command (T095)', async () => {
+  const manifest = await fs.readFile(path.join(PKG_ROOT, 'spec-kit-extension', 'extension.yml'), 'utf8');
+  for (const event of HOOK_EVENTS) assert.match(manifest, new RegExp(`^  ${event}:`, 'm'), `${event} must be declared`);
+  for (const command of HOOK_COMMANDS) {
+    // The manifest declares dotted ids (`speckit.superpowers-hooks.guard`); the
+    // host renders them as dash-separated skill directories.
+    const dotted = command.replace(/^speckit-superpowers-hooks-/, 'speckit.superpowers-hooks.');
+    assert.match(manifest, new RegExp(`name: ${dotted.replace(/\./g, '\\.')}`), `${dotted} must be provided`);
+    const file = path.join(PKG_ROOT, 'spec-kit-extension', 'commands', `${dotted}.md`);
+    assert.ok(fsSync.existsSync(file), `${command} must ship a command document`);
+  }
+  assert.match(manifest, /events:\n\s+session_start:/, 'session_start must stay declared for Claude/Codex/Cursor');
+  // The guard and the guidance command are the two the repo itself once missed,
+  // so their scripts must exist next to the documents that call them.
+  for (const script of ['guard.sh', 'guidance.sh', '_cli.sh']) {
+    assert.ok(
+      fsSync.existsSync(path.join(PKG_ROOT, 'spec-kit-extension', 'scripts', 'bash', script)),
+      `${script} must ship with the extension`
+    );
+  }
+});
+
+test('reinstalling the extension renders all six hook skills and both extra commands (T095)', async (t) => {
+  const probe = spawnSync('specify', ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  if (probe.error || probe.status !== 0) {
+    t.skip('specify is not installed here; the render is covered by the static assertions above');
+    return;
+  }
+  const home = fsSync.mkdtempSync(path.join(os.tmpdir(), 'dsh-t095-home-'));
+  const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'dsh-t095-'));
+  // The scripts resolve the CLI through _cli.sh; point them at this checkout so
+  // the probe never depends on a global install and never touches ~/.dsh.
+  const env = { ...process.env, HOME: home, DSH_SDD_KIT_CLI: path.join(PKG_ROOT, 'bin', 'sdd-kit.mjs') };
+  try {
+    const init = spawnSync('specify', ['init', '.', '--integration', 'dsh', '--non-interactive', '--force', '--ignore-agent-tools'], { cwd: dir, encoding: 'utf8', timeout: 60_000, env });
+    assert.equal(init.status, 0, `specify init failed: ${init.stderr}`);
+    const add = spawnSync('specify', ['extension', 'add', '--dev', path.join(PKG_ROOT, 'spec-kit-extension'), '--force'], { cwd: dir, encoding: 'utf8', timeout: 60_000, env });
+    assert.equal(add.status, 0, `specify extension add failed: ${add.stderr}`);
+
+    const skillsDir = path.join(dir, '.dsh', 'skills');
+    const rendered = fsSync.readdirSync(skillsDir).filter((name) => name.startsWith('speckit-superpowers-hooks-'));
+    assert.deepEqual(rendered.sort(), [...HOOK_COMMANDS].sort(), 'all six hook skills must land on disk, guard and guidance included');
+
+    const extensions = fsSync.readFileSync(path.join(dir, '.specify', 'extensions.yml'), 'utf8');
+    for (const event of HOOK_EVENTS) {
+      assert.equal((extensions.match(new RegExp(`^  ${event}:`, 'gm')) ?? []).length, 1, `${event} must be registered exactly once`);
+    }
+
+    // session_start is an event, not a hook: upstream keeps it in the extension
+    // manifest it copies into the project, never in extensions.yml.
+    const installedManifest = fsSync.readFileSync(path.join(dir, '.specify', 'extensions', 'superpowers-hooks', 'extension.yml'), 'utf8');
+    assert.match(installedManifest, /session_start:/, 'the installed manifest must still carry session_start');
+
+    const guard = spawnSync('sh', ['.specify/extensions/superpowers-hooks/scripts/bash/guard.sh', '--json'], { cwd: dir, encoding: 'utf8', timeout: 30_000, env });
+    const guardReport = JSON.parse(guard.stdout);
+    assert.ok(['ok', 'error'].includes(guardReport.status), `guard must answer with a verdict, got: ${guard.stdout}`);
+    assert.equal(guardReport.blocked, false, 'a fresh project has no checked tasks, so the guard must not block');
+
+    const guidance = spawnSync('sh', ['.specify/extensions/superpowers-hooks/scripts/bash/guidance.sh', '--text'], { cwd: dir, encoding: 'utf8', timeout: 60_000, env });
+    assert.equal(guidance.status, 0, `guidance script failed: ${guidance.stderr}`);
+    assert.match(guidance.stdout, /## SDD 运行时纪律/, 'the session_start payload must be the real discipline text');
+  } finally {
+    fsSync.rmSync(dir, { recursive: true, force: true });
+    fsSync.rmSync(home, { recursive: true, force: true });
   }
 });

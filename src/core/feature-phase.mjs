@@ -59,14 +59,16 @@ export async function detectFeaturePhase({ cwd = process.cwd() } = {}) {
   const featureDir = feature ? path.join(cwd, 'specs', feature) : '';
   let phase = 'constitution';
   if (featureDir) {
-    if (await exists(path.join(featureDir, 'tasks.md'))) {
-      const tasks = await fs.readFile(path.join(featureDir, 'tasks.md'), 'utf8').catch(() => '');
+    const tasksPath = path.join(featureDir, 'tasks.md');
+    if (await exists(tasksPath)) {
+      const tasks = await fs.readFile(tasksPath, 'utf8').catch(() => '');
+      // Only a checked task proves implementation started. An unchecked tasks.md
+      // without plan.md is not a plan: the pointer falls back to specify (T093).
       if (CHECKED_TASK.test(tasks)) phase = 'implement';
-      else phase = 'plan';
-    } else if (await exists(path.join(featureDir, 'plan.md'))) {
-      phase = 'plan';
-    } else if (await exists(path.join(featureDir, 'spec.md'))) {
-      phase = 'specify';
+    }
+    if (phase === 'constitution') {
+      if (await exists(path.join(featureDir, 'plan.md'))) phase = 'plan';
+      else if (await exists(path.join(featureDir, 'spec.md'))) phase = 'specify';
     }
   }
   return { feature, phase, nextCommand: nextCommandForPhase(phase), featureDir };

@@ -10,9 +10,26 @@
  */
 
 import { parseArgs } from 'node:util';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import { runAction, unknownActionError } from '../src/core/action.mjs';
+import { HOST_CAPABILITIES } from '../src/core/host-capabilities.mjs';
 import { formatGuidanceText } from '../src/core/guidance.mjs';
+import { clearMarker, markerPath } from '../src/core/marker.mjs';
+
+/**
+ * Text-channel rendering for a disabled guidance switch (T067). The discipline
+ * payload is withheld on purpose; only the switch state and its origin remain so
+ * an operator can see why nothing was injected and where to flip it back.
+ * @param {{effectiveScope?: string, source?: string|null, warnings?: string[]}} bundle
+ */
+export function formatGuidanceDisabledText(bundle) {
+  const scope = bundle?.effectiveScope ?? 'default';
+  const origin = bundle?.source ? ` (${bundle.source})` : '';
+  return `guidance disabled: 引导已停用（scope=${scope}${origin}）。未注入任何纪律正文；如需恢复，把该文件中的 guidance.enabled 设为 true。`;
+}
 
 const SUBCOMMANDS = ['update', 'bridge', 'doctor', 'guard', 'guidance'];
 
@@ -39,6 +56,9 @@ const OPTIONS = Object.freeze({
   // Cursor auto-trust dispatch flags. Values often start with `-`, so the
   // equal-sign form (`--trust-flags=--trust,--force`) is the documented usage.
   'trust-flags': { type: 'string', multiple: true },
+  // Maintenance escape hatch (T081): drop one host's pending-change marker
+  // without touching the other hosts sharing the same repository file.
+  'clear-marker': { type: 'boolean', default: false },
 });
 
 /** camelCase keys that need an explicit rename onto the core parameter names. */
@@ -47,6 +67,7 @@ const RENAMES = Object.freeze({
   'extension-dir': 'extensionDir',
   'switch-integration': 'switchIntegration',
   'use-skills': 'useSkills',
+  'clear-marker': 'clearMarker',
 });
 
 function cliError(code, message, fix) {
@@ -146,14 +167,154 @@ function parse(argv) {
   return { command, params };
 }
 
+/**
+ * CLI fallback for `ctx.skills.list()`: read SKILL.md frontmatter from the
+ * host/project skill dir, the user-level DSH dir, and (as a last resort) a
+ * packaged `skills/` dir. Pure filesystem reads; no skill is ever executed.
+ * The returned shape is the core `SkillSummary` used by runDoctor.
+ */
+async function readSkillSummary(file, { source, provider }) {
+  const text = await fs.readFile(file, 'utf8').catch(() => null);
+  if (text === null) return null;
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
+  const field = (key) => {
+    const match = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(frontmatter);
+    return match?.[1].trim().replace(/^["']|["']$/g, '') ?? '';
+  };
+  const name = field('name') || path.basename(path.dirname(file));
+  return {
+    name,
+    description: field('description'),
+    whenToUse: field('whenToUse') || field('when_to_use'),
+    source: field('source') || source,
+    provider: field('provider') || provider,
+    path: file,
+    invocation: {
+      userInvocable: !/^user-invocable:[ \t]*false\s*$/m.test(frontmatter),
+      modelInvocable: !/^disable-model-invocation:[ \t]*true\s*$/m.test(frontmatter),
+    },
+  };
+}
+
+async function scanSkillDir(directory, meta, found) {
+  let entries;
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(directory, entry.name, 'SKILL.md');
+    try {
+      await fs.access(file);
+    } catch {
+      continue;
+    }
+    const summary = await readSkillSummary(file, meta);
+    if (summary && !found.some((item) => item.path === summary.path)) found.push(summary);
+  }
+}
+
+export async function collectSkillSummaries({ cwd = process.cwd(), host = 'dsh' } = {}) {
+  const capability = HOST_CAPABILITIES[host] ?? HOST_CAPABILITIES.dsh;
+  const found = [];
+  await scanSkillDir(path.join(cwd, capability.skillsDir), { source: 'host', provider: capability.key }, found);
+  await scanSkillDir(path.join(os.homedir(), '.dsh', 'skills'), { source: 'user', provider: capability.key }, found);
+  if (found.length === 0) {
+    await scanSkillDir(path.join(cwd, 'skills'), { source: 'bundled', provider: capability.key }, found);
+  }
+  return found;
+}
+
+/**
+ * Per-subcommand option allowlists. `parseArgs` accepts the union of all flags,
+ * so without this table `doctor --upgrade` would parse cleanly and then silently
+ * ignore the flag — the exact silent no-op AC-03 forbids (T088). Anything that
+ * is parsed but not reachable for the chosen subcommand is rejected loudly.
+ */
+const ALLOWED = Object.freeze({
+  update: ['json', 'cwd', 'host', 'python', 'superpowers-dir', 'repoUrl'],
+  bridge: ['json', 'cwd', 'action', 'featureName', 'bugSlug', 'artifact', 'overwrite'],
+  doctor: ['json', 'cwd', 'host', 'trigger', 'trust-flags'],
+  guard: ['json', 'cwd'],
+  guidance: ['json', 'text', 'cwd', 'host', 'clear-marker'],
+});
+
+/** Flags that only exist for subcommands outside the CLI's reachable set. */
+const CORE_ONLY = Object.freeze({
+  'switch-integration': 'the setup action',
+  'use-skills': 'the setup action',
+  'extension-dir': 'the setup action',
+  upgrade: 'the setup action',
+  integration: 'the setup action',
+});
+
+function providedFlags(argv) {
+  const flags = new Set();
+  for (const arg of argv) {
+    if (!arg.startsWith('--')) continue;
+    flags.add(arg.slice(2).split('=')[0]);
+  }
+  return flags;
+}
+
+function rejectUnreachableOptions(command, argv) {
+  const allowed = ALLOWED[command];
+  if (!allowed) return;
+  for (const flag of providedFlags(argv)) {
+    if (allowed.includes(flag)) continue;
+    const owner = CORE_ONLY[flag] ? ` Only ${CORE_ONLY[flag]} uses it.` : '';
+    throw cliError(
+      'E_UNSUPPORTED_OPTION',
+      `Option '--${flag}' is not supported by '${command}'.${owner}`,
+      `'${command}' accepts: ${allowed.map((key) => `--${key}`).join(', ')}.`
+    );
+  }
+}
+
+/**
+ * `--clear-marker` (T081): remove exactly one host's pending-change entry.
+ * The marker file is shared by every host in one repository, so the host must be
+ * named explicitly and validated — an unknown host is refused rather than
+ * silently clearing nothing. An absent marker is never created by a clear.
+ * @param {{cwd?: string, host?: string}} params
+ */
+async function clearHostMarker({ cwd = process.cwd(), host = 'dsh' } = {}) {
+  if (!HOST_CAPABILITIES[host]) {
+    throw cliError(
+      'E_UNKNOWN_HOST',
+      `Unknown host '${host}'.`,
+      `Use one of: ${Object.keys(HOST_CAPABILITIES).join(', ')}.`
+    );
+  }
+  const cleared = await clearMarker({ cwd, host });
+  return { status: 'ok', action: 'clear_marker', host, cleared, path: markerPath(cwd) };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const asText = argv.includes('--text');
   const { command, params } = parse(argv);
-  const result = SUBCOMMANDS.includes(command)
-    ? await runAction(command, params)
-    : unknownActionError(command);
+  rejectUnreachableOptions(command, argv);
+  const result = params.clearMarker
+    ? await clearHostMarker({ cwd: params.cwd, host: params.host })
+    : SUBCOMMANDS.includes(command)
+      ? await runAction(
+        command,
+        command === 'doctor' && typeof params.trigger === 'string' && params.trigger.length > 0
+          ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }) }
+          : params
+      )
+      : unknownActionError(command);
   if (asText && command === 'guidance' && result && result.status !== 'error') {
+    // The switch is authoritative for the text channel (T067): a disabled
+    // guidance bundle must never leak the discipline text into a session.
+    // The JSON path still carries enabled/effectiveScope/source for diagnosis.
+    if (result.enabled === false) {
+      process.stdout.write(`${formatGuidanceDisabledText(result)}\n`);
+      return;
+    }
     process.stdout.write(`${formatGuidanceText(result)}\n`);
     return;
   }

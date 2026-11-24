@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,11 +21,12 @@ function shape(value) {
   return typeof value;
 }
 
-function invokeCli(args) {
+function invokeCli(args, env = {}) {
   const result = spawnSync(process.execPath, [CLI, ...args], {
     cwd: PKG_ROOT,
     encoding: 'utf8',
     timeout: 10_000,
+    env: { ...process.env, ...env },
   });
   assert.equal(result.error, undefined, `CLI spawn failed: ${result.error?.message}`);
   let stdout;
@@ -92,4 +95,219 @@ test('--trust-flags also accepts a comma separated list (AC-11)', () => {
   assert.equal(cursorTrust.status, 'warn');
   assert.match(cursorTrust.message, /--trust/);
   assert.match(cursorTrust.message, /--force/);
+});
+
+async function makeSkillTree({ hostDir = '.dsh/skills', project, user }) {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-skills-'));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-home-'));
+  const writeSkill = async (base, name, frontmatter) => {
+    const dir = path.join(base, name);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'SKILL.md'),
+      `---\n${frontmatter}\n---\n\nRun \`touch ${path.join(repo, 'EXECUTED')}\` if this skill is executed.\n`,
+      'utf8'
+    );
+  };
+  if (project) await writeSkill(path.join(repo, hostDir), project.name, project.frontmatter);
+  if (user) await writeSkill(path.join(home, '.dsh', 'skills'), user.name, user.frontmatter);
+  return { repo, home };
+}
+
+test('doctor --trigger collects host/project SKILL.md summaries and scores them without executing (T077)', async () => {
+  const { repo, home } = await makeSkillTree({
+    project: {
+      name: 'debug-helper',
+      frontmatter: 'name: debug-helper\ndescription: debug a failing test\nprovider: plugin\nsource: host\nuser-invocable: true\n',
+    },
+  });
+  const cli = invokeCli(
+    ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
+    { HOME: home }
+  );
+  assert.equal(cli.status, 0);
+  assert.equal(cli.stdout.triggerDryRun.status, 'pass');
+  const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
+  assert.ok(item, 'trigger zone must expose scored skills');
+  const entry = item.scores.find((score) => score.skill.name === 'debug-helper');
+  assert.ok(entry, 'CLI must pass scanned SkillSummary[] to the doctor action');
+  assert.ok(entry.score > 0);
+  assert.equal(typeof entry.skill.path, 'string');
+  assert.match(entry.skill.path, /debug-helper\/SKILL\.md$/);
+  assert.equal(entry.skill.provider, 'plugin');
+  assert.equal(entry.skill.source, 'host');
+  assert.deepEqual(entry.skill.invocation, { userInvocable: true, modelInvocable: true });
+  await assert.rejects(fs.access(path.join(repo, 'EXECUTED')), 'dry-run must never execute a skill');
+});
+
+test('doctor --trigger also reads user-level skills and keeps excluded entries listed (T077)', async () => {
+  const { repo, home } = await makeSkillTree({
+    user: {
+      name: 'internal-debug',
+      frontmatter: 'name: internal-debug\ndescription: debug failing test\nuser-invocable: false\ndisable-model-invocation: true\n',
+    },
+  });
+  const cli = invokeCli(
+    ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
+    { HOME: home }
+  );
+  assert.equal(cli.status, 0);
+  const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
+  assert.ok(item);
+  const entry = item.scores.find((score) => score.skill.name === 'internal-debug');
+  assert.ok(entry, 'excluded skills are still listed');
+  assert.equal(entry.excluded, 'not_user_invocable');
+  assert.deepEqual(entry.skill.invocation, { userInvocable: false, modelInvocable: false });
+  assert.equal(entry.skill.source, 'user');
+});
+
+test('doctor --trigger falls back to packaged skills/ when no host skill dir exists (T077)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-bundled-'));
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-empty-home-'));
+  const dir = path.join(repo, 'skills', 'bundled-debug');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, 'SKILL.md'),
+    '---\nname: bundled-debug\ndescription: debug failing test\n---\n\nbody\n',
+    'utf8'
+  );
+  const cli = invokeCli(
+    ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
+    { HOME: home }
+  );
+  assert.equal(cli.status, 0);
+  const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
+  const entry = item.scores.find((score) => score.skill.name === 'bundled-debug');
+  assert.ok(entry, 'packaged skills/ is the last-resort scan target');
+  assert.equal(entry.skill.source, 'bundled');
+});
+
+test('core/CLI parity now covers doctor, bridge and update (T088)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-parity-'));
+  const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-empty-bin-'));
+  const savedPath = process.env.PATH;
+  const savedMirror = process.env.DSH_SDD_KIT_SUPERPOWERS_DIR;
+  process.env.PATH = emptyBin;
+  process.env.DSH_SDD_KIT_SUPERPOWERS_DIR = path.join(repo, 'mirror');
+  try {
+    for (const command of ['doctor', 'bridge', 'update']) {
+      const cli = invokeCli([command, '--json', '--cwd', repo]);
+      const core = await runAction(command, { cwd: repo });
+      assert.deepEqual(shape(cli.stdout), shape(core), `${command} CLI and core shapes must match`);
+    }
+  } finally {
+    process.env.PATH = savedPath;
+    if (savedMirror === undefined) delete process.env.DSH_SDD_KIT_SUPERPOWERS_DIR;
+    else process.env.DSH_SDD_KIT_SUPERPOWERS_DIR = savedMirror;
+  }
+});
+
+test('--action is reachable only through bridge; other subcommands reject it explicitly (T088)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-action-'));
+  const bridge = invokeCli(['bridge', '--action', 'inspect', '--cwd', repo]);
+  assert.equal(bridge.status, 0);
+  assert.equal(bridge.stdout.action, 'inspect');
+  for (const command of ['update', 'doctor', 'guard', 'guidance']) {
+    const cli = invokeCli([command, '--action', 'inspect', '--json']);
+    assert.notEqual(cli.status, 0, `${command} must not silently ignore --action`);
+    assert.equal(cli.stdout.status, 'error');
+    assert.equal(cli.stdout.code, 'E_UNSUPPORTED_OPTION');
+    assert.match(cli.stdout.message, /--action/);
+  }
+});
+
+test('setup/upstream-only flags are rejected by every CLI subcommand (T088)', () => {
+  const cases = ['--upgrade', '--switch-integration', '--use-skills', '--extension-dir=/tmp/ext'];
+  for (const flag of cases) {
+    const cli = invokeCli(['doctor', flag]);
+    assert.notEqual(cli.status, 0, `${flag} must not be a silent no-op`);
+    assert.equal(cli.stdout.status, 'error');
+    assert.equal(cli.stdout.code, 'E_UNSUPPORTED_OPTION');
+    assert.match(cli.stdout.message, new RegExp(flag.replace(/=.*$/, '')));
+  }
+});
+
+function runCliRaw(args, env = {}) {
+  return spawnSync(process.execPath, [CLI, ...args], {
+    cwd: PKG_ROOT,
+    encoding: 'utf8',
+    timeout: 10_000,
+    env: { ...process.env, ...env },
+  });
+}
+
+test('guidance --text never prints discipline text when the switch is off (T067)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-guidance-off-'));
+  await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+  await fs.writeFile(
+    path.join(repo, '.specify', 'sdd-kit.json'),
+    `${JSON.stringify({ guidance: { enabled: false } }, null, 2)}\n`,
+    'utf8'
+  );
+
+  const text = runCliRaw(['guidance', '--text', '--cwd', repo]);
+  assert.equal(text.status, 0, text.stderr);
+  assert.doesNotMatch(text.stdout, /## SDD 运行时纪律/, 'the discipline header must not be injected when disabled');
+  assert.doesNotMatch(text.stdout, /工具映射/, 'the tool mapping must not be injected when disabled');
+  assert.match(text.stdout, /guidance disabled|已停用|已关闭/, 'the CLI must say the switch is off instead of printing nothing');
+
+  // The JSON path is the diagnostic surface: it keeps the switch state.
+  const json = invokeCli(['guidance', '--json', '--cwd', repo]);
+  assert.equal(json.status, 0);
+  assert.equal(json.stdout.enabled, false);
+  assert.equal(json.stdout.effectiveScope, 'project');
+
+  // A default (no config) project still renders the full text.
+  const on = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-guidance-on-'));
+  const enabled = runCliRaw(['guidance', '--text', '--cwd', on]);
+  assert.equal(enabled.status, 0, enabled.stderr);
+  assert.match(enabled.stdout, /## SDD 运行时纪律/);
+});
+
+test('--text is implemented only for guidance and rejected elsewhere (T088)', () => {
+  const cli = invokeCli(['doctor', '--text']);
+  assert.notEqual(cli.status, 0);
+  assert.equal(cli.stdout.code, 'E_UNSUPPORTED_OPTION');
+  assert.match(cli.stdout.message, /--text/);
+});
+
+test('guidance --host <host> --clear-marker clears only that host marker (T081)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-marker-'));
+  const marker = path.join(repo, '.specify', 'sdd-pending.json');
+
+  // An empty repository must stay empty: clearing never creates the file.
+  const absent = invokeCli(['guidance', '--cwd', repo, '--host', 'claude', '--clear-marker']);
+  assert.equal(absent.status, 0, JSON.stringify(absent.stdout));
+  assert.equal(absent.stdout.cleared, false);
+  assert.equal(absent.stdout.host, 'claude');
+  await assert.rejects(fs.access(marker), 'clearing an absent marker must not create the file');
+
+  await fs.mkdir(path.dirname(marker), { recursive: true });
+  const seed = {
+    dsh: { host: 'dsh', layer: 'tool_code', timestamp: '2026-01-01T00:00:00.000Z', reason: 'update' },
+    claude: { host: 'claude', layer: 'skill_data', timestamp: '2026-01-01T00:00:01.000Z', reason: 'update' },
+  };
+  await fs.writeFile(marker, `${JSON.stringify(seed, null, 2)}\n`, 'utf8');
+
+  const cleared = invokeCli(['guidance', '--cwd', repo, '--host', 'claude', '--clear-marker']);
+  assert.equal(cleared.status, 0, JSON.stringify(cleared.stdout));
+  assert.equal(cleared.stdout.cleared, true);
+  assert.equal(cleared.stdout.host, 'claude');
+  assert.equal(cleared.stdout.path, marker);
+
+  const remaining = JSON.parse(await fs.readFile(marker, 'utf8'));
+  assert.deepEqual(Object.keys(remaining), ['dsh'], 'only the requested host entry may be removed');
+  assert.equal(remaining.dsh.layer, 'tool_code');
+
+  // An unknown host is refused instead of silently doing nothing.
+  const bogus = invokeCli(['guidance', '--cwd', repo, '--host', 'not-a-host', '--clear-marker']);
+  assert.notEqual(bogus.status, 0);
+  assert.equal(bogus.stdout.status, 'error');
+  assert.equal(bogus.stdout.code, 'E_UNKNOWN_HOST');
+  assert.match(bogus.stdout.fix, /dsh/);
+
+  // Other subcommands must not accept the flag.
+  const doctor = invokeCli(['doctor', '--cwd', repo, '--clear-marker']);
+  assert.notEqual(doctor.status, 0);
+  assert.equal(doctor.stdout.code, 'E_UNSUPPORTED_OPTION');
 });

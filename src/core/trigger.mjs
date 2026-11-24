@@ -20,6 +20,20 @@ function tokenise(text) {
 
 const NAME_WEIGHT = 2;
 
+/**
+ * Locale-independent ordering: compare Unicode scalar values (code points),
+ * never Intl/locale collation. This is stable across hosts and Node builds.
+ */
+function compareCodePoints(a, b) {
+  const left = Array.from(String(a ?? ''), (char) => char.codePointAt(0));
+  const right = Array.from(String(b ?? ''), (char) => char.codePointAt(0));
+  const shared = Math.min(left.length, right.length);
+  for (let i = 0; i < shared; i += 1) {
+    if (left[i] !== right[i]) return left[i] - right[i];
+  }
+  return left.length - right.length;
+}
+
 export function scoreSkills(description, skills = []) {
   const wanted = tokenise(description);
   const scored = [];
@@ -39,7 +53,7 @@ export function scoreSkills(description, skills = []) {
         weight += 1;
       }
     }
-    matchedTerms.sort();
+    matchedTerms.sort(compareCodePoints);
     const denominator = Math.sqrt(allTokens.size || 1);
     const score = Math.min(1, weight / denominator);
     const excluded = skill.invocation?.userInvocable === false ? 'not_user_invocable' : undefined;
@@ -58,10 +72,13 @@ export function scoreSkills(description, skills = []) {
       ...(excluded ? { excluded } : {}),
     });
   }
-  scored.sort((a, b) =>
-    b.score - a.score ||
-    a.skill.name.localeCompare(b.skill.name) ||
-    (a.skill.provider ?? '').localeCompare(b.skill.provider ?? '')
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      compareCodePoints(a.skill.name, b.skill.name) ||
+      compareCodePoints(a.skill.provider, b.skill.provider) ||
+      compareCodePoints(a.skill.path, b.skill.path) ||
+      compareCodePoints(a.skill.source, b.skill.source)
   );
   return scored;
 }

@@ -55,7 +55,8 @@ test('an unchecked tasks.md alone does not block (REQ-23/AC-13)', async () => {
   const { repo } = await makeFeature('- [ ] T001 pending\n');
   const result = await checkPlanningGuard({ cwd: repo });
   assert.equal(result.blocked, false);
-  assert.equal(result.phase, 'plan');
+  // No plan.md exists: the shared phase detector falls back to specify (T093).
+  assert.equal(result.phase, 'specify');
 });
 
 test('a feature without tasks.md does not block (AC-13)', async () => {
