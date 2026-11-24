@@ -16,13 +16,63 @@ test('HOST_CAPABILITIES covers exactly four hosts with required fields', () => {
     const cap = HOST_CAPABILITIES[host];
     for (const field of [
       'key', 'integrationKey', 'toolPrefix', 'skillsDir',
-      'guidanceChannel', 'guidanceConfig', 'reloadPolicy', 'trustFlagPattern',
+      'guidanceChannel', 'guidanceConfig', 'reloadPolicy', 'trustFlagPattern', 'toolNames',
     ]) {
       assert.ok(Object.hasOwn(cap, field), `${host} missing ${field}`);
     }
     assert.equal(cap.key, host);
   }
   assert.ok(Object.isFrozen(HOST_CAPABILITIES), 'capabilities table must be frozen');
+});
+
+test('toolNames is the frozen single source of the guidance tool mapping (T068)', () => {
+  const ACTIONS = ['bridge', 'doctor', 'guard', 'guidance', 'upstream'];
+  for (const host of HOSTS) {
+    const names = HOST_CAPABILITIES[host].toolNames;
+    assert.ok(Object.isFrozen(names), `${host}.toolNames must be frozen`);
+    assert.deepEqual(Object.keys(names).sort(), ACTIONS, `${host}.toolNames must cover five actions`);
+    for (const value of Object.values(names)) {
+      assert.equal(typeof value, 'string');
+      assert.notEqual(value, '', `${host}.toolNames values must be non-empty`);
+    }
+  }
+  assert.deepEqual(HOST_CAPABILITIES.dsh.toolNames, {
+    upstream: 'sdd_upstream',
+    bridge: 'sdd_bridge',
+    doctor: 'sdd_upstream',
+    guard: 'sdd_upstream',
+    guidance: 'sdd_upstream',
+  });
+  for (const host of ['claude', 'codex', 'cursor']) {
+    assert.deepEqual(HOST_CAPABILITIES[host].toolNames, {
+      upstream: 'sdd-kit update',
+      bridge: 'sdd-kit bridge',
+      doctor: 'sdd-kit doctor',
+      guard: 'sdd-kit guard',
+      guidance: 'sdd-kit guidance',
+    }, `${host} must use the host-neutral CLI form`);
+  }
+});
+
+test('every host guidanceConfig is complete for its channel (T087)', () => {
+  const REQUIRED = {
+    dsh: ['service', 'sectionName', 'sectionOrderAnchor', 'sectionOrderOffset'],
+    claude: ['event', 'managedBlockPath', 'markerStart', 'markerEnd'],
+    codex: ['managedBlockPath', 'markerStart', 'markerEnd'],
+    cursor: ['rulePath'],
+  };
+  for (const host of HOSTS) {
+    const config = HOST_CAPABILITIES[host].guidanceConfig;
+    assert.ok(Object.isFrozen(config), `${host}.guidanceConfig must be frozen`);
+    assert.deepEqual(Object.keys(config).sort(), [...REQUIRED[host]].sort(), `${host}.guidanceConfig keys`);
+    for (const [key, value] of Object.entries(config)) {
+      assert.ok(value !== undefined && value !== null && value !== '', `${host}.guidanceConfig.${key} must be set`);
+    }
+  }
+  for (const host of ['claude', 'codex']) {
+    assert.equal(HOST_CAPABILITIES[host].guidanceConfig.markerStart, '<!-- sdd-kit:discipline:start -->');
+    assert.equal(HOST_CAPABILITIES[host].guidanceConfig.markerEnd, '<!-- sdd-kit:discipline:end -->');
+  }
 });
 
 test('reloadPolicy values are limited to the three declared states (AC-04)', () => {

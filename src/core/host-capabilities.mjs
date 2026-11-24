@@ -7,10 +7,41 @@
 
 const RELOAD_KEYS = ['tool_code', 'skill_data', 'extension_command'];
 
+/**
+ * Host-neutral invocation face: every non-DSH host reaches the same core actions
+ * through the CLI (`bin/sdd-kit.mjs`), so guidance never names a DSH-only tool.
+ */
+export const HOST_NEUTRAL_TOOL_NAMES = Object.freeze({
+  upstream: 'sdd-kit update',
+  bridge: 'sdd-kit bridge',
+  doctor: 'sdd-kit doctor',
+  guard: 'sdd-kit guard',
+  guidance: 'sdd-kit guidance',
+});
+
+const DSH_TOOL_NAMES = Object.freeze({
+  upstream: 'sdd_upstream',
+  bridge: 'sdd_bridge',
+  doctor: 'sdd_upstream',
+  guard: 'sdd_upstream',
+  guidance: 'sdd_upstream',
+});
+
+/**
+ * Managed-block markers, shared by every host whose guidance channel writes a
+ * marked block into a file (Codex managed block, Claude fallback block). Keeping
+ * one definition means an adapter never has to borrow another host's config.
+ */
+const MANAGED_BLOCK_MARKERS = Object.freeze({
+  markerStart: '<!-- sdd-kit:discipline:start -->',
+  markerEnd: '<!-- sdd-kit:discipline:end -->',
+});
+
 function freezeCapabilities(entries) {
   for (const [key, cap] of Object.entries(entries)) {
     Object.freeze(cap.reloadPolicy);
     Object.freeze(cap.guidanceConfig);
+    Object.freeze(cap.toolNames);
     Object.freeze(cap);
     if (cap.key !== key) throw new Error(`HOST_CAPABILITIES key mismatch: ${key}`);
     for (const layer of RELOAD_KEYS) {
@@ -27,6 +58,7 @@ export const HOST_CAPABILITIES = freezeCapabilities({
     key: 'dsh',
     integrationKey: 'dsh',
     toolPrefix: '@',
+    toolNames: DSH_TOOL_NAMES,
     skillsDir: '.dsh/skills',
     guidanceChannel: 'system-prompt',
     guidanceConfig: Object.freeze({
@@ -46,11 +78,13 @@ export const HOST_CAPABILITIES = freezeCapabilities({
     key: 'claude',
     integrationKey: 'claude',
     toolPrefix: '/',
+    toolNames: HOST_NEUTRAL_TOOL_NAMES,
     skillsDir: '.claude/skills',
     guidanceChannel: 'native-event',
     guidanceConfig: Object.freeze({
       event: 'session_start',
       managedBlockPath: '.claude/sdd-kit-discipline.md',
+      ...MANAGED_BLOCK_MARKERS,
     }),
     reloadPolicy: Object.freeze({
       tool_code: 'new_session',
@@ -63,12 +97,12 @@ export const HOST_CAPABILITIES = freezeCapabilities({
     key: 'codex',
     integrationKey: 'codex',
     toolPrefix: '$',
+    toolNames: HOST_NEUTRAL_TOOL_NAMES,
     skillsDir: '.agents/skills',
     guidanceChannel: 'managed-block',
     guidanceConfig: Object.freeze({
       managedBlockPath: '.codex/sdd-kit-discipline.md',
-      markerStart: '<!-- sdd-kit:discipline:start -->',
-      markerEnd: '<!-- sdd-kit:discipline:end -->',
+      ...MANAGED_BLOCK_MARKERS,
     }),
     reloadPolicy: Object.freeze({
       tool_code: 'new_session',
@@ -81,6 +115,7 @@ export const HOST_CAPABILITIES = freezeCapabilities({
     key: 'cursor',
     integrationKey: 'cursor-agent',
     toolPrefix: '/',
+    toolNames: HOST_NEUTRAL_TOOL_NAMES,
     skillsDir: '.cursor/skills',
     guidanceChannel: 'rule-dir',
     guidanceConfig: Object.freeze({

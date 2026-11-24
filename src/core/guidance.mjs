@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES } from './host-capabilities.mjs';
+import { HOST_NEUTRAL_TOOL_NAMES, getHostCapability } from './host-capabilities.mjs';
 import { detectFeaturePhase } from './feature-phase.mjs';
 import { selectSuperpowersDir } from './candidates.mjs';
 
@@ -36,6 +36,17 @@ function frontmatter(text) {
   return data;
 }
 
+/**
+ * Upstream text = the upstream author's own `name` + `description` reference
+ * entry, one line per discipline skill.
+ *
+ * T071/AC-06 reads "上游正文" as this injection unit, NOT the whole SKILL.md:
+ * the body stays in the mirror. Injecting it verbatim would blow the 1.2k
+ * resident budget (measured: 15 real skills ≈ 40.7k tok vs 774 tok here) and
+ * would copy upstream text into every session instead of referencing it
+ * (REQ-08), contradicting the success criterion in spec.md ("常驻开销不超过
+ * 1.2k token"). Only the SDD pointer is ever trimmed; these lines are not.
+ */
 async function readUpstreamText(dir, warnings) {
   let entries;
   try {
@@ -106,24 +117,36 @@ export async function resolveGuidanceSwitch({ cwd = process.cwd(), env = process
   return { ...state, warnings };
 }
 
-function toolMapping() {
-  // Canonical tool names are shared verbatim across hosts (REQ-13/AC-08);
-  // host-specific invocation prefixes live in HOST_CAPABILITIES.
-  return {
-    upstream: 'sdd_upstream',
-    bridge: 'sdd_bridge',
-    doctor: 'sdd_upstream',
-    guard: 'sdd_upstream',
-    guidance: 'sdd_upstream',
-  };
+/**
+ * Tool mapping for one host, derived from HOST_CAPABILITIES (T068).
+ * DSH keeps its native tool names; every other host reaches the same core
+ * actions through the host-neutral CLI, so no DSH-only name leaks out.
+ * Unknown hosts fall back to the host-neutral face rather than inheriting DSH.
+ */
+export function toolMapping(host = 'dsh') {
+  const cap = getHostCapability(host);
+  return { ...(cap?.toolNames ?? HOST_NEUTRAL_TOOL_NAMES) };
 }
 
-function textOf(bundle) {
+/**
+ * Render a bundle as the plain text injected by host session-start hooks.
+ * This is the only measurement surface: the budget gate counts the title,
+ * the 工具映射 label and the 当前进度 label too, not just the payload (T070).
+ */
+export function formatGuidanceText(bundle) {
+  const pointer = Object.entries(bundle.sddPointer)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('\n');
+  const mapping = Object.entries(bundle.toolMapping)
+    .map(([action, tool]) => `${action} -> ${tool}`)
+    .join('\n');
   return [
+    '## SDD 运行时纪律（dsh-sdd-kit）',
     bundle.upstreamText,
-    Object.entries(bundle.toolMapping).map(([action, tool]) => `${action} -> ${tool}`).join('\n'),
-    Object.entries(bundle.sddPointer).map(([key, value]) => `${key}: ${value}`).join('\n'),
-  ].filter(Boolean).join('\n');
+    mapping ? `工具映射：\n${mapping}` : '',
+    pointer ? `当前进度：\n${pointer}` : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -156,28 +179,34 @@ export async function assembleGuidance({
 
   const bundle = {
     upstreamText,
-    toolMapping: toolMapping(),
+    toolMapping: toolMapping(host),
     sddPointer,
     tokenEstimate: 0,
     warnings,
     enabled: switchState.enabled,
     effectiveScope: switchState.effectiveScope,
   };
-  bundle.tokenEstimate = estimateTokens(textOf(bundle));
+  const measure = () => {
+    const text = formatGuidanceText(bundle);
+    bundle.text = text;
+    bundle.tokenEstimate = estimateTokens(text);
+    return bundle.tokenEstimate;
+  };
+  measure();
 
   if (bundle.tokenEstimate > TOKEN_BUDGET) {
     // Only the pointer may be trimmed; upstream text is immutable (REQ-09).
     if (bundle.sddPointer.nextCommand) {
       bundle.sddPointer.nextCommand = '';
-      bundle.tokenEstimate = estimateTokens(textOf(bundle));
+      measure();
     }
     if (bundle.tokenEstimate > TOKEN_BUDGET && bundle.sddPointer.phase) {
       bundle.sddPointer.phase = '';
-      bundle.tokenEstimate = estimateTokens(textOf(bundle));
+      measure();
     }
     if (bundle.tokenEstimate > TOKEN_BUDGET && bundle.sddPointer.feature) {
       bundle.sddPointer.feature = '';
-      bundle.tokenEstimate = estimateTokens(textOf(bundle));
+      measure();
     }
     if (bundle.tokenEstimate > TOKEN_BUDGET) {
       warnings.push(`引导内容超过 1.2k token 上限（估算 ${bundle.tokenEstimate}），上游原文按规范保留，请缩短上游描述。`);
@@ -187,21 +216,4 @@ export async function assembleGuidance({
   }
 
   return bundle;
-}
-
-/** Render a bundle as the plain text injected by host session-start hooks. */
-export function formatGuidanceText(bundle) {
-  const pointer = Object.entries(bundle.sddPointer)
-    .filter(([, value]) => value)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join('\n');
-  const mapping = Object.entries(bundle.toolMapping)
-    .map(([action, tool]) => `${action} -> ${tool}`)
-    .join('\n');
-  return [
-    '## SDD 运行时纪律（dsh-sdd-kit）',
-    bundle.upstreamText,
-    mapping ? `工具映射：\n${mapping}` : '',
-    pointer ? `当前进度：\n${pointer}` : '',
-  ].filter(Boolean).join('\n\n');
 }

@@ -22,7 +22,7 @@
 | 输入 | 动作名 + 参数对象（与 `sdd_upstream` / `sdd_bridge` 现有字段兼容） |
 | 宿主机制 | DSH：`registerSddTools(ctx, defineTool)` 注册的 `sdd_upstream` / `sdd_bridge`；非 DSH：`bin/sdd-kit.mjs` 子命令 |
 | 动作委托 | `sdd_upstream` 的 `action` 字段：`setup` → core setup，`update_all` → core update，`doctor` / `guard` / `guidance` → `runAction(action, args, deps)`；其余值走既有 upstream 动作。`sdd_bridge` 的 `action` 全部走 `runAction('bridge', args, deps)`。CLI `update` / `bridge` / `doctor` / `guard` / `guidance` 走同一个 `runAction`。 |
-| 触发参数 | `doctor` 接受 `trigger`（任务描述字符串，仅打分不执行，见「触发试跑打分」）、`host`、`cwd`、`skills`（可见 SkillSummary[]）、`trustFlags`（Cursor 自动信任标记）；`guard` 仅需 `cwd`；`guidance` 接受 `host` / `cwd` / `skills` / `superpowersDir` / `candidateDirs`。引导面的工具映射中 `doctor` / `guard` / `guidance` 均指向 `sdd_upstream`。 |
+| 触发参数 | `doctor` 接受 `trigger`（任务描述字符串，仅打分不执行，见「触发试跑打分」）、`host`、`cwd`、`skills`（可见 SkillSummary[]）、`trustFlags`（Cursor 自动信任标记）；`guard` 仅需 `cwd`；`guidance` 接受 `host` / `cwd` / `skills` / `superpowersDir` / `candidateDirs`。引导面的工具映射按宿主派生自 `HOST_CAPABILITIES[host].toolNames`（唯一可编辑源，`src/core/guidance.mjs` 不再写 if/else）：DSH 用原生名 `upstream`→`sdd_upstream`、`bridge`→`sdd_bridge`，`doctor` / `guard` / `guidance` 均指向 `sdd_upstream`；非 DSH 宿主（Claude Code / Codex / Cursor）一律用宿主中立 CLI 形式 `sdd-kit update` / `sdd-kit bridge` / `sdd-kit doctor` / `sdd-kit guard` / `sdd-kit guidance`，不出现 DSH 专有工具名。未知宿主回落中立形式。 |
 | CLI 调用 | `node bin/sdd-kit.mjs <action> [--json]`，`parseArgs` 解析，stdout 输出 JSON |
 | 降级 | 无宿主运行时只用 CLI；CLI 不 import 任何 `@deepseek-ai/*` |
 | 等价 | 同一动作经工具面与 CLI 输出结构相同；新增字段为增量 |
@@ -39,6 +39,9 @@
 - 开关：用户全局级（默认开）+ 项目级覆盖；读开关不得改变技能目录或可用性；体检报告实际生效层级。
   - 全局级 `~/.dsh/sdd-kit.json` → `guidance.enabled`；项目级 `<repo>/.specify/sdd-kit.json` → `guidance.enabled`；缺省等价开启。
 - 预算：≤1200 token；超限裁 SDD 指针、不裁上游原文、原文超限保留并告警。
+- 注入单位（AC-06「上游原文」）：每个纪律技能一行 `- <frontmatter.name>: <frontmatter.description>`，即上游作者自己写的 name + description 引用条目；`SKILL.md` 正文**不读取、不注入**，完整正文留在镜像中由宿主按技能名按需加载。
+  - 为什么只引用不复制正文：常驻段受 1.2k token 硬预算约束（`spec.md` 成功标准「常驻开销不超过 1.2k token」），且 `REQ-08` 要求「引用而非复制」。实测本机 15 个纪律技能，仅 name+description 为 774 tok，注入全量正文为 40,679 tok（约 34×），会直接击穿预算。
+  - 不可裁剪：引用条目本身超限时同样完整保留，只裁 `sddPointer`（`nextCommand` → `phase` → `feature`）并记超限告警；正文不参与拼装，因此不占常驻预算。
 
 ## 面 3：技能面（Skill Face）
 

@@ -11,7 +11,8 @@
   - `toolPrefix`: 原生调用前缀（DSH 为 `@`，Codex 为 `$`，Cursor 为 `/`，Claude 为 `/`）
   - `skillsDir`: 项目级技能目录（`.dsh/skills` / `.claude/skills` / `.agents/skills` / `.cursor/skills`）
   - `guidanceChannel`: `'system-prompt' | 'native-event' | 'managed-block' | 'rule-dir'`
-  - `guidanceConfig`: 各通道所需配置（section order / 事件名与路径 / 托管块路径 / 规则目录路径）
+  - `guidanceConfig`: 各通道所需配置（section order / 事件名与路径 / 托管块路径与 `markerStart`+`markerEnd` / 规则目录路径）；凡是写托管块的通道（Codex、Claude 降级块）都自带同一对标记，适配器不得借用其它宿主的配置
+  - `toolNames`: 五个动作（`upstream` / `bridge` / `doctor` / `guard` / `guidance`）的调用名，引导面工具映射的唯一可编辑源（DSH 原生名 / 非 DSH 的 `sdd-kit <subcommand>`）
   - `reloadPolicy`: `{ tool_code: 'restart_host'|'new_session'|'none', skill_data: ..., extension_command: ... }`
   - `trustFlagPattern`: 需安全告警的派发参数正则（Cursor 为 `-p --trust --approve-mcps --force`）
 - **验证**：四端齐全；每个 `reloadPolicy` 三值合法；适配实现 ≤100 行（行数断言）。
@@ -24,13 +25,16 @@
 ## GuidanceBundle（引导段）
 
 - **字段**：
-  - `upstreamText`: 上游纪律技能 name+description（引用原文，不可裁剪）
-  - `toolMapping`: `{ [action: string]: string }`（动作 → 当前宿主工具名）
+  - `upstreamText`: 上游纪律技能的**引用条目**注入，单位为一个技能一行 = `- <frontmatter.name>: <frontmatter.description>`（上游作者自己写的 name + description 原文，逐字保留、不做摘要/改写）；技能行之间以换行分隔。`SKILL.md` 正文**不读取、不注入**，完整正文留在镜像里供宿主按技能名加载（`T071/AC-06`）
+    - 为什么只引用不复制正文：常驻段受 1.2k token 硬预算约束（见 `spec.md` 成功标准「常驻开销不超过 1.2k token」），且 `REQ-08` 要求「引用而非复制」上游原文。实测本机镜像 15 个纪律技能，仅 name+description 为 774 tok，注入全量正文为 40,679 tok（约 34×），会直接击穿预算。AC-06 的「上游正文」按此注入单位（name + description 引用条目）理解。
+    - 不可裁剪：即使这些引用条目本身超限，也完整保留、只裁 `sddPointer` 并记超限告警。
+  - `toolMapping`: `{ [action: string]: string }`（动作 → 当前宿主工具名；派生自 `HOST_CAPABILITIES[host].toolNames`，DSH 为 `sdd_upstream`/`sdd_bridge`，非 DSH 为 `sdd-kit <subcommand>`）
   - `sddPointer`: `{ feature: string, phase: string, nextCommand: string }`
     - `feature`：`.specify/feature.json` 的 `feature_directory` 最后一段；缺失时取 `specs/` 下编号最大目录。
     - `phase`：**纯函数推导，无状态文件**，判定顺序自上而下命中即停——① 当前 feature 的 `tasks.md` 存在且 `^- \[[xX]\]` 命中 ≥1 → `implement`；② `plan.md` 存在 → `plan`；③ `spec.md` 存在 → `specify`；④ 无 `spec.md` → `constitution`。该推导与 `FeaturePhase.判定` MUST 共用同一实现，不得两处各写一份。
     - `nextCommand`：`constitution`→`/speckit-constitution`、`specify`→`/speckit-clarify`、`plan`→`/speckit-tasks`、`implement`→`/speckit-implement`。
-  - `tokenEstimate`: 数字（CJK 1 tok/字 + 非 CJK ceil(chars/3.5)）
+  - `tokenEstimate`: 数字，测量对象是 `formatGuidanceText(bundle)` 的**最终渲染文本**（含 `## SDD 运行时纪律（dsh-sdd-kit）` 标题、`工具映射：` 与 `当前进度：` 标签），不是各字段的裸拼接；CJK 1 tok/字 + 非 CJK ceil(chars/3.5)
+  - `text`: `formatGuidanceText(bundle)` 的结果，即真正注入宿主会话的文本（与 `tokenEstimate` 同源）
   - `warnings`: 字符串数组（超限/缺镜像/缺技能）
 - **状态**：`enabled: boolean`（项目级开关存在则覆盖全局级）、`effectiveScope: 'project'|'user'|'default'`。
 - **开关的落点（两级，均为既有配置文件的增量键，MUST NOT 新建开关文件）**：
@@ -38,7 +42,7 @@
   - 项目级：`<repo>/.specify/sdd-kit.json` 的 `guidance.enabled`。
   - 解析优先级：项目级键存在 → `effectiveScope='project'`；否则全局级键存在 → `'user'`；都缺 → `'default'`（等价开启）。
   - 任一文件不可解析 MUST 视为该级未设置并记 `warnings`，MUST NOT 使引导整体失败。
-- **规则**：>1200 tok 只裁 `sddPointer`；`upstreamText` 不变；原文超限保留并告警。
+- **规则**：闸门以 `formatGuidanceText(bundle)` 的最终文本为唯一测量面；>1200 tok 只裁 `sddPointer`（顺序 `nextCommand` → `phase` → `feature`），`upstreamText`（name + description 引用条目）不可裁剪；引用条目本身超限时完整保留并告警。`SKILL.md` 正文不参与拼装，因此不占常驻预算。
 
 ## ReloadDecision（重载结论）
 
