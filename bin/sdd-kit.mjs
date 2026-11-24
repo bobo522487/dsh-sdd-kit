@@ -27,8 +27,8 @@ import { clearHostMarker as clearHostMarkerCore, markerPath } from '../src/core/
  */
 export function formatGuidanceDisabledText(bundle) {
   const scope = bundle?.effectiveScope ?? 'default';
-  const origin = bundle?.source ? ` (${bundle.source})` : '';
-  return `guidance disabled: 引导已停用（scope=${scope}${origin}）。未注入任何纪律正文；如需恢复，把该文件中的 guidance.enabled 设为 true。`;
+  const origin = bundle?.source ? `（${bundle.source}）` : '';
+  return `引导已停用（scope=${scope}${origin}）。未注入任何纪律正文；如需恢复，把该文件中的 guidance.enabled 设为 true。`;
 }
 
 const SUBCOMMANDS = ['update', 'bridge', 'doctor', 'guard', 'guidance'];
@@ -82,6 +82,27 @@ function cliError(code, message, fix) {
   return error;
 }
 
+/** core/bridge.mjs is a core module; translate only its user-facing envelope. */
+function localizeBridgeText(value) {
+  const text = String(value ?? '');
+  const unknown = /^Unknown sdd_bridge action "([^"]+)"\. Expected one of: (.+)\.$/.exec(text);
+  if (unknown) return `未知的 sdd_bridge action "${unknown[1]}"。可用 action：${unknown[2]}。`;
+  if (/^Task checkbox updates belong to upstream \/speckit\.implement, not to this bridge\.$/.test(text)) {
+    return '任务勾选更新属于上游 /speckit.implement，不属于本桥接器。';
+  }
+  return text;
+}
+
+function localizeOptionParseError(value) {
+  const text = String(value ?? '');
+  const missing = /^Option '([^']+)' requires an argument\.$/.exec(text);
+  if (missing) return `选项 '${missing[1]}' 缺少取值。`;
+  const ambiguous = /^Option '([^']+)' is ambiguous\..*$/.exec(text);
+  if (ambiguous) return `选项 '${ambiguous[1]}' 存在歧义。`;
+  if (/^Invalid values/.test(text)) return '选项取值无效。';
+  return `命令行参数无效（原始错误：${text}）。`;
+}
+
 /** Levenshtein distance, small enough to inline and dependency free. */
 function distance(a, b) {
   const rows = a.length + 1;
@@ -120,14 +141,14 @@ function optionError(error) {
     const suggestion = suggestOption(name);
     return cliError(
       'E_UNKNOWN_OPTION',
-      `Unknown option '${name}'.`,
-      `${suggestion ? `Did you mean ${suggestion}? ` : ''}Use one of: ${Object.keys(OPTIONS).map((key) => `--${key}`).join(', ')}.`
+      `未知的命令行选项 '${name}'。`,
+      `${suggestion ? `你是否想输入 ${suggestion}？` : ''}可用选项：${Object.keys(OPTIONS).map((key) => `--${key}`).join(', ')}。`
     );
   }
   return cliError(
     'E_INVALID_OPTION',
-    raw,
-    'Check the option values; pass values that start with "-" using the equal-sign form (--trust-flags=--trust,--force).'
+    localizeOptionParseError(raw),
+    '请检查选项取值；以 "-" 开头的取值请使用等号形式（--trust-flags=--trust,--force）。'
   );
 }
 
@@ -270,11 +291,11 @@ const ALLOWED = Object.freeze({
 
 /** Flags that only exist for subcommands outside the CLI's reachable set. */
 const CORE_ONLY = Object.freeze({
-  'switch-integration': 'the setup action',
-  'use-skills': 'the setup action',
-  'extension-dir': 'the setup action',
-  upgrade: 'the setup action',
-  integration: 'the setup action',
+  'switch-integration': 'setup 动作',
+  'use-skills': 'setup 动作',
+  'extension-dir': 'setup 动作',
+  upgrade: 'setup 动作',
+  integration: 'setup 动作',
 });
 
 function providedFlags(argv) {
@@ -291,11 +312,11 @@ function rejectUnreachableOptions(command, argv) {
   if (!allowed) return;
   for (const flag of providedFlags(argv)) {
     if (allowed.includes(flag)) continue;
-    const owner = CORE_ONLY[flag] ? ` Only ${CORE_ONLY[flag]} uses it.` : '';
+    const owner = CORE_ONLY[flag] ? `仅 ${CORE_ONLY[flag]} 使用该选项。` : '';
     throw cliError(
       'E_UNSUPPORTED_OPTION',
-      `Option '--${flag}' is not supported by '${command}'.${owner}`,
-      `'${command}' accepts: ${allowed.map((key) => `--${key}`).join(', ')}.`
+      `选项 '--${flag}' 不支持用于 '${command}'。${owner}`,
+      `'${command}' 可用选项：${allowed.map((key) => `--${key}`).join(', ')}。`
     );
   }
 }
@@ -316,8 +337,8 @@ async function clearHostMarker({ cwd = process.cwd(), host = 'dsh' } = {}) {
   } catch (error) {
     throw cliError(
       'E_UNKNOWN_HOST',
-      error?.message ?? `Unknown host '${host}'.`,
-      `Use one of: ${Object.keys(HOST_CAPABILITIES).join(', ')}.`
+      error?.message ?? `未知 host '${host}'。`,
+      `可用 host：${Object.keys(HOST_CAPABILITIES).join(', ')}。`
     );
   }
   return { status: 'ok', action: 'clear_marker', host, cleared, path: markerPath(cwd) };
@@ -389,8 +410,8 @@ async function main() {
     process.stdout.write(`${JSON.stringify({
       status: 'error',
       code: failure.code ?? 'E_CLI',
-      message: failure.message ?? String(result.error),
-      fix: failure.hint ?? failure.fix ?? 'Check the bridge action and retry.',
+      message: localizeBridgeText(failure.message ?? String(result.error)),
+      fix: localizeBridgeText(failure.hint ?? failure.fix ?? '请检查 bridge action 后重试。'),
     }, null, 2)}\n`);
     return;
   }
@@ -406,8 +427,8 @@ main().catch((error) => {
   process.stdout.write(`${JSON.stringify({
     status: 'error',
     code: error?.code ?? 'E_CLI',
-    message: error?.message ?? String(error),
-    fix: error?.fix ?? 'Check the command arguments and retry.',
+    message: localizeBridgeText(error?.message ?? String(error)),
+    fix: error?.fix ?? '请检查命令参数后重试。',
   }, null, 2)}\n`);
   process.exitCode = 1;
 });

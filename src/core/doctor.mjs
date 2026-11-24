@@ -67,7 +67,7 @@ const TOOL_FIX_COMMANDS = Object.freeze({
   npm: 'npm install -g npm',
   uv: 'curl -LsSf https://astral.sh/uv/install.sh | sh',
   specify: 'uv tool install specify-cli --from git+https://github.com/github/spec-kit.git',
-  git: 'apt-get install -y git (or: brew install git)',
+  git: 'apt-get install -y git（或：brew install git）',
 });
 
 /** User-authored skills win same-name conflicts: the kit must never shadow them (REQ-46). */
@@ -138,8 +138,8 @@ async function environmentZone({ env }) {
   const mirrorDir = selection.realPath;
   const mirrorReadable = await readableDir(mirrorDir);
   items.push(mirrorReadable
-    ? item('pass', 'UPSTREAM_MIRROR', `upstream mirror readable at ${mirrorDir} (via ${selection.reason})`, 'No action needed.', { path: mirrorDir, via: selection.reason })
-    : item('fail', 'UPSTREAM_MIRROR', `upstream mirror not readable at ${selection.dir} (via ${selection.reason})`, `git clone --depth 1 ${DEFAULT_SUPERPOWERS_REPO} ${selection.dir}`, { path: selection.dir, via: selection.reason }));
+    ? item('pass', 'UPSTREAM_MIRROR', `上游镜像可读：${mirrorDir}（via ${selection.reason}）`, '无需处理。', { path: mirrorDir, via: selection.reason })
+    : item('fail', 'UPSTREAM_MIRROR', `上游镜像不可读：${selection.dir}（via ${selection.reason}）`, `git clone --depth 1 ${DEFAULT_SUPERPOWERS_REPO} ${selection.dir}`, { path: selection.dir, via: selection.reason }));
 
   const skillsRoot = mirrorReadable ? path.join(mirrorDir, 'skills') : null;
   let skillCount = 0;
@@ -155,13 +155,13 @@ async function environmentZone({ env }) {
     } catch { /* unreadable skills root is diagnosed below */ }
   }
   items.push(skillCount > 0
-    ? item('pass', 'DISCIPLINE_SKILLS', `${skillCount} discipline skills readable in ${skillsRoot}`, 'No action needed.', { count: skillCount, path: skillsRoot })
-    : item('fail', 'DISCIPLINE_SKILLS', `discipline skills directory missing or unreadable at ${skillsRoot ?? path.join(selection.dir, 'skills')}`, `specify self upgrade && git -C ${mirrorDir ?? selection.dir} pull --ff-only`, { count: 0, path: skillsRoot ?? path.join(selection.dir, 'skills') }));
+    ? item('pass', 'DISCIPLINE_SKILLS', `在 ${skillsRoot} 中读取到 ${skillCount} 个纪律技能`, '无需处理。', { count: skillCount, path: skillsRoot })
+    : item('fail', 'DISCIPLINE_SKILLS', `纪律技能目录缺失或不可读：${skillsRoot ?? path.join(selection.dir, 'skills')}`, `specify self upgrade && git -C ${mirrorDir ?? selection.dir} pull --ff-only`, { count: 0, path: skillsRoot ?? path.join(selection.dir, 'skills') }));
 
   items.push(item(
     'skip', 'NETWORK_PROBE',
-    'Network probes are intentionally omitted to keep the doctor read-only and bounded',
-    'Run the CI matrix for network-dependent checks.'
+    '为保持 doctor 只读且有界，故意不执行网络探测',
+    '网络相关检查请在 CI 矩阵中运行。'
   ));
   return zone(items);
 }
@@ -308,25 +308,25 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
   const items = [];
   const cap = HOST_CAPABILITIES[host];
   items.push(cap
-    ? item('pass', 'HOST_CAPABILITY', `host=${host} integration=${cap.integrationKey}`, 'No action needed.')
-    : item('fail', 'HOST_CAPABILITY', `unknown host: ${host}`, `Use one of: ${HOST_KEYS.join(', ')}.`));
+    ? item('pass', 'HOST_CAPABILITY', `host=${host} integration=${cap.integrationKey}`, '无需处理。')
+    : item('fail', 'HOST_CAPABILITY', `未知 host：${host}`, `可用 host：${HOST_KEYS.join(', ')}。`));
   if (cap?.guidanceChannel === 'rule-dir') {
     // The capability pattern is the single source of truth: an unknown flag is
     // harmless, a configured trust/force flag is an explicit warning. The matcher
     // is imported statically from core — no adapter specifier is built here.
     const matched = checkTrustFlags({ args: trustFlags ?? [] }, cap);
     items.push(matched.length === 0
-      ? item('pass', 'CURSOR_TRUST', 'no auto-trust dispatch flags configured', 'No action needed.', { matched })
-      : item('warn', 'CURSOR_TRUST', `auto-trust flags detected: ${matched.join(' ')}; use only in controlled projects`, 'Remove the flags from the dispatch configuration.', { matched }));
+      ? item('pass', 'CURSOR_TRUST', '未配置自动信任的 dispatch flag', '无需处理。', { matched })
+      : item('warn', 'CURSOR_TRUST', `检测到自动信任的 dispatch flag：${matched.join(' ')}；仅限受控项目使用`, '请从 dispatch 配置中移除这些 flag。', { matched }));
   }
   const visible = (skills ?? []).length;
-  items.push(item('pass', 'VISIBLE_SKILLS', `${visible} visible skills provided`, 'No action needed.'));
+  items.push(item('pass', 'VISIBLE_SKILLS', `已提供 ${visible} 个可见 skill`, '无需处理。'));
   const guidanceSwitch = await resolveGuidanceSwitch({ cwd, env });
   items.push(item(
     guidanceSwitch.warnings.length === 0 ? 'pass' : 'warn',
     'GUIDANCE_SCOPE',
     `enabled=${guidanceSwitch.enabled} effectiveScope=${guidanceSwitch.effectiveScope} source=${guidanceSwitch.source ?? 'default'}`,
-    guidanceSwitch.warnings.length === 0 ? 'No action needed.' : guidanceSwitch.warnings.join(' '),
+    guidanceSwitch.warnings.length === 0 ? '无需处理。' : guidanceSwitch.warnings.join(' '),
     {
       enabled: guidanceSwitch.enabled,
       effectiveScope: guidanceSwitch.effectiveScope,
@@ -335,21 +335,21 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
   ));
   const manifest = path.join(cwd, '.specify', 'extensions.yml');
   items.push(fs.existsSync(manifest)
-    ? item('pass', 'EXTENSION_STATE', 'project extension manifest found', 'No action needed.')
-    : item('warn', 'EXTENSION_STATE', 'project extension manifest not found', 'Run specify extension add --dev spec-kit-extension.'));
+    ? item('pass', 'EXTENSION_STATE', '项目扩展清单已找到', '无需处理。')
+    : item('warn', 'EXTENSION_STATE', '未找到项目扩展清单', '请运行 specify extension add --dev spec-kit-extension。'));
 
   const integrationState = await readIntegrationState({ cwd });
   items.push(integrationState.source
     ? item(
       'pass', 'INTEGRATION_STATE',
-      `installed integrations: ${integrationState.installed.join(', ')}; active=${integrationState.active ?? 'none'} source=${path.basename(integrationState.source)}`,
-      'No action needed.',
+      `已安装的集成：${integrationState.installed.join(', ')}；active=${integrationState.active ?? 'none'} source=${path.basename(integrationState.source)}`,
+      '无需处理。',
       { installed: integrationState.installed, active: integrationState.active, source: integrationState.source }
     )
     : item(
       'skip', 'INTEGRATION_STATE',
-      'no installed-integration manifest found; per-host rendering cannot be verified',
-      'Run specify init --integration <host> to record integration state.',
+      '未找到已安装集成清单，无法验证各宿主的渲染状态',
+      '请运行 specify init --integration <host> 记录集成状态。',
       { installed: [], active: null, source: null }
     ));
 
@@ -377,7 +377,7 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     items.push(item(
       'pass', 'GUIDANCE_CHANNEL',
       `host=${host} channel=${channel} version=${version} source=${source} versionSource=${versionSource}`,
-      evidence ? 'No action needed.' : 'Install the discipline skills to report their real channel and version.',
+      evidence ? '无需处理。' : '请安装纪律技能，以报告真实的 channel 和 version。',
       {
         host, channel, version, source, versionSource,
         provider: evidence?.provider ?? null,
@@ -385,7 +385,7 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
       }
     ));
   } else {
-    items.push(item('skip', 'GUIDANCE_CHANNEL', `guidance channel unknown for host=${host}`, 'Pick a supported host.'));
+    items.push(item('skip', 'GUIDANCE_CHANNEL', `host=${host} 的 guidance channel 未知`, '请选择受支持的 host。'));
   }
 
   // Hook command rendering: verify every installed integration end, not just
@@ -404,10 +404,10 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     const renderedSomething = renderedHooks.length > 0;
     items.push(item(
       renderedSomething ? 'pass' : 'warn', 'HOOK_RENDERING',
-      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills (no integration manifest)`,
+      `host=${host} rendered=${renderedHooks.length}/${expected} 个 hook command skill（无集成清单）`,
       renderedSomething
-        ? 'No action needed.'
-        : 'No integration manifest is present, so hook rendering cannot be verified; run `specify integration switch <key>` (or install the Spec Kit extension) and re-run `sdd-kit doctor`.',
+        ? '无需处理。'
+        : '未找到集成清单，无法验证 hook 渲染；请运行 `specify integration switch <key>`（或安装 Spec Kit 扩展），再运行 `sdd-kit doctor`。',
       { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected, integrations: [] }
     ));
   } else {
@@ -437,8 +437,8 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
         missingHooks,
         status,
         fix: status === 'pass'
-          ? 'No action needed.'
-          : `specify integration switch ${key} && specify extension add --dev spec-kit-extension --force && restart ${endHost ?? key}`,
+          ? '无需处理。'
+          : `specify integration switch ${key} && specify extension add --dev spec-kit-extension --force && 重启 ${endHost ?? key}`,
       });
     }
     checks.sort((a, b) => a.integration.localeCompare(b.integration));
@@ -447,8 +447,8 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     const detail = checks.map((entry) => `${entry.integration}${entry.active ? '(active)' : ''}:${entry.renderedCount}/${entry.expected}`).join(', ');
     items.push(item(
       worst, 'HOOK_RENDERING',
-      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills; integrations=${detail}`,
-      worst === 'pass' ? 'No action needed.' : 'Re-render missing host artifacts: specify integration switch <key> && specify extension add --dev spec-kit-extension --force.',
+      `host=${host} rendered=${renderedHooks.length}/${expected} 个 hook command skill；integrations=${detail}`,
+      worst === 'pass' ? '无需处理。' : '请重新渲染缺失的宿主产物：specify integration switch <key> && specify extension add --dev spec-kit-extension --force。',
       { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected, integrations: checks }
     ));
   }
@@ -459,8 +459,8 @@ async function repositoryZone({ cwd, host }) {
   const items = [];
   const specifyDir = path.join(cwd, '.specify');
   items.push(fs.existsSync(specifyDir)
-    ? item('pass', 'SPECIFY_DIR', '.specify/ present', 'No action needed.')
-    : item('fail', 'SPECIFY_DIR', '.specify/ missing', 'Run specify init in this repository.'));
+    ? item('pass', 'SPECIFY_DIR', '.specify/ 存在', '无需处理。')
+    : item('fail', 'SPECIFY_DIR', '.specify/ 缺失', '请在本仓库运行 specify init。'));
 
   // Managed template override: compare the project copy with the packaged one.
   const packagedTemplate = path.join(PKG_ROOT, 'overrides', 'spec-template.md');
@@ -470,13 +470,13 @@ async function repositoryZone({ cwd, host }) {
     readText(projectTemplate),
   ]);
   if (packagedText === null) {
-    items.push(item('warn', 'TEMPLATE_PACKAGED_MISSING', 'packaged overrides/spec-template.md is missing from the kit', 'Reinstall the kit or restore overrides/spec-template.md.'));
+    items.push(item('warn', 'TEMPLATE_PACKAGED_MISSING', '套件中缺少打包的 overrides/spec-template.md', '请重新安装套件，或恢复 overrides/spec-template.md。'));
   } else if (projectText === null) {
-    items.push(item('warn', 'TEMPLATE_MISSING', 'project has no .specify/templates/overrides/spec-template.md', 'Run specify extension add --dev spec-kit-extension to install the override.'));
+    items.push(item('warn', 'TEMPLATE_MISSING', '项目缺少 .specify/templates/overrides/spec-template.md', '请运行 specify extension add --dev spec-kit-extension 安装该覆盖文件。'));
   } else if (projectText === packagedText) {
-    items.push(item('pass', 'TEMPLATE_DRIFT', 'project template override matches the packaged copy', 'No action needed.'));
+    items.push(item('pass', 'TEMPLATE_DRIFT', '项目模板覆盖文件与打包副本一致', '无需处理。'));
   } else {
-    items.push(item('warn', 'TEMPLATE_DRIFT', 'project template override differs from the packaged copy', 'Reinstall the override or re-apply local edits on top of the packaged copy.'));
+    items.push(item('warn', 'TEMPLATE_DRIFT', '项目模板覆盖文件与打包副本不同', '请重新安装该覆盖文件，或在打包副本之上重新应用本地修改。'));
   }
 
   // Extension command skills installed into this host's skill directory.
@@ -488,10 +488,10 @@ async function repositoryZone({ cwd, host }) {
   items.push(item(
     missing.length === 0 ? 'pass' : 'warn',
     'COMMAND_SKILLS',
-    `${present.length} of ${expected.length} extension command skills installed${missing.length ? `; missing: ${missing.join(', ')}` : ''}`,
+    `${present.length}/${expected.length} 个扩展 command skill 已安装${missing.length ? `；缺失：${missing.join(', ')}` : ''}`,
     missing.length === 0
-      ? 'No action needed.'
-      : 'Reinstall the extension to render the missing command skills for this host.',
+      ? '无需处理。'
+      : '请重新安装扩展，以渲染该 host 缺失的 command skill。',
     { installed: present, missing, expected }
   ));
   return zone(items);
@@ -552,24 +552,24 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   const pending = [...classified.pending].sort();
   const history = [...classified.history].sort();
   const markerFix = pending.length > 0
-    ? `After the affected host reloads, run node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker for each pending host.`
-    : 'Stale leftovers can be dropped with node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker.';
+    ? `受影响的宿主重载后，请对每个待生效宿主运行 node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker。`
+    : '遗留项可通过 node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker 清理。';
   if (pending.length > 0) {
     items.push(item(
       'warn', 'PENDING_MARKERS',
-      `pending markers: ${pending.join(', ')}${history.length ? `; history from earlier runs: ${history.join(', ')}` : ''}`,
+      `待生效标记：${pending.join(', ')}${history.length ? `；早期运行的历史记录：${history.join(', ')}` : ''}`,
       markerFix,
       { pending, history }
     ));
   } else if (history.length > 0) {
     items.push(item(
       'warn', 'PENDING_MARKERS',
-      `no pending markers; only history from earlier runs: ${history.join(', ')}`,
+      `无待生效标记，仅有早期运行的历史记录：${history.join(', ')}`,
       markerFix,
       { pending, history }
     ));
   } else {
-    items.push(item('pass', 'PENDING_MARKERS', 'no pending reload markers', 'No action needed.', { pending, history }));
+    items.push(item('pass', 'PENDING_MARKERS', '无待生效的重载标记', '无需处理。', { pending, history }));
   }
 
   const visibleSkills = (skills ?? []).filter((skill) => skill?.name);
@@ -582,11 +582,11 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   items.push(inventory.length > 0
     ? item(
       'pass', 'SKILL_INVENTORY',
-      `visible skills: ${inventory.map((entry) => `${entry.name}(${entry.provider})`).join(', ')}`,
-      'No action needed.',
+      `可见 skill：${inventory.map((entry) => `${entry.name}(${entry.provider})`).join(', ')}`,
+      '无需处理。',
       { skills: inventory }
     )
-    : item('skip', 'SKILL_INVENTORY', 'no visible skills to inventory', 'Load a skill provider before running the doctor.', { skills: [] }));
+    : item('skip', 'SKILL_INVENTORY', '没有可盘点的可见 skill', '请在运行 doctor 前加载 skill provider。', { skills: [] }));
 
   // Same-name conflicts report the winner and its deterministic provider order.
   const byName = new Map();
@@ -617,11 +617,11 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
     });
   }
   items.push(conflicts.length === 0
-    ? item('pass', 'SKILL_CONFLICT', 'no cross-provider skill name conflicts', 'No action needed.', { conflicts: [] })
+    ? item('pass', 'SKILL_CONFLICT', '无跨 provider 的 skill 名称冲突', '无需处理。', { conflicts: [] })
     : item(
       'warn', 'SKILL_CONFLICT',
-      `conflicting skill names: ${conflicts.map((entry) => `${entry.name} (${entry.origins.join(' vs ')}; winner=${entry.winner.provider})`).join(', ')}`,
-      'Disable one of the conflicting providers; user-authored skills keep precedence.',
+      `存在 skill 名称冲突：${conflicts.map((entry) => `${entry.name}（${entry.origins.join(' / ')}；winner=${entry.winner.provider}）`).join(', ')}`,
+      '请停用冲突的 provider 之一；用户自有 skill 保持优先。',
       { conflicts }
     ));
 
@@ -642,9 +642,9 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   items.push(item(
     'pass', 'SKILL_PROVENANCE',
     userSkills.length > 0
-      ? `${userSkills.length} user-authored skill(s) marked 非本套件产物: ${userSkills.map((entry) => entry.name).join(', ')}`
-      : 'no user-authored skills observed',
-    userSkills.length > 0 ? 'Leave user-authored skills untouched; the kit only manages its own artifacts.' : 'No action needed.',
+      ? `${userSkills.length} 个用户自有 skill 标记为非本套件产物：${userSkills.map((entry) => entry.name).join(', ')}`
+      : '未观察到用户自有 skill',
+    userSkills.length > 0 ? '请勿改动用户自有 skill；套件仅管理自身产物。' : '无需处理。',
     { userSkills, bundled: kitSkills }
   ));
 
@@ -656,20 +656,20 @@ function triggerZone({ trigger, skills }) {
   if (!trigger) {
     return {
       status: 'not_executed',
-      items: [item('skip', 'TRIGGER_NOT_PROVIDED', 'dry-run not executed: no --trigger supplied', 'Pass --trigger "<task description>" to score visible skills.')],
+      items: [item('skip', 'TRIGGER_NOT_PROVIDED', '未执行 dry-run：未提供 --trigger', '请传入 --trigger "<task description>" 以对可见 skill 评分。')],
     };
   }
   const visible = skills ?? [];
   if (visible.length === 0) {
     return {
       status: 'skipped',
-      items: [item('skip', 'TRIGGER_NO_VISIBLE_SKILLS', 'dry-run not executed: no visible skills to score', 'Load a skill provider before running the trigger dry-run.')],
+      items: [item('skip', 'TRIGGER_NO_VISIBLE_SKILLS', '未执行 dry-run：没有可评分的可见 skill', '请在运行 trigger dry-run 前加载 skill provider。')],
     };
   }
   const scores = scoreSkills(trigger, visible);
   return {
     status: 'pass',
-    items: [item('pass', 'TRIGGER_SCORES', `${scores.length} visible skills scored, none executed`, 'No action needed.', { scores })],
+    items: [item('pass', 'TRIGGER_SCORES', `已对 ${scores.length} 个可见 skill 评分，未执行任何操作。`, '无需处理。', { scores })],
   };
 }
 
@@ -702,9 +702,9 @@ export async function runDoctor({
   runId,
   deps = {},
 } = {}) {
-  const failZone = (error) => zone([item('fail', 'ZONE_PROBE_ERROR', error?.message ?? String(error), 'Fix the probe error and rerun the doctor.')]);
+  const failZone = (error) => zone([item('fail', 'ZONE_PROBE_ERROR', error?.message ?? String(error), '请修复探针错误后重新运行 doctor。')]);
   const [environment, hostReport, repository, runtime, triggerDryRun] = await Promise.all([
-    safe('environment', () => deps.environment ? deps.environment() : environmentZone({ env }), failZone),
+    safe('environment', () => deps.environment ? deps.environment() : environmentZone({ env, platform }), failZone),
     safe('host', () => deps.host ? deps.host() : hostZone({ host, cwd, env, skills, trustFlags }), failZone),
     safe('repository', () => deps.repository ? deps.repository() : repositoryZone({ cwd, host }), failZone),
     safe('runtime', () => deps.runtime ? deps.runtime() : runtimeZone({ cwd, env, skills, now, sessionStart, runId }), failZone),

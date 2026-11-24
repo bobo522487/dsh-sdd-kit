@@ -217,7 +217,7 @@ test('the repository zone reports which extension command skills are installed (
   const report = await runDoctor({ cwd: repo, host: 'dsh' });
   const entry = findItem(report.repository, 'COMMAND_SKILLS');
   assert.ok(entry, 'repository zone must report COMMAND_SKILLS');
-  assert.match(entry.message, /1 of 6/, entry.message);
+  assert.match(entry.message, /1\/6/, entry.message);
 });
 
 test('the host zone reports the effective guidance switch scope and its source (REQ-12/AC-08)', async () => {
@@ -255,7 +255,7 @@ test('the host zone reports the guidance channel version and the rendered hook s
 
   const rendering = findItem(report.host, 'HOOK_RENDERING');
   assert.ok(rendering, 'host zone must report HOOK_RENDERING');
-  assert.match(rendering.message, /rendered=0/, rendering.message);
+  assert.match(rendering.message, /rendered=0\//, rendering.message);
   // I4: without an integration manifest nothing can be verified, so zero rendered
   // hook skills is an unverified state, not a healthy one.
   assert.equal(rendering.status, 'warn', 'zero rendered hooks without a manifest cannot be claimed healthy');
@@ -337,7 +337,7 @@ test('a marker just written is pending even when the caller passes no baseline (
   assert.equal(item.status, 'warn');
   assert.deepEqual(item.pending, ['dsh'], `a fresh marker must not be history: ${item.message}`);
   assert.deepEqual(item.history, []);
-  assert.match(item.message, /pending markers: dsh/);
+  assert.match(item.message, /待生效标记.*dsh/, item.message);
 });
 
 test('the bridge source probe is read-only and honestly skipped when nothing is discoverable (REQ-33)', async () => {
@@ -345,7 +345,7 @@ test('the bridge source probe is read-only and honestly skipped when nothing is 
   const bareEnv = { PATH: process.env.PATH ?? '' };
   const unprobed = findItem((await runDoctor({ cwd: repo, host: 'dsh', env: bareEnv })).runtime, 'BRIDGE_SOURCE');
   assert.equal(unprobed.status, 'skip');
-  assert.match(unprobed.message, /not/i, unprobed.message);
+  assert.match(unprobed.message, /未|无法|不可/, unprobed.message);
 
   const config = path.join(repo, 'host-cordis.yml');
   await fs.writeFile(config, 'plugins:\n  - name: dsh-sdd-kit\n    source: local\n', 'utf8');
@@ -443,7 +443,7 @@ test('T072: a single fully rendered integration is pass, integrations.yml is rea
   assert.match(state.source, /integrations\.yml$/);
   const rendering = findItem(report.host, 'HOOK_RENDERING');
   assert.equal(rendering.status, 'warn');
-  assert.match(rendering.message, /rendered=6 of 6/);
+  assert.match(rendering.message, /rendered=6\/6/);
   const cursor = rendering.integrations.find((entry) => entry.integration === 'cursor-agent');
   assert.equal(cursor.skillsDir, '.cursor/skills');
   assert.equal(cursor.status, 'warn');

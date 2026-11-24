@@ -225,8 +225,8 @@ test('a failed bridge action exits non-zero with the four-field error contract (
   assert.deepEqual(Object.keys(failed.stdout).sort(), ['code', 'fix', 'message', 'status']);
   assert.equal(failed.stdout.status, 'error');
   assert.equal(failed.stdout.code, 'E_ARGS');
-  assert.match(failed.stdout.message, /Unknown sdd_bridge action/);
-  assert.match(failed.stdout.fix, /Task checkbox updates/);
+  assert.match(failed.stdout.message, /未知的 sdd_bridge action/);
+  assert.match(failed.stdout.fix, /任务勾选更新/);
 
   // Success keeps the bridge's own documented shape.
   const ok = invokeCli(['bridge', '--action', 'inspect', '--cwd', repo]);
@@ -235,6 +235,22 @@ test('a failed bridge action exits non-zero with the four-field error contract (
     'action', 'bugs', 'cwd', 'features', 'hasConstitution', 'hasEarsOverride',
     'hasSpecifyDir', 'selectedBug', 'selectedFeature',
   ]);
+});
+
+test('T096: CLI four-field errors explain the problem in Chinese without changing codes', () => {
+  const cases = [
+    { args: ['guidance', '--jsn', '--json'], code: 'E_UNKNOWN_OPTION', message: /未知.*选项/, fix: /可用选项/ },
+    { args: ['guard', '--upgrade', '--json'], code: 'E_UNSUPPORTED_OPTION', message: /不支持/, fix: /可用选项/ },
+    { args: ['bridge', '--action', 'bogus', '--json'], code: 'E_ARGS', message: /未知的 sdd_bridge action/, fix: /任务勾选更新/ },
+  ];
+  for (const { args, code, message, fix } of cases) {
+    const cli = invokeCli(args);
+    assert.equal(cli.stdout.status, 'error', JSON.stringify(cli.stdout));
+    assert.equal(cli.stdout.code, code, JSON.stringify(cli.stdout));
+    assert.deepEqual(Object.keys(cli.stdout).sort(), ['code', 'fix', 'message', 'status'], JSON.stringify(cli.stdout));
+    assert.match(cli.stdout.message, message, JSON.stringify(cli.stdout));
+    assert.match(cli.stdout.fix, fix, JSON.stringify(cli.stdout));
+  }
 });
 
 test('update --extension-changes reaches changedLayers as extension_command (I6)', async () => {
