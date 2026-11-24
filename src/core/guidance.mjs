@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import { HOST_CAPABILITIES } from './host-capabilities.mjs';
 import { detectFeaturePhase } from './feature-phase.mjs';
+import { selectSuperpowersDir } from './candidates.mjs';
 
 export const TOKEN_BUDGET = 1200;
 
@@ -36,7 +37,6 @@ function frontmatter(text) {
 }
 
 async function readUpstreamText(dir, warnings) {
-  if (!dir) dir = path.join(os.homedir(), '.dsh', 'upstream', 'superpowers', 'skills');
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -59,6 +59,13 @@ async function readUpstreamText(dir, warnings) {
     warnings.push(`未发现可用的纪律技能（目录 ${dir}）；请运行上游安装命令。`);
   }
   return lines.join('\n');
+}
+
+/** Explicit paths stay byte-compatible; otherwise share the declared candidate selection. */
+async function resolveSkillsDir({ superpowersDir, candidateDirs, env }) {
+  if (superpowersDir) return superpowersDir;
+  const selection = await selectSuperpowersDir({ candidateDirs }, env);
+  return path.join(selection.dir, 'skills');
 }
 
 async function readJsonLevel(file, warnings) {
@@ -93,7 +100,9 @@ function toolMapping() {
   return {
     upstream: 'sdd_upstream',
     bridge: 'sdd_bridge',
-    doctor: 'sdd_doctor',
+    doctor: 'sdd_upstream',
+    guard: 'sdd_upstream',
+    guidance: 'sdd_upstream',
   };
 }
 
@@ -107,13 +116,14 @@ function textOf(bundle) {
 
 /**
  * Assemble one guidance bundle shared by every host adapter.
- * @param {{host?: string, cwd?: string, skills?: Array<{name:string,description:string}>, superpowersDir?: string, env?: object}} options
+ * @param {{host?: string, cwd?: string, skills?: Array<{name:string,description:string}>, superpowersDir?: string, candidateDirs?: string[], env?: object}} options
  */
 export async function assembleGuidance({
   host = 'dsh',
   cwd = process.cwd(),
   skills,
   superpowersDir,
+  candidateDirs,
   env,
 } = {}) {
   const warnings = [];
@@ -123,7 +133,10 @@ export async function assembleGuidance({
       .filter((s) => s?.name && s?.description)
       .map((s) => `- ${s.name}: ${s.description}`)
       .join('\n')
-    : await readUpstreamText(superpowersDir, warnings);
+    : await readUpstreamText(
+      await resolveSkillsDir({ superpowersDir, candidateDirs, env }),
+      warnings
+    );
   const pointerRaw = detectFeaturePhase ? await detectFeaturePhase({ cwd }) : null;
   const sddPointer = pointerRaw
     ? { feature: pointerRaw.feature, phase: pointerRaw.phase, nextCommand: pointerRaw.nextCommand }

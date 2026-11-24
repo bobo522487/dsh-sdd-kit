@@ -12,13 +12,13 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
       defineTool({
         name: 'sdd_upstream',
         description:
-          'Delegate directly to upstream GitHub Spec Kit (specify CLI) and sync the local obra/superpowers Git mirror (~/.dsh/upstream/superpowers) without reimplementing either tool. Use action "update_all" to check and update both upstream layers (Spec Kit + Superpowers) in one invocation; upgrading dsh-sdd-kit itself is the package manager\'s job (dsh plugin update dsh-sdd-kit --latest, then restart DSH).',
+          'Delegate directly to upstream GitHub Spec Kit (specify CLI) and sync the local obra/superpowers Git mirror (~/.dsh/upstream/superpowers) without reimplementing either tool. Use action "update_all" to check and update both upstream layers (Spec Kit + Superpowers) in one invocation; actions "doctor", "guard" and "guidance" also delegate here via the action field, so no third host tool is needed. Upgrading dsh-sdd-kit itself is the package manager\'s job (dsh plugin update dsh-sdd-kit --latest, then restart DSH).',
         parameters: {
           action: {
             type: 'string',
             required: true,
             description:
-              'One of: setup, status, sync_superpowers, specify_upgrade, specify_init, ensure_integration_commands, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+              'One of: setup, status, sync_superpowers, specify_upgrade, specify_init, ensure_integration_commands, install_bug_ext, install_hooks_ext, switch_integration, update_all, doctor, guard, guidance.',
           },
           cwd: {
             type: 'string',
@@ -63,6 +63,26 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             description:
               'Override the Spec Kit extension source directory for action "install_hooks_ext" (defaults to the bundled spec-kit-extension/ inside this package).',
           },
+          trigger: {
+            type: 'string',
+            description:
+              'For action "doctor": task description string scored in the read-only triggerDryRun zone; no skill is executed.',
+          },
+          host: {
+            type: 'string',
+            description: 'Host key for actions "doctor" and "guidance" (default "dsh").',
+          },
+          skills: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'Visible SkillSummary[] for actions "doctor" and "guidance" (plugin + user-installed skills, never mirror-only entries).',
+          },
+          trustFlags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'For action "doctor": Cursor auto-trust dispatch flags to report.',
+          },
         },
         output: {
           schema: { type: 'json' },
@@ -72,6 +92,9 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           const action = args?.action || '';
           if (action === 'setup') return runAction('setup', args, deps);
           if (action === 'update_all') return runAction('update', args, deps);
+          if (action === 'doctor' || action === 'guard' || action === 'guidance') {
+            return runAction(action, args, deps);
+          }
           return runAction('upstream', args, deps);
         },
       })

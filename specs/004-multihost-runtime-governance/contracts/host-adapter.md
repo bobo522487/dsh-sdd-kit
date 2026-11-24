@@ -11,7 +11,7 @@
 ## 通用约束
 
 - 核心入口 `src/core/*.mjs`：零宿主包名、零 `ctx.`、零第三方依赖；静态断言测试 `test/contract-core-purity.test.mjs` 扫描并在违规时红。
-- 工具面与 CLI 共享 `src/core/` 动作实现；共享样例 `test/contract-parity.test.mjs` 对同一输入断言输出 100% 同构（`REQ-14`）。
+- 工具面与 CLI 共享 `src/core/` 动作实现；共享样例 `test/contract-parity.test.mjs` 对同一输入断言输出 100% 同构（`REQ-14`）。宿主工具面严格只有 `sdd_upstream` / `sdd_bridge` 两个：`doctor` / `guard` / `guidance` 通过 `sdd_upstream({action:'doctor'|'guard'|'guidance'})` 委托 `runAction(action, args, deps)`，不新增第三个宿主工具。
 - 引导文案来自 `src/core/guidance.mjs` 单一拼装结果，各宿主不得自带文案副本（`REQ-13`）。
 - 缺依赖/缺通道时一律降级不阻断（`REQ-11/27/39`）。
 
@@ -21,6 +21,8 @@
 |------|------|
 | 输入 | 动作名 + 参数对象（与 `sdd_upstream` / `sdd_bridge` 现有字段兼容） |
 | 宿主机制 | DSH：`registerSddTools(ctx, defineTool)` 注册的 `sdd_upstream` / `sdd_bridge`；非 DSH：`bin/sdd-kit.mjs` 子命令 |
+| 动作委托 | `sdd_upstream` 的 `action` 字段：`setup` → core setup，`update_all` → core update，`doctor` / `guard` / `guidance` → `runAction(action, args, deps)`；其余值走既有 upstream 动作。`sdd_bridge` 的 `action` 全部走 `runAction('bridge', args, deps)`。CLI `update` / `bridge` / `doctor` / `guard` / `guidance` 走同一个 `runAction`。 |
+| 触发参数 | `doctor` 接受 `trigger`（任务描述字符串，仅打分不执行，见「触发试跑打分」）、`host`、`cwd`、`skills`（可见 SkillSummary[]）、`trustFlags`（Cursor 自动信任标记）；`guard` 仅需 `cwd`；`guidance` 接受 `host` / `cwd` / `skills` / `superpowersDir` / `candidateDirs`。引导面的工具映射中 `doctor` / `guard` / `guidance` 均指向 `sdd_upstream`。 |
 | CLI 调用 | `node bin/sdd-kit.mjs <action> [--json]`，`parseArgs` 解析，stdout 输出 JSON |
 | 降级 | 无宿主运行时只用 CLI；CLI 不 import 任何 `@deepseek-ai/*` |
 | 等价 | 同一动作经工具面与 CLI 输出结构相同；新增字段为增量 |
@@ -71,7 +73,7 @@
 
 ## 体检契约
 
-- 入口：`sdd_upstream({action:'doctor', trigger?})` / `node bin/sdd-kit.mjs doctor [--trigger "..."]`。
+- 入口：`sdd_upstream({action:'doctor', trigger?, host?, cwd?, skills?, trustFlags?})` 由 `src/register.mjs` 委托 `runAction('doctor', args, deps)` → `runDoctor`；CLI 等价入口 `node bin/sdd-kit.mjs doctor [--trigger "..."] [--host ...] [--cwd ...]`（同一 `src/core/doctor.mjs`）。`guard` / `guidance` 同样只经 `sdd_upstream` 的 `action` 字段委托，不新增宿主工具；`trigger` 只参与触发试跑打分。
 - 输出：五区（environment / host / repository / runtime / triggerDryRun），每区 `{status, items[]}`，每 item `{status, code, message, fix?}`。
 - 零写、可重复、错误统一四字段；触发试跑只打分不执行。
 

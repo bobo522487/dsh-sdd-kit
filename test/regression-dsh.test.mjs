@@ -25,12 +25,16 @@ test('sdd_upstream and sdd_bridge preserve their public input/output contract (R
   const bridge = tools[1];
   const upstreamParams = Object.keys(upstream.parameters).sort();
   assert.deepEqual(upstreamParams, [
-    'action', 'candidateDirs', 'cwd', 'extensionDir', 'integration', 'python',
-    'repoUrl', 'superpowersDir', 'switchIntegration', 'upgrade', 'useSkills',
+    'action', 'candidateDirs', 'cwd', 'extensionDir', 'host', 'integration', 'python',
+    'repoUrl', 'skills', 'superpowersDir', 'switchIntegration', 'trigger', 'trustFlags',
+    'upgrade', 'useSkills',
   ]);
   assert.equal(upstream.parameters.action.required, true);
   assert.match(upstream.parameters.action.description, /setup/);
   assert.match(upstream.parameters.action.description, /update_all/);
+  assert.match(upstream.parameters.action.description, /doctor/);
+  assert.match(upstream.parameters.action.description, /guard/);
+  assert.match(upstream.parameters.action.description, /guidance/);
 
   const bridgeParams = Object.keys(bridge.parameters).sort();
   assert.deepEqual(bridgeParams, ['action', 'artifact', 'bugSlug', 'cwd', 'featureName', 'overwrite']);
@@ -45,6 +49,28 @@ test('sdd_upstream and sdd_bridge preserve their public input/output contract (R
     assert.equal(rendered[0].type, 'text');
     assert.deepEqual(JSON.parse(rendered[0].text), { ok: true, value: 1 });
   }
+});
+
+test('sdd_upstream delegates doctor/guard/guidance to the shared core actions (REQ-14/AC-03)', async () => {
+  const calls = [];
+  const tools = captureTools({
+    runDoctor: async (args) => { calls.push(['doctor', args.trigger, args.host, args.cwd]); return { zone: 'triggerDryRun' }; },
+    checkPlanningGuard: async (args) => { calls.push(['guard', args.cwd]); return { blocked: false }; },
+    assembleGuidance: async (args) => { calls.push(['guidance', args.cwd]); return { tokenEstimate: 10 }; },
+  });
+  const upstream = tools[0];
+
+  assert.deepEqual(
+    await upstream.execute({ action: 'doctor', trigger: '实现登录', host: 'dsh', cwd: '/tmp/doctor' }),
+    { zone: 'triggerDryRun' }
+  );
+  assert.deepEqual(await upstream.execute({ action: 'guard', cwd: '/tmp/guard' }), { blocked: false });
+  assert.deepEqual(await upstream.execute({ action: 'guidance', cwd: '/tmp/guidance' }), { tokenEstimate: 10 });
+  assert.deepEqual(calls, [
+    ['doctor', '实现登录', 'dsh', '/tmp/doctor'],
+    ['guard', '/tmp/guard'],
+    ['guidance', '/tmp/guidance'],
+  ]);
 });
 
 test('tools remain thin delegates to the unified core action entry (REQ-14)', async () => {

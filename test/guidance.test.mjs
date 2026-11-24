@@ -53,13 +53,79 @@ test('assembleGuidance returns all three parts plus token estimate and warnings 
   assert.match(bundle.upstreamText, /先写测试再写实现/);
   assert.match(bundle.upstreamText, /discipline-two/);
   assert.deepEqual(bundle.toolMapping, {
-    upstream: 'sdd_upstream', bridge: 'sdd_bridge', doctor: 'sdd_doctor',
+    upstream: 'sdd_upstream',
+    bridge: 'sdd_bridge',
+    doctor: 'sdd_upstream',
+    guard: 'sdd_upstream',
+    guidance: 'sdd_upstream',
   });
   assert.equal(bundle.sddPointer.feature, '004-multihost-runtime-governance');
   assert.equal(bundle.sddPointer.phase, 'implement');
   assert.match(bundle.sddPointer.nextCommand, /speckit/);
   assert.ok(bundle.tokenEstimate > 0 && bundle.tokenEstimate <= 1200);
   assert.deepEqual(bundle.warnings, []);
+});
+
+async function makeMirrorSkills(mirrorRoot, name, description) {
+  const skillsDir = path.join(mirrorRoot, 'skills', name);
+  await fs.mkdir(skillsDir, { recursive: true });
+  await fs.writeFile(path.join(skillsDir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nbody ignored\n`, 'utf8');
+  return skillsDir;
+}
+
+// selectSuperpowersDir's default candidate uses os.homedir(), which reads the
+// process environment (HOME on POSIX, USERPROFILE on Windows), not the injected env.
+async function withProcessHome(home, fn) {
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test('assembleGuidance selects the DSH_SDD_KIT_SUPERPOWERS_DIR mirror when no explicit dir is given (REQ-08)', async () => {
+  const fixture = await makeRepo();
+  const mirror = path.join(fixture.root, 'env-mirror');
+  await makeMirrorSkills(mirror, 'env-skill', '环境候选纪律。');
+  const bundle = await withProcessHome(fixture.home, () => assembleGuidance({
+    host: 'dsh',
+    cwd: fixture.repo,
+    env: { HOME: fixture.home, DSH_HOME: '', DSH_SDD_KIT_SUPERPOWERS_DIR: mirror },
+  }));
+  assert.match(bundle.upstreamText, /env-skill/);
+  assert.match(bundle.upstreamText, /环境候选纪律/);
+  assert.deepEqual(bundle.warnings, []);
+});
+
+test('assembleGuidance selects the DSH_HOME mirror when the env override is absent (REQ-08)', async () => {
+  const fixture = await makeRepo();
+  const dshHome = path.join(fixture.root, 'dsh-home');
+  await makeMirrorSkills(path.join(dshHome, 'upstream', 'superpowers'), 'home-skill', 'DSH_HOME 纪律。');
+  const bundle = await withProcessHome(fixture.home, () => assembleGuidance({
+    host: 'dsh',
+    cwd: fixture.repo,
+    env: { HOME: fixture.home, DSH_HOME: dshHome, DSH_SDD_KIT_SUPERPOWERS_DIR: '' },
+  }));
+  assert.match(bundle.upstreamText, /home-skill/);
+  assert.match(bundle.upstreamText, /DSH_HOME 纪律/);
+  assert.deepEqual(bundle.warnings, []);
+});
+
+test('no explicit dir and no readable mirror still degrades to a warning (REQ-11/AC-07)', async () => {
+  const fixture = await makeRepo();
+  const bundle = await withProcessHome(fixture.home, () => assembleGuidance({
+    host: 'dsh',
+    cwd: fixture.repo,
+    env: { HOME: fixture.home, DSH_HOME: path.join(fixture.root, 'empty-home'), DSH_SDD_KIT_SUPERPOWERS_DIR: '' },
+  }));
+  assert.equal(bundle.upstreamText, '');
+  assert.ok(bundle.warnings.some((w) => /install|安装|缺失|不可读/.test(w)));
 });
 
 test('over-budget assembly trims only the SDD pointer and never the upstream text (REQ-09/AC-06)', async () => {
