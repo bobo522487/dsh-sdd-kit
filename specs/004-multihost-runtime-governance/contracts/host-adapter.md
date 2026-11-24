@@ -74,7 +74,7 @@
 ## 体检契约
 
 - 入口：`sdd_upstream({action:'doctor', trigger?, host?, cwd?, skills?, trustFlags?})` 由 `src/register.mjs` 委托 `runAction('doctor', args, deps)` → `runDoctor`；CLI 等价入口 `node bin/sdd-kit.mjs doctor [--trigger "..."] [--host ...] [--cwd ...]`（同一 `src/core/doctor.mjs`）。`guard` / `guidance` 同样只经 `sdd_upstream` 的 `action` 字段委托，不新增宿主工具；`trigger` 只参与触发试跑打分。
-- 输出：五区（environment / host / repository / runtime / triggerDryRun），每区 `{status, items[]}`，每 item `{status, code, message, fix?}`。
+- 输出：五区（environment / host / repository / runtime / triggerDryRun），每区 `{status, items[]}`，每 item `{status, code, message, fix?}`。宿主区 MUST 报告 `GUIDANCE_SCOPE` 诊断码，含 `enabled` / `effectiveScope` / `source`，判定与引导拼装共用 `resolveGuidanceSwitch`；不可解析的开关文件只告警不改变判定。
 - 零写、可重复、错误统一四字段；触发试跑只打分不执行。
 
 ### 触发试跑打分（`REQ-38`）
