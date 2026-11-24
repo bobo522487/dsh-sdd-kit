@@ -134,6 +134,31 @@ test('classifyMarkers treats a 23-hour-old leftover from another run as history 
   assert.deepEqual(classified.history, ['claude']);
 });
 
+test('classifyMarkers treats a marker as pending when no session baseline is given (C1)', async () => {
+  const repo = await makeRepo();
+  const writtenAt = Date.parse('2026-11-24T12:00:00.000Z');
+  await writeMarker({
+    cwd: repo,
+    host: 'dsh',
+    layer: 'tool_code',
+    now: new Date(writtenAt).toISOString(),
+  });
+  // The production CLI/register path passes neither sessionStart nor runId; a
+  // marker just written by that same run must never be classified as history.
+  const classified = classifyMarkers(await readMarkers({ cwd: repo }), { now: writtenAt + 60_000 });
+  assert.deepEqual(classified.pending, ['dsh']);
+  assert.deepEqual(classified.history, []);
+});
+
+test('classifyMarkers still rejects an unparseable timestamp without a baseline (C1)', () => {
+  const classified = classifyMarkers(
+    { dsh: { host: 'dsh', layer: 'tool_code', timestamp: 'not-a-date' } },
+    { now: Date.parse('2026-11-24T12:00:00.000Z') },
+  );
+  assert.deepEqual(classified.pending, []);
+  assert.deepEqual(classified.history, ['dsh']);
+});
+
 test('classifyMarkers stays empty when the marker file is corrupt (T084)', async () => {
   const repo = await makeRepo();
   await fs.writeFile(path.join(repo, '.specify', 'sdd-pending.json'), '{not json', 'utf8');

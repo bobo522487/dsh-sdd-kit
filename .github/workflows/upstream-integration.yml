@@ -1,3 +1,12 @@
+# Upgrading SUPERPOWERS_REF (I8): the pinned-mirror variant must track an
+# immutable ref, never a branch. To move the pin, pick a published release tag
+# from https://github.com/obra/superpowers/releases, run the matrix once on a
+# pull request, and only then bump the literal below.
+#
+# `git clone --depth 1 --branch <ref>` only resolves refs, so a release tag
+# (e.g. v7.0.2) is the supported form here. To pin a bare commit sha instead,
+# replace the clone with `git init` + `git fetch --depth 1 origin <sha>` +
+# `git checkout FETCH_HEAD`; the post-clone HEAD assertion below still applies.
 name: upstream-integration
 
 on:
@@ -42,7 +51,10 @@ jobs:
       UPSTREAM_VARIANT: ${{ matrix.upstream }}
       HOST_KEY: ${{ matrix.host }}
       SPEC_KIT_REF: ${{ matrix.upstream == 'pinned-spec-kit' && 'v1.4.4' || '' }}
-      SUPERPOWERS_REF: ${{ matrix.upstream == 'pinned-mirror' && 'main' || '' }}
+      # I8: a branch name made `pinned-mirror` a lie — the job re-resolved main
+      # on every run, so a broken upstream landed unannounced. v7.0.2 is the
+      # release this kit was validated against (see the header for upgrades).
+      SUPERPOWERS_REF: ${{ matrix.upstream == 'pinned-mirror' && 'v7.0.2' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,6 +72,11 @@ jobs:
         if: matrix.upstream == 'pinned-mirror'
         run: |
           git clone --depth 1 --branch "${SUPERPOWERS_REF}" https://github.com/obra/superpowers.git "$RUNNER_TEMP/superpowers-pinned"
+          # I8: assert the checkout really sits on the pinned ref. A tag that
+          # moves, or a clone that silently fell back to a default branch, would
+          # otherwise reach the CLI as a "pinned" mirror that is nothing of the
+          # kind.
+          test "$(git -C "$RUNNER_TEMP/superpowers-pinned" rev-parse HEAD)" = "$(git -C "$RUNNER_TEMP/superpowers-pinned" rev-parse "${SUPERPOWERS_REF}^{commit}")"
           # T089: cloning is not pinning. The mirror reaches the CLI through the
           # one env channel it documents (see src/core/candidates.mjs), and it is
           # exported so every later step — doctor included — resolves the same
@@ -78,9 +95,53 @@ jobs:
           # spec-template override, so TEMPLATE_MISSING would be permanent.
           # Install it through the product's own bridge, not with a bare cp.
           node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" bridge --action install_overrides --cwd "$WORKDIR" --json > "$WORKDIR/overrides.json"
+          # I8: the CLI only sets a non-zero exit code for status === 'error', so
+          # a bridge that reports ok:false still exits 0. Without this gate the
+          # step would go green on an install that wrote nothing.
+          cat > "$RUNNER_TEMP/verify-overrides.mjs" <<'NODE'
+          import fs from 'node:fs';
+
+          // The bridge reports per-artifact outcomes and an aggregate `ok`.
+          // Trust neither the exit code (always 0 here) nor `ok` alone: an
+          // install that touched no artifact is not a success either.
+          const file = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          } catch (error) {
+            console.error(`overrides gate: cannot read ${file}: ${error.message}`);
+            process.exit(1);
+          }
+
+          const problems = [];
+          if (report.action !== 'install_overrides') {
+            problems.push(`action is ${JSON.stringify(report.action)}, expected "install_overrides"`);
+          }
+          if (report.ok !== true) {
+            problems.push(`install_overrides reported ok=${JSON.stringify(report.ok)} — the overrides did not land`);
+          }
+          const artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
+          if (artifacts.length === 0) {
+            problems.push('install_overrides touched no artifact — an empty install is a failure, not a pass');
+          }
+          for (const entry of artifacts) {
+            if (entry?.status === 'failed') {
+              problems.push(`artifact ${entry.id ?? '(unnamed)'} failed — ${entry.reason ?? entry.nextAction ?? ''}`);
+            }
+          }
+
+          if (problems.length > 0) {
+            console.error(`overrides gate failed for ${file}:`);
+            for (const problem of problems) console.error(`  - ${problem}`);
+            process.exit(1);
+          }
+          console.log(`overrides gate passed: ${artifacts.length} artifact(s), ok=${report.ok}`);
+          NODE
+          node "$RUNNER_TEMP/verify-overrides.mjs" "$WORKDIR/overrides.json"
           (cd "$WORKDIR" && node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" doctor --json --host "$HOST_KEY" > doctor.json)
           cat > "$RUNNER_TEMP/verify-doctor.mjs" <<'NODE'
           import fs from 'node:fs';
+          import path from 'node:path';
 
           // Zone presence alone is not evidence: a doctor where every zone is
           // fail still emits all five keys. Assert the state of each zone and
@@ -99,6 +160,11 @@ jobs:
           // T090: the warn variants mean the extension is half-installed; a
           // warn must never be absorbed by the zone aggregate.
           const FORBIDDEN_ITEMS = ['TEMPLATE_MISSING', 'TEMPLATE_PACKAGED_MISSING'];
+          // I8: the pinned-mirror variant exports the clone it just checked out.
+          // If the doctor resolved any other mirror — the runner's ~/.dsh copy,
+          // say — the pin proved nothing, so the job must fail instead of
+          // reporting a green environment zone.
+          const pinnedMirror = process.env.DSH_SDD_KIT_SUPERPOWERS_DIR;
 
           const file = process.argv[2];
           let report;
@@ -144,6 +210,35 @@ jobs:
             }
           }
 
+          if (pinnedMirror) {
+            // Compare real paths: the doctor reports the mirror's realpath, and
+            // $RUNNER_TEMP may itself sit behind a symlink on some runners.
+            const canonical = (value) => {
+              const resolved = path.resolve(value);
+              try {
+                return fs.realpathSync(resolved);
+              } catch {
+                return resolved;
+              }
+            };
+            const expected = canonical(pinnedMirror);
+            const mirror = (report.environment?.items ?? []).find((item) => item?.code === 'UPSTREAM_MIRROR');
+            if (!mirror) {
+              problems.push('environment: the pinned-mirror job ran but UPSTREAM_MIRROR is missing');
+            } else {
+              if (mirror.status !== 'pass') {
+                problems.push(`environment: UPSTREAM_MIRROR is ${mirror.status}, but the pin must be readable`);
+              }
+              if (mirror.via !== 'env') {
+                problems.push(`environment: UPSTREAM_MIRROR resolved via ${JSON.stringify(mirror.via)}, but the exported pin must win`);
+              }
+              const resolved = typeof mirror.path === 'string' ? canonical(mirror.path) : null;
+              if (resolved !== expected) {
+                problems.push(`environment: UPSTREAM_MIRROR is ${resolved ?? '(none)'}, expected the pinned clone at ${expected}`);
+              }
+            }
+          }
+
           if (problems.length > 0) {
             console.error(`doctor gate failed for ${file}:`);
             for (const problem of problems) console.error(`  - ${problem}`);
@@ -154,5 +249,8 @@ jobs:
           node "$RUNNER_TEMP/verify-doctor.mjs" "$WORKDIR/doctor.json"
       - name: Verify the live upstream contract
         run: |
-          node scripts/verify-upstream.mjs --json > /tmp/upstream-report.json
-          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + ' (not_executed is a failure, never a pass)' + (r.reason ? ' — ' + r.reason : '')); process.exit(1); } if (r.versionDrift && r.versionDrift.needsAdjustment) { console.error('upstream contract: version bound drift — ' + JSON.stringify(r.versionDrift)); process.exit(1); }"
+          # M6: the verifier lives in the checkout, not in the step's cwd. A
+          # relative path silently resolves against whatever directory a later
+          # step happens to inherit, and the failure reads like a broken contract.
+          node "$GITHUB_WORKSPACE/scripts/verify-upstream.mjs" --json > "$RUNNER_TEMP/upstream-report.json"
+          node -e "const r = require(process.argv[1]); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + ' (not_executed is a failure, never a pass)' + (r.reason ? ' — ' + r.reason : '')); process.exit(1); } if (r.versionDrift && r.versionDrift.needsAdjustment) { console.error('upstream contract: version bound drift — ' + JSON.stringify(r.versionDrift)); process.exit(1); }" "$RUNNER_TEMP/upstream-report.json"

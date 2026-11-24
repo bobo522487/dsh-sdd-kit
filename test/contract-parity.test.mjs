@@ -7,6 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runAction } from '../src/core/action.mjs';
+import { formatGuidanceText } from '../src/core/guidance.mjs';
+import { runUpdate } from '../src/core/update.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(PKG_ROOT, 'bin', 'sdd-kit.mjs');
@@ -216,6 +218,83 @@ test('--action is reachable only through bridge; other subcommands reject it exp
   }
 });
 
+test('a failed bridge action exits non-zero with the four-field error contract (I7)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-bridge-error-'));
+  const failed = invokeCli(['bridge', '--action', 'bogus', '--cwd', repo]);
+  assert.equal(failed.status, 1, JSON.stringify(failed.stdout));
+  assert.deepEqual(Object.keys(failed.stdout).sort(), ['code', 'fix', 'message', 'status']);
+  assert.equal(failed.stdout.status, 'error');
+  assert.equal(failed.stdout.code, 'E_ARGS');
+  assert.match(failed.stdout.message, /Unknown sdd_bridge action/);
+  assert.match(failed.stdout.fix, /Task checkbox updates/);
+
+  // Success keeps the bridge's own documented shape.
+  const ok = invokeCli(['bridge', '--action', 'inspect', '--cwd', repo]);
+  assert.equal(ok.status, 0, JSON.stringify(ok.stdout));
+  assert.deepEqual(Object.keys(ok.stdout).sort(), [
+    'action', 'bugs', 'cwd', 'features', 'hasConstitution', 'hasEarsOverride',
+    'hasSpecifyDir', 'selectedBug', 'selectedFeature',
+  ]);
+});
+
+test('update --extension-changes reaches changedLayers as extension_command (I6)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-extension-changes-'));
+  const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-extension-empty-bin-'));
+  const savedPath = process.env.PATH;
+  const savedMirror = process.env.DSH_SDD_KIT_SUPERPOWERS_DIR;
+  const records = [
+    { component: 'extension_command', before: null, after: 'extension', outcome: 'updated' },
+    { component: 'extension_command', before: null, after: 'commands', outcome: 'updated' },
+  ];
+  process.env.PATH = emptyBin;
+  process.env.DSH_SDD_KIT_SUPERPOWERS_DIR = path.join(repo, 'mirror');
+  try {
+    const cli = invokeCli([
+      'update', '--json', '--cwd', repo, '--host', 'dsh', '--extension-changes=extension,commands',
+    ]);
+    const core = await runAction('update', { cwd: repo, host: 'dsh', extensionChanges: records });
+    assert.deepEqual(shape(cli.stdout), shape(core), 'CLI and core must agree on extension changes');
+
+    const extension = cli.stdout.components.filter((entry) => entry.component === 'extension_command');
+    assert.equal(extension.length, 2);
+    assert.deepEqual(extension.map((entry) => entry.after), ['extension', 'commands']);
+    assert.ok(extension.every((entry) => entry.outcome === 'updated'));
+    assert.deepEqual(cli.stdout.reload.layers, ['extension_command']);
+    assert.equal(cli.stdout.reload.result, 'new_session');
+  } finally {
+    process.env.PATH = savedPath;
+    if (savedMirror === undefined) delete process.env.DSH_SDD_KIT_SUPERPOWERS_DIR;
+    else process.env.DSH_SDD_KIT_SUPERPOWERS_DIR = savedMirror;
+  }
+});
+
+test('update --reinstall-extension reinstalls the extension and reports extension_command (I6)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-core-reinstall-extension-'));
+  const calls = [];
+  const runUpstream = async (args) => {
+    if (args.action === 'status') {
+      return { specifyCli: { version: '1.4.0' }, superpowers: { head: 'deadbeef', skillCount: 3 } };
+    }
+    if (args.action === 'install_hooks_ext') {
+      calls.push(args);
+      return { ok: true, extension: { id: 'sdd-kit', version: '0.5.1' } };
+    }
+    return { ok: true };
+  };
+  const report = await runUpdate({ cwd: repo, reinstallExtension: true }, { runUpstream });
+  assert.equal(calls.length, 1, 'the reinstall must call install_hooks_ext exactly once');
+  assert.equal(calls[0].cwd, repo);
+  const record = report.components.find((entry) => entry.component === 'extension_command');
+  assert.ok(record, 'a reinstall must be reported as an extension_command component');
+  assert.equal(record.outcome, 'updated');
+  assert.equal(record.after, 'sdd-kit@0.5.1');
+  assert.equal(report.ok, true);
+
+  const ordinary = await runUpdate({ cwd: repo }, { runUpstream });
+  assert.equal(calls.length, 1, 'an ordinary update must not reinstall the extension');
+  assert.equal(ordinary.components.length, 2);
+});
+
 test('setup/upstream-only flags are rejected by every CLI subcommand (T088)', () => {
   const cases = ['--upgrade', '--switch-integration', '--use-skills', '--extension-dir=/tmp/ext'];
   for (const flag of cases) {
@@ -306,8 +385,131 @@ test('guidance --host <host> --clear-marker clears only that host marker (T081)'
   assert.equal(bogus.stdout.code, 'E_UNKNOWN_HOST');
   assert.match(bogus.stdout.fix, /dsh/);
 
-  // Other subcommands must not accept the flag.
-  const doctor = invokeCli(['doctor', '--cwd', repo, '--clear-marker']);
-  assert.notEqual(doctor.status, 0);
-  assert.equal(doctor.stdout.code, 'E_UNSUPPORTED_OPTION');
+  // T081/I3: doctor is a second supported entry point for the same operation.
+  const doctor = invokeCli(['doctor', '--cwd', repo, '--host', 'dsh', '--clear-marker']);
+  assert.equal(doctor.status, 0, JSON.stringify(doctor.stdout));
+  assert.deepEqual(Object.keys(doctor.stdout).sort(), ['action', 'cleared', 'host', 'path', 'status']);
+  assert.equal(doctor.stdout.status, 'ok');
+  assert.equal(doctor.stdout.action, 'clear_marker');
+  assert.equal(doctor.stdout.cleared, true, 'claude was cleared, dsh remains');
+  assert.equal(doctor.stdout.host, 'dsh');
+  assert.equal(doctor.stdout.path, marker);
+
+  const afterDoctor = JSON.parse(await fs.readFile(marker, 'utf8'));
+  assert.deepEqual(Object.keys(afterDoctor), [], 'doctor cleared only the requested host');
+
+  // Still rejected where there is no reason to clear a marker.
+  for (const command of ['bridge', 'update', 'guard']) {
+    const refused = invokeCli([command, '--cwd', repo, '--clear-marker']);
+    assert.notEqual(refused.status, 0, `${command} must not accept --clear-marker`);
+    assert.equal(refused.stdout.code, 'E_UNSUPPORTED_OPTION');
+  }
+});
+
+test('doctor --host <host> --clear-marker works like guidance and never crashes in text mode (I3)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-doctor-marker-'));
+  const marker = path.join(repo, '.specify', 'sdd-pending.json');
+  await fs.mkdir(path.dirname(marker), { recursive: true });
+  await fs.writeFile(
+    marker,
+    `${JSON.stringify({
+      dsh: { host: 'dsh', layer: 'tool_code', timestamp: '2026-01-01T00:00:00.000Z', reason: 'update' },
+      claude: { host: 'claude', layer: 'skill_data', timestamp: '2026-01-01T00:00:01.000Z', reason: 'update' },
+    }, null, 2)}\n`,
+    'utf8'
+  );
+
+  const cleared = invokeCli(['doctor', '--json', '--cwd', repo, '--host', 'claude', '--clear-marker']);
+  assert.equal(cleared.status, 0, JSON.stringify(cleared.stdout));
+  assert.equal(cleared.stdout.action, 'clear_marker');
+  assert.equal(cleared.stdout.host, 'claude');
+  assert.equal(cleared.stdout.cleared, true);
+  const jsonShape = Object.keys(cleared.stdout).sort();
+  const guidance = invokeCli(['guidance', '--json', '--cwd', repo, '--host', 'claude', '--clear-marker']);
+  assert.equal(guidance.status, 0);
+  assert.deepEqual(Object.keys(guidance.stdout).sort(), jsonShape, 'doctor and guidance must share the clear result shape');
+
+  const remaining = JSON.parse(await fs.readFile(marker, 'utf8'));
+  assert.deepEqual(Object.keys(remaining), ['dsh']);
+  assert.equal(remaining.dsh.layer, 'tool_code');
+
+  // Unknown hosts and absent markers behave exactly as on the guidance path.
+  const bogus = invokeCli(['doctor', '--cwd', repo, '--host', 'not-a-host', '--clear-marker']);
+  assert.notEqual(bogus.status, 0);
+  assert.equal(bogus.stdout.status, 'error');
+  assert.equal(bogus.stdout.code, 'E_UNKNOWN_HOST');
+  assert.match(bogus.stdout.fix, /dsh/);
+
+  const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-doctor-marker-empty-'));
+  const absent = invokeCli(['doctor', '--cwd', empty, '--host', 'dsh', '--clear-marker']);
+  assert.equal(absent.status, 0, JSON.stringify(absent.stdout));
+  assert.equal(absent.stdout.cleared, false);
+  await assert.rejects(fs.access(path.join(empty, '.specify', 'sdd-pending.json')));
+
+  // --text is guidance-only: doctor refuses it with a structured error, never a crash.
+  const text = runCliRaw(['doctor', '--text', '--cwd', repo, '--host', 'dsh', '--clear-marker']);
+  assert.notEqual(text.status, 0);
+  assert.equal(JSON.parse(text.stdout).code, 'E_UNSUPPORTED_OPTION');
+});
+
+/**
+ * C4 regression: `guidance --text --clear-marker` used to reach
+ * formatGuidanceText() with the clear_marker result, which carries no
+ * sddPointer, and crashed with "Cannot convert undefined or null to object".
+ */
+test('guidance --text --clear-marker renders human text instead of crashing (C4)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-marker-text-'));
+  const marker = path.join(repo, '.specify', 'sdd-pending.json');
+  await fs.mkdir(path.dirname(marker), { recursive: true });
+  await fs.writeFile(
+    marker,
+    `${JSON.stringify({
+      dsh: { host: 'dsh', layer: 'tool_code', timestamp: '2026-01-01T00:00:00.000Z', reason: 'update' },
+      claude: { host: 'claude', layer: 'skill_data', timestamp: '2026-01-01T00:00:01.000Z', reason: 'update' },
+    }, null, 2)}\n`,
+    'utf8'
+  );
+
+  const text = runCliRaw(['guidance', '--text', '--clear-marker', '--host', 'dsh', '--cwd', repo]);
+  assert.equal(text.status, 0, `expected exit 0, got ${text.status}: ${text.stderr || text.stdout}`);
+  assert.doesNotMatch(text.stdout, /Cannot convert undefined or null to object/);
+  assert.doesNotMatch(text.stdout, /"status":\s*"error"/, 'the text channel must not emit a JSON error envelope');
+  assert.match(text.stdout, /已清除/, 'the text channel must confirm the cleared marker');
+  assert.match(text.stdout, /dsh/, 'the text channel must name the host');
+
+  const remaining = JSON.parse(await fs.readFile(marker, 'utf8'));
+  assert.deepEqual(Object.keys(remaining), ['claude'], 'only the requested host entry may be removed');
+
+  // The JSON shape keeps its four documented fields.
+  await fs.writeFile(
+    marker,
+    `${JSON.stringify({ dsh: { host: 'dsh', layer: 'tool_code', timestamp: '2026-01-01T00:00:00.000Z', reason: 'update' } }, null, 2)}\n`,
+    'utf8'
+  );
+  const json = invokeCli(['guidance', '--json', '--clear-marker', '--host', 'dsh', '--cwd', repo]);
+  assert.equal(json.status, 0);
+  assert.deepEqual(Object.keys(json.stdout).sort(), ['action', 'cleared', 'host', 'path', 'status']);
+  assert.equal(json.stdout.status, 'ok');
+  assert.equal(json.stdout.action, 'clear_marker');
+  assert.equal(json.stdout.cleared, true);
+  assert.equal(json.stdout.host, 'dsh');
+});
+
+test('guidance --text --clear-marker on an absent marker still exits 0 with a readable message (C4)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-marker-text-absent-'));
+  const text = runCliRaw(['guidance', '--text', '--clear-marker', '--host', 'dsh', '--cwd', repo]);
+  assert.equal(text.status, 0, text.stderr || text.stdout);
+  assert.doesNotMatch(text.stdout, /Cannot convert undefined or null to object/);
+  assert.match(text.stdout, /已清除|无待生效标记|没有/, 'an absent marker must be reported, not crash');
+  await assert.rejects(fs.access(path.join(repo, '.specify', 'sdd-pending.json')), 'clearing must not create the file');
+});
+
+test('formatGuidanceText tolerates a bundle without pointer or mapping (C4)', () => {
+  const text = formatGuidanceText({ upstreamText: '- skill: desc' });
+  assert.match(text, /^## SDD 运行时纪律（dsh-sdd-kit）/);
+  assert.match(text, /- skill: desc/);
+  assert.doesNotMatch(text, /undefined/, 'a missing section must be omitted, not rendered as undefined');
+
+  assert.doesNotThrow(() => formatGuidanceText({ upstreamText: 'x', sddPointer: null, toolMapping: null }));
+  assert.doesNotThrow(() => formatGuidanceText({}));
 });

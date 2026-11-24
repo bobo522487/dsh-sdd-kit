@@ -134,16 +134,19 @@ export function toolMapping(host = 'dsh') {
  * the 工具映射 label and the 当前进度 label too, not just the payload (T070).
  */
 export function formatGuidanceText(bundle) {
-  const pointer = Object.entries(bundle.sddPointer)
+  // Defensive: this renders whatever a caller passes. The CLI's `--clear-marker`
+  // result is a legitimate non-bundle (it carries no sddPointer/toolMapping), so
+  // a missing section is omitted rather than throwing (C4).
+  const pointer = Object.entries(bundle?.sddPointer ?? {})
     .filter(([, value]) => value)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n');
-  const mapping = Object.entries(bundle.toolMapping)
+  const mapping = Object.entries(bundle?.toolMapping ?? {})
     .map(([action, tool]) => `${action} -> ${tool}`)
     .join('\n');
   return [
     '## SDD 运行时纪律（dsh-sdd-kit）',
-    bundle.upstreamText,
+    bundle?.upstreamText,
     mapping ? `工具映射：\n${mapping}` : '',
     pointer ? `当前进度：\n${pointer}` : '',
   ].filter(Boolean).join('\n\n');
@@ -163,11 +166,14 @@ export async function assembleGuidance({
 } = {}) {
   const warnings = [];
   const switchState = await resolveSwitch({ cwd, env, warnings });
-  const upstreamText = Array.isArray(skills)
-    ? skills
-      .filter((s) => s?.name && s?.description)
-      .map((s) => `- ${s.name}: ${s.description}`)
-      .join('\n')
+  const providedSkills = Array.isArray(skills)
+    ? skills.filter((s) => s?.name && s?.description)
+    : null;
+  if (providedSkills && providedSkills.length === 0) {
+    warnings.push('调用方提供的技能列表为空，引导不含上游原文。');
+  }
+  const upstreamText = providedSkills
+    ? providedSkills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
     : await readUpstreamText(
       await resolveSkillsDir({ superpowersDir, candidateDirs, env }),
       warnings
@@ -211,7 +217,7 @@ export async function assembleGuidance({
     if (bundle.tokenEstimate > TOKEN_BUDGET) {
       warnings.push(`引导内容超过 1.2k token 上限（估算 ${bundle.tokenEstimate}），上游原文按规范保留，请缩短上游描述。`);
     } else {
-      warnings.push('引导内容超过 1.2k token 上限，已仅裁剪 SDD 指针；上游原文保持完整。');
+      warnings.push(`引导内容超出 1.2k token 上限，已仅裁剪 SDD 指针至 ${bundle.tokenEstimate} token；上游原文保持完整。`);
     }
   }
 

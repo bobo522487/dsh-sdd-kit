@@ -57,6 +57,21 @@ export async function assertNoSymlinkComponent(baseDir, targetPath) {
   return null;
 }
 
+/**
+ * Delete a managed block file only when it is exactly our block. A file the user
+ * authored (no markers, or extra content around them) is left untouched, so
+ * turning a guidance switch off never costs user data.
+ * @param {{file: string, markerStart: string, markerEnd: string}} options
+ * @returns {Promise<boolean>} whether a kit-owned file was deleted
+ */
+export async function removeManagedBlockFile({ file, markerStart, markerEnd }) {
+  const existing = await fs.readFile(file, 'utf8').catch(() => null);
+  if (existing === null) return false;
+  const trimmed = existing.trim();
+  if (!trimmed.startsWith(markerStart) || !trimmed.endsWith(markerEnd)) return false;
+  return fs.rm(file, { force: true }).then(() => true, () => false);
+}
+
 async function syncDirectory(dir) {
   let handle = null;
   try {

@@ -25,9 +25,9 @@ test('sdd_upstream and sdd_bridge preserve their public input/output contract (R
   const bridge = tools[1];
   const upstreamParams = Object.keys(upstream.parameters).sort();
   assert.deepEqual(upstreamParams, [
-    'action', 'candidateDirs', 'cwd', 'extensionDir', 'host', 'integration', 'python',
-    'repoUrl', 'skills', 'superpowersDir', 'switchIntegration', 'trigger', 'trustFlags',
-    'upgrade', 'useSkills',
+    'action', 'candidateDirs', 'cwd', 'extensionChanges', 'extensionDir', 'host', 'integration',
+    'python', 'reinstallExtension', 'repoUrl', 'skills', 'superpowersDir', 'switchIntegration',
+    'trigger', 'trustFlags', 'upgrade', 'useSkills',
   ]);
   assert.equal(upstream.parameters.action.required, true);
   assert.match(upstream.parameters.action.description, /setup/);
@@ -71,6 +71,29 @@ test('sdd_upstream delegates doctor/guard/guidance to the shared core actions (R
     ['guard', '/tmp/guard'],
     ['guidance', '/tmp/guidance'],
   ]);
+});
+
+test('sdd_upstream exposes and forwards the extension update inputs (I6)', async () => {
+  const tools = captureTools();
+  const params = tools[0].parameters;
+  assert.equal(params.extensionChanges.type, 'array');
+  assert.match(params.extensionChanges.description, /extension_command/);
+  assert.equal(params.reinstallExtension.type, 'boolean');
+
+  const calls = [];
+  const delegated = captureTools({
+    runUpdate: async (args) => { calls.push(args); return { action: 'update', ok: true, components: [] }; },
+  });
+  const extensionChanges = [
+    { component: 'extension_command', before: null, after: 'commands', outcome: 'updated' },
+  ];
+  await delegated[0].execute({
+    action: 'update_all', cwd: '/tmp/update', extensionChanges, reinstallExtension: true,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cwd, '/tmp/update');
+  assert.deepEqual(calls[0].extensionChanges, extensionChanges);
+  assert.equal(calls[0].reinstallExtension, true);
 });
 
 test('tools remain thin delegates to the unified core action entry (REQ-14)', async () => {

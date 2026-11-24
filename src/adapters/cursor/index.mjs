@@ -41,10 +41,16 @@ export async function applyCursorGuidance({ cwd = process.cwd(), env = process.e
   const target = path.join(cwd, CAP.guidanceConfig.rulePath);
   const enabled = bundle.enabled !== false;
   const written = enabled && Boolean(bundle.upstreamText?.trim());
+  let removed = false;
   if (written) {
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, text, 'utf8');
+  } else {
+    // The rule file lives at a kit-owned path, so a closed switch or an empty
+    // upstream mirror must leave no resident rule behind (REQ-12/AC-08).
+    const present = await fs.access(target).then(() => true, () => false);
+    removed = present && await fs.rm(target, { force: true }).then(() => true, () => false);
   }
   const warnings = [...bundle.warnings];
-  return { channel: 'rule-dir', text, target, enabled, written, warnings, bundle };
+  return { channel: 'rule-dir', text, target, enabled, written, removed, warnings, bundle };
 }

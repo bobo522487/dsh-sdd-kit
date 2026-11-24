@@ -95,6 +95,34 @@ test('an empty upstream mirror writes no Cursor rule but keeps warnings readable
   await assert.rejects(fs.access(path.join(repo, '.cursor', 'rules', 'sdd-kit-discipline.mdc')));
 });
 
+test('closing the switch after a write removes the Cursor rule (C2/REQ-12/AC-08)', async () => {
+  const repo = await makeRepo();
+  const first = await applyCursorGuidance({ cwd: repo });
+  assert.equal(first.written, true);
+  const target = path.join(repo, '.cursor', 'rules', 'sdd-kit-discipline.mdc');
+  await fs.access(target);
+
+  await fs.writeFile(
+    path.join(repo, '.specify', 'sdd-kit.json'),
+    JSON.stringify({ guidance: { enabled: false } }),
+    'utf8'
+  );
+  const closed = await applyCursorGuidance({ cwd: repo });
+  assert.equal(closed.enabled, false);
+  assert.equal(closed.written, false);
+  assert.equal(closed.removed, true, 'the stale rule must be reported as removed');
+  await assert.rejects(fs.access(target), 'a closed switch must leave no resident Cursor rule behind');
+});
+
+test('an empty upstream mirror also removes a previously written Cursor rule (C2/REQ-12)', async () => {
+  const repo = await makeRepo();
+  await applyCursorGuidance({ cwd: repo });
+  const emptied = await applyCursorGuidance({ cwd: repo, env: await emptyMirrorEnv() });
+  assert.equal(emptied.written, false);
+  assert.equal(emptied.removed, true);
+  await assert.rejects(fs.access(path.join(repo, '.cursor', 'rules', 'sdd-kit-discipline.mdc')));
+});
+
 test('Cursor startup clears only its own pending marker (T081)', async () => {
   const repo = await makeRepo({ switchEnabled: false });
   await writeMarker({ cwd: repo, host: 'dsh', reason: 'dsh pending' });

@@ -29,6 +29,9 @@ export function reloadFollowUp({ host = DEFAULT_HOST, layer = 'tool_code' } = {}
  * Extension/command changes are part of the update report even though their
  * upstream action is owned by the host integration. They only appear when the
  * caller reports a change, so an ordinary two-component update is unchanged.
+ * A plain string entry is accepted as the short form of "this command changed"
+ * so both the CLI (`--extension-changes=a,b`) and the tool schema (records)
+ * reach the same normalization.
  */
 function extensionRecords(args) {
   const records = Array.isArray(args.extensionChanges) ? [...args.extensionChanges] : [];
@@ -39,14 +42,53 @@ function extensionRecords(args) {
       || (typeof value.outcome === 'string' && value.outcome !== 'unchanged');
     if (changed) records.push(typeof value === 'object' ? value : {});
   }
-  return records.map((record) => ({
-    component: 'extension_command',
-    before: record.before ?? null,
-    after: record.after ?? null,
-    outcome: record.outcome ?? 'updated',
-    followUp: record.followUp ?? null,
-    error: record.error ?? null,
-  }));
+  return records.map((record) => {
+    if (typeof record === 'string') {
+      return {
+        component: 'extension_command',
+        before: null,
+        after: record,
+        outcome: 'updated',
+        followUp: null,
+        error: null,
+      };
+    }
+    return {
+      component: 'extension_command',
+      before: record.before ?? null,
+      after: record.after ?? null,
+      outcome: record.outcome ?? 'updated',
+      followUp: record.followUp ?? null,
+      error: record.error ?? null,
+    };
+  });
+}
+
+/**
+ * `reinstallExtension` (T083/I6): re-add the Spec Kit extension after the CLI
+ * upgrade, so the extension command layer is refreshed by the same update run.
+ * The result is reported as an `extension_command` component, which is what
+ * `changedLayers()` needs to ask for a reload.
+ */
+async function reinstallExtension(upstream, args) {
+  const result = await upstream({
+    action: 'install_hooks_ext',
+    cwd: args.cwd,
+    extensionDir: args.extensionDir,
+  });
+  const label = result?.extension?.id
+    ? `${result.extension.id}${result.extension.version ? `@${result.extension.version}` : ''}`
+    : 'extension';
+  if (result && result.ok === false) {
+    throw failure(`Extension reinstall failed: ${failureDetail(result)}`);
+  }
+  return {
+    before: null,
+    after: label,
+    outcome: 'updated',
+    followUp: null,
+    error: null,
+  };
 }
 
 function failureDetail(result) {
@@ -176,17 +218,21 @@ export async function runUpdate(args = {}, deps = {}) {
     superpowersDir: args.superpowersDir,
     repoUrl: args.repoUrl,
     python: args.python,
+    extensionDir: args.extensionDir,
   };
 
   const tasks = [
     () => updateSpecKit(upstream, resolvedArgs),
     () => updateSuperpowers(upstream, resolvedArgs),
   ];
+  if (args.reinstallExtension === true) {
+    tasks.push(() => reinstallExtension(upstream, resolvedArgs));
+  }
 
   const settled = await Promise.allSettled(tasks.map((task) => task()));
 
   const components = settled.map((result, index) => {
-    const component = COMPONENT_NAMES[index];
+    const component = COMPONENT_NAMES[index] ?? 'extension_command';
     if (result.status === 'fulfilled') return normalizeRecord(component, result.value);
     const error = toError(result.reason);
     return normalizeRecord(component, {

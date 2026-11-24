@@ -91,11 +91,17 @@ export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
  * A marker carrying this run's id is pending even across a wall-clock day
  * boundary; otherwise a timestamp at/after the session baseline is pending.
  * Everything else is history (bad timestamps included).
+ *
+ * Without a usable baseline (the production CLI/register path passes neither
+ * `sessionStart` nor `runId`) the baseline is -Infinity: a marker this very run
+ * just wrote must never be demoted to history, so only an unparseable
+ * timestamp can be history.
  */
 export function classifyMarkers(markers = {}, { now = Date.now(), sessionStart, runId } = {}) {
-  const baseline = typeof sessionStart === 'number'
+  const parsed = typeof sessionStart === 'number'
     ? sessionStart
-    : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : now);
+    : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : Number.NaN);
+  const baseline = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
   const pending = [];
   const history = [];
   for (const [host, marker] of Object.entries(markers ?? {})) {

@@ -4,7 +4,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { HOST_CAPABILITIES } from '../src/core/host-capabilities.mjs';
+import {
+  DISCIPLINE_SKILL_NAMES,
+  HOST_CAPABILITIES,
+  checkTrustFlags,
+  hasDisciplineSkills,
+  isDisciplineSkill,
+} from '../src/core/host-capabilities.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOSTS = ['dsh', 'claude', 'codex', 'cursor'];
@@ -95,4 +101,71 @@ test('skillsDir values are unique and adapter implementations stay ≤100 lines 
     const lines = (await fs.readFile(file, 'utf8')).split('\n').length;
     assert.ok(lines <= 100, `${host} adapter has ${lines} lines (>100)`);
   }
+});
+
+/**
+ * C3: the trust-flag matcher is a pure function of the capability pattern, so it
+ * belongs in core. Doctor must not reach into src/adapters/cursor at runtime.
+ */
+test('checkTrustFlags is a pure capability-pattern filter (C3/REQ-20)', () => {
+  const cap = HOST_CAPABILITIES.cursor;
+  assert.deepEqual(checkTrustFlags({ args: ['--harmless', '--verbose'] }, cap), []);
+  assert.deepEqual(checkTrustFlags({ args: ['--harmless', '--trust', '--force'] }, cap), ['--trust', '--force']);
+  // A bare string and a raw array are both accepted, matching the adapter face.
+  assert.deepEqual(checkTrustFlags('--trust --harmless', cap), ['--trust']);
+  assert.deepEqual(checkTrustFlags(['-p', '--approve-mcps'], cap), ['-p', '--approve-mcps']);
+  // Missing input degrades to "no flags" instead of throwing.
+  assert.deepEqual(checkTrustFlags(undefined, cap), []);
+  assert.deepEqual(checkTrustFlags({}, cap), []);
+  // A host without a trust pattern never matches, even with suspicious flags.
+  assert.deepEqual(checkTrustFlags({ args: ['--trust'] }, HOST_CAPABILITIES.dsh), []);
+  assert.deepEqual(checkTrustFlags({ args: ['--trust'] }, HOST_CAPABILITIES.claude), []);
+});
+
+test('checkTrustFlags defaults to the cursor capability so doctor needs no adapter import (C3)', () => {
+  assert.deepEqual(checkTrustFlags({ args: ['--trust', '--harmless'] }), ['--trust']);
+  assert.deepEqual(checkTrustFlags({ args: ['--harmless'] }), []);
+});
+
+// ---- I9: the discipline-skill list and its predicate live in core, once ----
+
+test('core owns the single discipline-skill name list (I9)', () => {
+  assert.ok(Array.isArray(DISCIPLINE_SKILL_NAMES), 'DISCIPLINE_SKILL_NAMES must be a frozen array');
+  assert.ok(Object.isFrozen(DISCIPLINE_SKILL_NAMES), 'the shared list must be immutable');
+  const names = [...DISCIPLINE_SKILL_NAMES];
+  assert.equal(names.length, 15, `expected 15 upstream discipline skills, got ${names.length}`);
+  assert.equal(new Set(names).size, names.length, 'the list must not contain duplicates');
+  for (const required of [
+    'brainstorming', 'diagnosing-superpowers', 'dispatching-parallel-agents', 'executing-plans',
+    'finishing-a-development-branch', 'receiving-code-review', 'requesting-code-review',
+    'subagent-driven-development', 'systematic-debugging', 'test-driven-development',
+    'using-git-worktrees', 'using-superpowers', 'verification-before-completion',
+    'writing-plans', 'writing-skills',
+  ]) {
+    assert.equal(DISCIPLINE_SKILL_NAMES.includes(required), true, `missing ${required}`);
+  }
+});
+
+test('isDisciplineSkill is the shared pure predicate over names and provenance (I9/T085)', () => {
+  assert.equal(isDisciplineSkill('speckit-implement'), true);
+  assert.equal(isDisciplineSkill('speckit-superpowers-hooks-after-implement'), true);
+  assert.equal(isDisciplineSkill('diagnosing-superpowers'), true, 'the name the Claude list used to miss');
+  assert.equal(isDisciplineSkill('test-driven-development'), true);
+  assert.equal(isDisciplineSkill('writing-plans'), true);
+  assert.equal(isDisciplineSkill('sdd-setup'), false, 'kit skills are never upstream evidence');
+  assert.equal(isDisciplineSkill('sdd-update'), false);
+  assert.equal(isDisciplineSkill('my-private-skill'), false);
+  assert.equal(isDisciplineSkill(''), false);
+  assert.equal(isDisciplineSkill(undefined), false);
+  assert.equal(isDisciplineSkill(null), false);
+  assert.equal(isDisciplineSkill('  writing-skills  '), true, 'names are trimmed');
+  // Provenance form: the doctor passes a skill entry, the adapter passes a name.
+  assert.equal(isDisciplineSkill({ name: 'x', provider: 'plugin:superpowers' }), true);
+  assert.equal(isDisciplineSkill({ name: 'x', path: '/home/u/upstream-mirror/skills/y' }), true);
+  assert.equal(isDisciplineSkill({ name: 'x', source: 'superpowers' }), true);
+  assert.equal(isDisciplineSkill({ name: 'x', provider: 'user', source: 'user-skills' }), false);
+  assert.equal(hasDisciplineSkills(['sdd-setup', 'sdd-update']), false);
+  assert.equal(hasDisciplineSkills([]), false);
+  assert.equal(hasDisciplineSkills(['sdd-setup', 'speckit-plan']), true);
+  assert.equal(hasDisciplineSkills(['diagnosing-superpowers']), true);
 });

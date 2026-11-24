@@ -14,7 +14,12 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
+import {
+  HOST_CAPABILITIES,
+  HOST_KEYS,
+  checkTrustFlags,
+  isDisciplineSkill,
+} from './host-capabilities.mjs';
 import { resolveGuidanceSwitch } from './guidance.mjs';
 import { readMarkers, classifyMarkers } from './marker.mjs';
 import { scoreSkills } from './trigger.mjs';
@@ -24,9 +29,16 @@ import { DEFAULT_SUPERPOWERS_REPO } from './upstream.mjs';
 /** Package root: src/core/doctor.mjs -> src/core -> src -> package root. */
 const PKG_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-/** Toolchain the kit shells out to, probed on PATH only. */
-const REQUIRED_TOOLS = ['node', 'npm'];
-const OPTIONAL_TOOLS = ['uv', 'specify', 'git'];
+/**
+ * Toolchain the kit shells out to, probed on PATH only.
+ *
+ * `specify` is required rather than optional: every host artifact this kit
+ * renders (command skills, execution hooks) is produced by the Spec Kit CLI, so
+ * a machine without it cannot install or repair a single integration end. The
+ * doctor must report that as a failure instead of a warning (AC-07).
+ */
+const REQUIRED_TOOLS = ['node', 'npm', 'specify'];
+const OPTIONAL_TOOLS = ['uv', 'git'];
 
 /** Skill file naming used by the packaged extension commands. */
 const HOOK_SKILL_RE = /^speckit-superpowers-hooks-[A-Za-z0-9-]+(?:\.md)?$/;
@@ -57,23 +69,6 @@ const TOOL_FIX_COMMANDS = Object.freeze({
   specify: 'uv tool install specify-cli --from git+https://github.com/github/spec-kit.git',
   git: 'apt-get install -y git (or: brew install git)',
 });
-
-/** Loaded lazily so core keeps no static host-adapter path (REQ-01). */
-const CURSOR_ADAPTER_SPECIFIER = ['..', 'adapters', 'cursor', 'index.mjs'].join('/');
-
-async function matchedCursorTrustFlags(flags) {
-  const { checkTrustFlags } = await import(CURSOR_ADAPTER_SPECIFIER);
-  return checkTrustFlags({ args: flags ?? [] });
-}
-
-/** Discipline skill names shipped by the upstream Superpowers mirror. */
-const DISCIPLINE_SKILL_NAMES = new Set([
-  'brainstorming', 'diagnosing-superpowers', 'dispatching-parallel-agents', 'executing-plans',
-  'finishing-a-development-branch', 'receiving-code-review', 'requesting-code-review',
-  'subagent-driven-development', 'systematic-debugging', 'test-driven-development',
-  'using-git-worktrees', 'using-superpowers', 'verification-before-completion',
-  'writing-plans', 'writing-skills',
-]);
 
 /** User-authored skills win same-name conflicts: the kit must never shadow them (REQ-46). */
 const SKILL_PROVIDER_ORDER = ['user', 'host', 'project', 'plugin', 'bundled'];
@@ -133,12 +128,18 @@ async function environmentZone({ env }) {
   }
 
   // Read-only mirror probe: declared sources only, never a network fetch.
+  //
+  // A missing mirror is a `fail`, not a `warn` (AC-07). The upstream mirror is
+  // where the discipline skills come from, so without it the guidance bundle has
+  // no upstream text to reference and the environment is not merely degraded —
+  // it cannot deliver the kit's core promise. Reporting `warn` here while the
+  // zone still said `pass` was exactly the dishonesty the review flagged (I5).
   const selection = await selectSuperpowersDir({}, env ?? {});
   const mirrorDir = selection.realPath;
   const mirrorReadable = await readableDir(mirrorDir);
   items.push(mirrorReadable
     ? item('pass', 'UPSTREAM_MIRROR', `upstream mirror readable at ${mirrorDir} (via ${selection.reason})`, 'No action needed.', { path: mirrorDir, via: selection.reason })
-    : item('warn', 'UPSTREAM_MIRROR', `upstream mirror not readable at ${selection.dir} (via ${selection.reason})`, `git clone --depth 1 ${DEFAULT_SUPERPOWERS_REPO} ${selection.dir}`, { path: selection.dir, via: selection.reason }));
+    : item('fail', 'UPSTREAM_MIRROR', `upstream mirror not readable at ${selection.dir} (via ${selection.reason})`, `git clone --depth 1 ${DEFAULT_SUPERPOWERS_REPO} ${selection.dir}`, { path: selection.dir, via: selection.reason }));
 
   const skillsRoot = mirrorReadable ? path.join(mirrorDir, 'skills') : null;
   let skillCount = 0;
@@ -155,7 +156,7 @@ async function environmentZone({ env }) {
   }
   items.push(skillCount > 0
     ? item('pass', 'DISCIPLINE_SKILLS', `${skillCount} discipline skills readable in ${skillsRoot}`, 'No action needed.', { count: skillCount, path: skillsRoot })
-    : item('warn', 'DISCIPLINE_SKILLS', `discipline skills directory missing or unreadable at ${skillsRoot ?? path.join(selection.dir, 'skills')}`, `specify self upgrade && git -C ${mirrorDir ?? selection.dir} pull --ff-only`, { count: 0, path: skillsRoot ?? path.join(selection.dir, 'skills') }));
+    : item('fail', 'DISCIPLINE_SKILLS', `discipline skills directory missing or unreadable at ${skillsRoot ?? path.join(selection.dir, 'skills')}`, `specify self upgrade && git -C ${mirrorDir ?? selection.dir} pull --ff-only`, { count: 0, path: skillsRoot ?? path.join(selection.dir, 'skills') }));
 
   items.push(item(
     'skip', 'NETWORK_PROBE',
@@ -270,12 +271,6 @@ async function readIntegrationState({ cwd }) {
   return { source: null, installed: [], active: null };
 }
 
-function isDisciplineSkill(skill) {
-  if (DISCIPLINE_SKILL_NAMES.has(skill?.name)) return true;
-  const text = `${skill?.provider ?? ''} ${skill?.source ?? ''} ${skill?.path ?? ''}`.toLowerCase();
-  return /superpowers|upstream-mirror|plugin:/.test(text);
-}
-
 function guidanceChannelFor(skill, cap) {
   const text = `${skill?.provider ?? ''} ${skill?.source ?? ''} ${skill?.path ?? ''}`.toLowerCase();
   if (/superpowers|mirror/.test(text)) return 'upstream-mirror';
@@ -316,9 +311,10 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     ? item('pass', 'HOST_CAPABILITY', `host=${host} integration=${cap.integrationKey}`, 'No action needed.')
     : item('fail', 'HOST_CAPABILITY', `unknown host: ${host}`, `Use one of: ${HOST_KEYS.join(', ')}.`));
   if (cap?.guidanceChannel === 'rule-dir') {
-    // The adapter's capability pattern is the single source of truth: an unknown
-    // flag is harmless, a configured trust/force flag is an explicit warning.
-    const matched = await matchedCursorTrustFlags(trustFlags);
+    // The capability pattern is the single source of truth: an unknown flag is
+    // harmless, a configured trust/force flag is an explicit warning. The matcher
+    // is imported statically from core — no adapter specifier is built here.
+    const matched = checkTrustFlags({ args: trustFlags ?? [] }, cap);
     items.push(matched.length === 0
       ? item('pass', 'CURSOR_TRUST', 'no auto-trust dispatch flags configured', 'No action needed.', { matched })
       : item('warn', 'CURSOR_TRUST', `auto-trust flags detected: ${matched.join(' ')}; use only in controlled projects`, 'Remove the flags from the dispatch configuration.', { matched }));
@@ -400,12 +396,18 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
   const expectedNames = await packagedCommandSkills();
   const expected = expectedNames.length;
   if (!integrationState.source) {
+    // No manifest means nothing about hook rendering is verifiable. Zero rendered
+    // hook skills is therefore an unverified state, not a healthy one: claiming
+    // `pass` while the message itself says `rendered=0 of 6` is the contradiction
+    // review finding I4 called out. Only a host that actually rendered something
+    // may pass without a manifest.
+    const renderedSomething = renderedHooks.length > 0;
     items.push(item(
-      'pass', 'HOOK_RENDERING',
-      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills`,
-      renderedHooks.length === 0
-        ? 'No hook command skills rendered for this host; install the extension when the host becomes active.'
-        : 'No action needed.',
+      renderedSomething ? 'pass' : 'warn', 'HOOK_RENDERING',
+      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills (no integration manifest)`,
+      renderedSomething
+        ? 'No action needed.'
+        : 'No integration manifest is present, so hook rendering cannot be verified; run `specify integration switch <key>` (or install the Spec Kit extension) and re-run `sdd-kit doctor`.',
       { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected, integrations: [] }
     ));
   } else {
@@ -550,8 +552,8 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   const pending = [...classified.pending].sort();
   const history = [...classified.history].sort();
   const markerFix = pending.length > 0
-    ? `Open each affected host or run node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> to clear the pending marker.`
-    : 'Clear stale markers with node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> if the reload already happened.';
+    ? `After the affected host reloads, run node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker for each pending host.`
+    : 'Stale leftovers can be dropped with node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> --clear-marker.';
   if (pending.length > 0) {
     items.push(item(
       'warn', 'PENDING_MARKERS',

@@ -17,7 +17,7 @@ import path from 'node:path';
 import { runAction, unknownActionError } from '../src/core/action.mjs';
 import { HOST_CAPABILITIES } from '../src/core/host-capabilities.mjs';
 import { formatGuidanceText } from '../src/core/guidance.mjs';
-import { clearMarker, markerPath } from '../src/core/marker.mjs';
+import { clearHostMarker as clearHostMarkerCore, markerPath } from '../src/core/marker.mjs';
 
 /**
  * Text-channel rendering for a disabled guidance switch (T067). The discipline
@@ -53,6 +53,10 @@ const OPTIONS = Object.freeze({
   'superpowers-dir': { type: 'string' },
   repoUrl: { type: 'string' },
   'extension-dir': { type: 'string' },
+  // Update inputs owned by T083: an extension/command change list and an
+  // explicit request to reinstall the extension during the update (I6).
+  'extension-changes': { type: 'string' },
+  'reinstall-extension': { type: 'boolean', default: false },
   // Cursor auto-trust dispatch flags. Values often start with `-`, so the
   // equal-sign form (`--trust-flags=--trust,--force`) is the documented usage.
   'trust-flags': { type: 'string', multiple: true },
@@ -67,6 +71,7 @@ const RENAMES = Object.freeze({
   'extension-dir': 'extensionDir',
   'switch-integration': 'switchIntegration',
   'use-skills': 'useSkills',
+  'reinstall-extension': 'reinstallExtension',
   'clear-marker': 'clearMarker',
 });
 
@@ -136,6 +141,25 @@ function parseTrustFlags(value) {
   return raw.flatMap((entry) => String(entry).split(/[\s,]+/)).filter(Boolean);
 }
 
+/**
+ * `--extension-changes=extension,commands` is the CLI form of the T083
+ * extension_command records. Each named command becomes an `updated`
+ * component so runUpdate/changedLayers can see the extension layer (I6).
+ */
+function parseExtensionChanges(value) {
+  if (value === undefined) return undefined;
+  const raw = Array.isArray(value) ? value : [value];
+  return raw
+    .flatMap((entry) => String(entry).split(/[\s,]+/))
+    .filter(Boolean)
+    .map((name) => ({
+      component: 'extension_command',
+      before: null,
+      after: name,
+      outcome: 'updated',
+    }));
+}
+
 function parse(argv) {
   let parsed;
   try {
@@ -162,6 +186,9 @@ function parse(argv) {
 
   params.trustFlags = parseTrustFlags(parsed.values['trust-flags']);
   delete params['trust-flags'];
+  const extensionChanges = parseExtensionChanges(parsed.values['extension-changes']);
+  if (extensionChanges !== undefined) params.extensionChanges = extensionChanges;
+  delete params['extension-changes'];
   delete params.json;
   delete params.text;
   return { command, params };
@@ -234,9 +261,9 @@ export async function collectSkillSummaries({ cwd = process.cwd(), host = 'dsh' 
  * is parsed but not reachable for the chosen subcommand is rejected loudly.
  */
 const ALLOWED = Object.freeze({
-  update: ['json', 'cwd', 'host', 'python', 'superpowers-dir', 'repoUrl'],
+  update: ['json', 'cwd', 'host', 'python', 'superpowers-dir', 'repoUrl', 'extension-changes', 'reinstall-extension'],
   bridge: ['json', 'cwd', 'action', 'featureName', 'bugSlug', 'artifact', 'overwrite'],
-  doctor: ['json', 'cwd', 'host', 'trigger', 'trust-flags'],
+  doctor: ['json', 'cwd', 'host', 'trigger', 'trust-flags', 'clear-marker'],
   guard: ['json', 'cwd'],
   guidance: ['json', 'text', 'cwd', 'host', 'clear-marker'],
 });
@@ -278,18 +305,36 @@ function rejectUnreachableOptions(command, argv) {
  * The marker file is shared by every host in one repository, so the host must be
  * named explicitly and validated — an unknown host is refused rather than
  * silently clearing nothing. An absent marker is never created by a clear.
+ * The validation and the clear itself live in `src/core/marker.mjs`; this
+ * wrapper only adds the CLI's structured error contract (M3).
  * @param {{cwd?: string, host?: string}} params
  */
 async function clearHostMarker({ cwd = process.cwd(), host = 'dsh' } = {}) {
-  if (!HOST_CAPABILITIES[host]) {
+  let cleared;
+  try {
+    cleared = await clearHostMarkerCore({ cwd, host });
+  } catch (error) {
     throw cliError(
       'E_UNKNOWN_HOST',
-      `Unknown host '${host}'.`,
+      error?.message ?? `Unknown host '${host}'.`,
       `Use one of: ${Object.keys(HOST_CAPABILITIES).join(', ')}.`
     );
   }
-  const cleared = await clearMarker({ cwd, host });
   return { status: 'ok', action: 'clear_marker', host, cleared, path: markerPath(cwd) };
+}
+
+/**
+ * Text-channel rendering for `--clear-marker` (C4). This result is not a
+ * guidance bundle: it carries no sddPointer/toolMapping, so it must be
+ * rendered here instead of being handed to formatGuidanceText().
+ * @param {{host?: string, cleared?: boolean, path?: string}} result
+ */
+export function formatClearMarkerText(result) {
+  const host = result?.host ?? 'unknown';
+  if (result?.cleared) {
+    return `已清除 ${host} 的待生效标记（${result.path ?? 'marker'}）。`;
+  }
+  return `没有待生效标记需要清除：${host} 未登记任何待生效变更（${result?.path ?? 'marker'}）。`;
 }
 
 async function main() {
@@ -308,6 +353,12 @@ async function main() {
       )
       : unknownActionError(command);
   if (asText && command === 'guidance' && result && result.status !== 'error') {
+    // A cleared marker is its own result shape (C4): render it directly, before
+    // the bundle path below can mistake it for guidance content.
+    if (result.action === 'clear_marker') {
+      process.stdout.write(`${formatClearMarkerText(result)}\n`);
+      return;
+    }
     // The switch is authoritative for the text channel (T067): a disabled
     // guidance bundle must never leak the discipline text into a session.
     // The JSON path still carries enabled/effectiveScope/source for diagnosis.
@@ -318,8 +369,24 @@ async function main() {
     process.stdout.write(`${formatGuidanceText(result)}\n`);
     return;
   }
+  // I7: a failure must never look like a success to a script. Three shapes
+  // exist: the four-field error contract (status:'error'), a bridge/tool result
+  // that only sets `ok:false`, and results that carry a bare `error`. All of
+  // them exit non-zero.
+  if (result?.status === 'error' || result?.ok === false || result?.error) process.exitCode = 1;
+  // A failed bridge result keeps its documented `{ok,action,error:{code,message,hint}}`
+  // shape for tool callers, but the CLI contract is the four-field envelope.
+  if (command === 'bridge' && result?.status === 'error' && result?.error) {
+    const failure = typeof result.error === 'object' ? result.error : { message: String(result.error) };
+    process.stdout.write(`${JSON.stringify({
+      status: 'error',
+      code: failure.code ?? 'E_CLI',
+      message: failure.message ?? String(result.error),
+      fix: failure.hint ?? failure.fix ?? 'Check the bridge action and retry.',
+    }, null, 2)}\n`);
+    return;
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (result && result.status === 'error') process.exitCode = 1;
 }
 
 main().catch((error) => {

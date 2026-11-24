@@ -63,6 +63,17 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             description:
               'Override the Spec Kit extension source directory for action "install_hooks_ext" (defaults to the bundled spec-kit-extension/ inside this package).',
           },
+          extensionChanges: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'For action "update_all": extension/command changes already applied by the host integration. Each record is reported as an extension_command component (before/after/outcome), so the update report and the reload decision see the extension layer.',
+          },
+          reinstallExtension: {
+            type: 'boolean',
+            description:
+              'For action "update_all": reinstall the Spec Kit extension (install_hooks_ext) as part of the update and report the result as an extension_command component (default false).',
+          },
           trigger: {
             type: 'string',
             description:

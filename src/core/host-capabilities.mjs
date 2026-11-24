@@ -135,3 +135,87 @@ export const HOST_KEYS = Object.freeze(Object.keys(HOST_CAPABILITIES));
 export function getHostCapability(host) {
   return HOST_CAPABILITIES[host] ?? null;
 }
+
+/**
+ * Match configured dispatch flags against a host's `trustFlagPattern`.
+ *
+ * This is a pure function of the capability table — it reads no files, imports
+ * no adapter, and holds no host-specific knowledge beyond the declared pattern.
+ * It lives in core (rather than in a host-side adapter module) so callers such
+ * as the read-only doctor can report trust flags without a runtime import of an
+ * adapter path, which would breach the core-purity contract (AC-01).
+ *
+ * @param {{args?: string[]}|string[]|string|undefined|null} input flag list, or an object carrying `args`
+ * @param {object} [cap] capability entry; defaults to the cursor capability
+ * @returns {string[]} the flags that match the pattern, in input order
+ */
+export function checkTrustFlags(input, cap = HOST_CAPABILITIES.cursor) {
+  const pattern = cap?.trustFlagPattern;
+  if (!pattern) return [];
+  const source = typeof input === 'string'
+    ? input
+    : (Array.isArray(input) ? input : (input?.args ?? []));
+  const flags = Array.isArray(source) ? source : String(source).split(/\s+/);
+  return flags.filter((arg) => pattern.test(arg));
+}
+
+/**
+ * Discipline skill names shipped by the upstream Superpowers mirror.
+ *
+ * This is the ONE list: the read-only doctor, the guidance assembly and every
+ * host adapter import it from here. Duplicating it per caller is how Claude's
+ * copy drifted to 14 entries and silently dropped `diagnosing-superpowers`
+ * (review finding I9), so the list lives in core and nowhere else.
+ *
+ * Frozen array (not a Set) so immutability is actually enforced at runtime —
+ * `Object.freeze` does not stop `Set.prototype.add`.
+ */
+export const DISCIPLINE_SKILL_NAMES = Object.freeze([
+  'brainstorming',
+  'diagnosing-superpowers',
+  'dispatching-parallel-agents',
+  'executing-plans',
+  'finishing-a-development-branch',
+  'receiving-code-review',
+  'requesting-code-review',
+  'subagent-driven-development',
+  'systematic-debugging',
+  'test-driven-development',
+  'using-git-worktrees',
+  'using-superpowers',
+  'verification-before-completion',
+  'writing-plans',
+  'writing-skills',
+]);
+
+const DISCIPLINE_SKILL_INDEX = new Set(DISCIPLINE_SKILL_NAMES);
+const DISCIPLINE_PROVENANCE = /superpowers|upstream-mirror|plugin:/;
+
+/**
+ * Pure predicate answering "is this a discipline skill?".
+ *
+ * Two call shapes share one rule, which is exactly why it belongs in core: the
+ * Claude adapter asks about a bare name (what the host reports as installed),
+ * while the doctor asks about a discovered skill record and also needs the
+ * provenance fallback for skills installed under an unrecognised name.
+ *
+ * @param {string|{name?: string, provider?: string, source?: string, path?: string}|null|undefined} input
+ * @returns {boolean}
+ */
+export function isDisciplineSkill(input) {
+  if (typeof input === 'string') {
+    const name = input.trim();
+    if (name.length === 0) return false;
+    return /^speckit-/.test(name) || DISCIPLINE_SKILL_INDEX.has(name);
+  }
+  if (!input || typeof input !== 'object') return false;
+  const name = typeof input.name === 'string' ? input.name.trim() : '';
+  if (name.length > 0 && (/^speckit-/.test(name) || DISCIPLINE_SKILL_INDEX.has(name))) return true;
+  const provenance = `${input.provider ?? ''} ${input.source ?? ''} ${input.path ?? ''}`.toLowerCase();
+  return DISCIPLINE_PROVENANCE.test(provenance);
+}
+
+/** Does any entry in a discovered skill list belong to the discipline set? */
+export function hasDisciplineSkills(entries = []) {
+  return Array.isArray(entries) ? entries.some((entry) => isDisciplineSkill(entry)) : false;
+}

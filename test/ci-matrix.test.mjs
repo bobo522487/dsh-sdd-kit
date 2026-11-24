@@ -34,26 +34,48 @@ test('verify-upstream checks the expanded six-hook contract (REQ-22)', async () 
 
 const WORKFLOW = path.join(PKG_ROOT, '.github', 'workflows', 'upstream-integration.yml');
 
-/** The doctor gate ships as an inline heredoc; the tests execute that same code. */
-async function doctorGateSource() {
+/**
+ * Every CI gate ships as an inline heredoc; the tests execute that same code so
+ * a gate that asserts nothing cannot pass review by looking plausible.
+ */
+async function gateSource(name) {
   const workflow = await fs.readFile(WORKFLOW, 'utf8');
-  const match = /cat > "\$RUNNER_TEMP\/verify-doctor\.mjs" <<'NODE'\n([\s\S]*?)\n\s*NODE\n/.exec(workflow);
-  assert.ok(match, 'the workflow must define the doctor gate as a verify-doctor.mjs heredoc');
+  const match = new RegExp(`cat > "\\$RUNNER_TEMP/${name}" <<'NODE'\\n([\\s\\S]*?)\\n\\s*NODE\\n`).exec(workflow);
+  assert.ok(match, `the workflow must define ${name} as a heredoc`);
   return match[1];
 }
 
-async function runDoctorGate(report) {
-  const gate = await doctorGateSource();
+async function runGate(name, payload, env = {}) {
+  const source = await gateSource(name);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-ci-gate-'));
   try {
-    const script = path.join(dir, 'verify-doctor.mjs');
-    const file = path.join(dir, 'doctor.json');
-    await fs.writeFile(script, gate, 'utf8');
-    await fs.writeFile(file, JSON.stringify(report), 'utf8');
-    return spawnSync(process.execPath, [script, file], { encoding: 'utf8', timeout: 20_000 });
+    const script = path.join(dir, name);
+    const file = path.join(dir, 'report.json');
+    await fs.writeFile(script, source, 'utf8');
+    // An undefined payload leaves the file absent: the gate must not treat an
+    // unreadable report as a pass either.
+    if (payload !== undefined) await fs.writeFile(file, JSON.stringify(payload), 'utf8');
+    // The gates read host env channels, so an inherited DSH_SDD_KIT_SUPERPOWERS_DIR
+    // would silently change what each case is testing. Only the case may set it.
+    const inherited = { ...process.env };
+    delete inherited.DSH_SDD_KIT_SUPERPOWERS_DIR;
+    return spawnSync(process.execPath, [script, file], {
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...inherited, ...env },
+    });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+/** The doctor gate ships as an inline heredoc; the tests execute that same code. */
+async function doctorGateSource() {
+  return gateSource('verify-doctor.mjs');
+}
+
+async function runDoctorGate(report, env = {}) {
+  return runGate('verify-doctor.mjs', report, env);
 }
 
 function zones(overrides = {}) {
@@ -330,4 +352,126 @@ test('the stop-loss milestones are executable gates, not prose (T092)', async ()
       assert.match(section, /not_executed/, 'M4 must refuse to record not_executed as a pass');
     }
   }
+});
+
+test('CI pins the discipline mirror to an immutable ref instead of a moving branch (I8)', async () => {
+  const workflow = await fs.readFile(WORKFLOW, 'utf8');
+  const declaration = /^\s*SUPERPOWERS_REF:\s*(.+)$/m.exec(workflow);
+  assert.ok(declaration, 'the workflow must declare SUPERPOWERS_REF');
+  // The declaration is a matrix expression; the ref is the literal in the
+  // truthy arm, or a bare literal when the matrix indirection is dropped.
+  const ref = /&&\s*'([^']*)'\s*\|\|/.exec(declaration[1])?.[1]
+    ?? declaration[1].trim().replace(/^['"]|['"]$/g, '');
+  assert.ok(ref, `SUPERPOWERS_REF must carry a literal ref, got: ${declaration[1]}`);
+  assert.doesNotMatch(
+    ref,
+    /^(?:main|master|HEAD)$/,
+    `pinned-mirror must not follow a moving branch, got: ${ref}`
+  );
+  // `git clone --branch` resolves refs only, so the pin must be a release tag.
+  // A bare sha would need the fetch-by-sha dance documented in the header.
+  assert.match(
+    ref,
+    /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/,
+    `pinned-mirror must pin a release tag that --branch can resolve, got: ${ref}`
+  );
+  // The pin is only honest if the next maintainer knows how to move it.
+  assert.match(
+    workflow,
+    /^#.*SUPERPOWERS_REF/m,
+    'the workflow header must document how to upgrade SUPERPOWERS_REF'
+  );
+});
+
+test('CI fails the job when install_overrides reports ok:false (I8)', async () => {
+  const workflow = await fs.readFile(WORKFLOW, 'utf8');
+  const bridge = workflow.indexOf('bridge --action install_overrides');
+  const gate = workflow.indexOf('verify-overrides.mjs');
+  assert.ok(bridge >= 0, 'the workflow must install the managed overrides');
+  assert.ok(gate > bridge, 'an overrides gate must run after the bridge call, not before it');
+
+  const source = await gateSource('verify-overrides.mjs');
+  assert.match(source, /\.ok/, 'the gate must read the ok field instead of trusting the exit code');
+
+  const passed = await runGate('verify-overrides.mjs', {
+    action: 'install_overrides',
+    ok: true,
+    artifacts: [{ id: 'plan-template', status: 'written' }],
+  });
+  assert.equal(passed.status, 0, passed.stderr);
+
+  // bin/sdd-kit.mjs only sets exitCode for status === 'error', so a bridge that
+  // reports ok:false still exits 0. The gate has to catch that itself.
+  const failed = await runGate('verify-overrides.mjs', {
+    action: 'install_overrides',
+    ok: false,
+    artifacts: [{ id: 'plan-template', status: 'failed' }],
+  });
+  assert.notEqual(failed.status, 0, 'ok:false must fail the job even when the CLI exits 0');
+  assert.match(failed.stderr, /ok/);
+
+  const empty = await runGate('verify-overrides.mjs', {
+    action: 'install_overrides',
+    ok: false,
+    artifacts: [],
+  });
+  assert.notEqual(empty.status, 0, 'an install that touched no artifact must fail');
+
+  const unreadable = await runGate('verify-overrides.mjs', undefined);
+  assert.notEqual(unreadable.status, 0, 'a missing overrides report must not pass');
+});
+
+test('CI proves the pinned mirror reaches the CLI through the exported env channel (I8)', async () => {
+  const workflow = await fs.readFile(WORKFLOW, 'utf8');
+  // Exporting a path is not proof: the pin step must confirm the checkout it
+  // exported really sits on the pinned ref, otherwise a stale cache or a
+  // fallback clone would sail through.
+  const pinStep = workflow.slice(workflow.indexOf('Pin the discipline mirror'), workflow.indexOf('Install → init'));
+  assert.match(pinStep, /git -C "\$RUNNER_TEMP\/superpowers-pinned" rev-parse HEAD/, 'the pin step must read the cloned HEAD');
+  assert.match(pinStep, /SUPERPOWERS_REF/, 'the pin step must compare the checkout against the pinned ref');
+  assert.match(pinStep, /DSH_SDD_KIT_SUPERPOWERS_DIR=.*\$GITHUB_ENV/, 'the pin step must export the clone it verified');
+
+  const gate = await gateSource('verify-doctor.mjs');
+  assert.match(gate, /DSH_SDD_KIT_SUPERPOWERS_DIR/, 'the doctor gate must read the exported pin');
+  assert.match(gate, /via !== 'env'/, 'the gate must reject a mirror resolved through any other channel');
+
+  const mirror = '/tmp/superpowers-pinned';
+  const withMirror = ({ via = 'env', resolvedAt = mirror } = {}) => ({
+    ...zones(),
+    environment: {
+      status: 'pass',
+      items: [
+        { status: 'pass', code: 'NODE_VERSION' },
+        { status: 'pass', code: 'UPSTREAM_MIRROR', path: resolvedAt, via },
+      ],
+    },
+  });
+
+  const env = { DSH_SDD_KIT_SUPERPOWERS_DIR: mirror };
+  const consumed = await runGate('verify-doctor.mjs', withMirror(), env);
+  assert.equal(consumed.status, 0, consumed.stderr);
+
+  const ignored = await runGate('verify-doctor.mjs', withMirror({ via: 'dsh_home' }), env);
+  assert.notEqual(ignored.status, 0, 'a pinned job that fell back to the home mirror must fail');
+
+  const elsewhere = await runGate(
+    'verify-doctor.mjs',
+    withMirror({ resolvedAt: '/home/runner/.dsh/upstream/superpowers' }),
+    env
+  );
+  assert.notEqual(elsewhere.status, 0, 'the env channel must point at the pinned clone, not any old path');
+});
+
+test('CI runs verify-upstream from the workspace root, not the current directory (M6)', async () => {
+  const workflow = await fs.readFile(WORKFLOW, 'utf8');
+  assert.match(
+    workflow,
+    /node "\$GITHUB_WORKSPACE\/scripts\/verify-upstream\.mjs"/,
+    'the verifier must be addressed by workspace path so the step cwd cannot break it'
+  );
+  assert.doesNotMatch(
+    workflow,
+    /(?:^|[\s;&|])node scripts\/verify-upstream\.mjs/m,
+    'a relative verifier path resolves against whatever cwd the step happens to inherit'
+  );
 });

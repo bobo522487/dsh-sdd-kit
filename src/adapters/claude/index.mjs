@@ -1,38 +1,39 @@
 /**
- * Claude Code adapter — answers the three contract faces plus reload semantics
- * without embedding any business rules. All text comes from src/core.
+ * Claude Code adapter — contract faces and IO only; all text comes from src/core.
  */
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
+import { HOST_CAPABILITIES, hasDisciplineSkills, isDisciplineSkill } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
+import { removeManagedBlockFile } from '../../core/fsutil.mjs';
+export { hasDisciplineSkills, isDisciplineSkill };
 
 const CAP = HOST_CAPABILITIES.claude;
-// The managed-block markers belong to Claude's own capability entry, shared
-// with Codex through MANAGED_BLOCK_MARKERS in the capability table (T087).
-const MARKERS = {
-  markerStart: CAP.guidanceConfig.markerStart,
-  markerEnd: CAP.guidanceConfig.markerEnd,
-};
-const DISCIPLINE_SKILLS = new Set([
-  'brainstorming', 'dispatching-parallel-agents', 'executing-plans',
-  'finishing-a-development-branch', 'receiving-code-review', 'requesting-code-review',
-  'subagent-driven-development', 'systematic-debugging', 'test-driven-development',
-  'using-git-worktrees', 'using-superpowers', 'verification-before-completion',
-  'writing-plans', 'writing-skills',
-]);
+const MARKERS = { markerStart: CAP.guidanceConfig.markerStart, markerEnd: CAP.guidanceConfig.markerEnd };
 
-/** Pure skill-name judgement: upstream command skills or discipline skills (T085). */
-export function isDisciplineSkill(name) {
-  const skill = typeof name === 'string' ? name.trim() : '';
-  return /^speckit-/.test(skill) || DISCIPLINE_SKILLS.has(skill);
+/** SessionStart commands may sit in `hooks.SessionStart[].hooks[].command`. */
+function sessionStartCommands(settings) {
+  const groups = settings?.hooks?.SessionStart;
+  if (!Array.isArray(groups)) return [];
+  return groups.flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks : []))
+    .map((hook) => (typeof hook?.command === 'string' ? hook.command : ''))
+    .filter(Boolean);
 }
 
-export function hasDisciplineSkills(entries = []) {
-  return entries.some(isDisciplineSkill);
+/** Probe the two artifacts the integration writes; any failure means "no native event" (I1). */
+export async function detectNativeEvents({ cwd = process.cwd() } = {}) {
+  try {
+    const settings = JSON.parse(await fs.readFile(path.join(cwd, '.claude', 'settings.json'), 'utf8'));
+    if (sessionStartCommands(settings).some((command) => command.includes('sdd-kit'))) return true;
+  } catch { /* missing or malformed settings means no native event is registered */ }
+  try {
+    const manifest = await fs.readFile(path.join(cwd, '.specify', 'extensions.yml'), 'utf8');
+    if (/^\s*session_start\s*:/m.test(manifest)) return true;
+  } catch { /* a project that never installed the extension simply has no manifest */ }
+  return false;
 }
 
 export function describeClaude() {
@@ -53,17 +54,21 @@ export async function applyClaudeGuidance({
   cwd = process.cwd(),
   env = process.env,
   skills,
-  nativeEventsAvailable = true,
+  nativeEventsAvailable,
 } = {}) {
-  // Startup completes a previous pending change: drop only this repository's
-  // entry for this host (REQ-18). A failed clear never blocks guidance.
+  // Startup completes a previous pending change: drop only this repository's entry for this host (REQ-18).
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
 
+  // An explicit boolean always wins; only an absent value is probed, so the managed-block fallback stays reachable (I1).
+  const explicit = typeof nativeEventsAvailable === 'boolean';
+  const nativeChannel = explicit ? nativeEventsAvailable : await detectNativeEvents({ cwd });
   const bundle = await assembleGuidance({ host: CAP.key, cwd, env, skills });
   const text = formatGuidanceText(bundle);
-  const channel = nativeEventsAvailable ? 'native-event' : 'managed-block';
   const enabled = bundle.enabled !== false;
   const warnings = [...bundle.warnings];
+  if (!explicit && !nativeChannel) {
+    warnings.push('未探测到 Claude 原生 session_start 事件（.claude/settings.json 无 sdd-kit 钩子，.specify/extensions.yml 无 session_start），已降级为托管块写入。');
+  }
 
   const entries = await fs.readdir(path.join(cwd, CAP.skillsDir)).catch(() => []);
   const installHint = hasDisciplineSkills(entries)
@@ -71,12 +76,19 @@ export async function applyClaudeGuidance({
     : '缺少上游 SDD 技能：运行 specify integration install claude，或 specify extension add --dev spec-kit-extension 安装。';
   if (installHint) warnings.push(installHint);
 
-  const written = enabled && Boolean(bundle.upstreamText?.trim()) && !nativeEventsAvailable;
+  const target = path.join(cwd, CAP.guidanceConfig.managedBlockPath);
+  const written = enabled && Boolean(bundle.upstreamText?.trim()) && !nativeChannel;
+  let removed = false;
   if (written) {
-    const target = path.join(cwd, CAP.guidanceConfig.managedBlockPath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, claudeManagedBlock(text), 'utf8');
+  } else {
+    // A switch-off or a native event supersedes an earlier managed block; leaving it resident would double-inject (REQ-12/AC-08).
+    removed = await removeManagedBlockFile({ file: target, ...MARKERS });
   }
 
-  return { channel, text, installHint, enabled, written, warnings, bundle };
+  return {
+    channel: nativeChannel ? 'native-event' : 'managed-block',
+    text, installHint, enabled, written, removed, warnings, nativeEventsAvailable: nativeChannel, bundle,
+  };
 }

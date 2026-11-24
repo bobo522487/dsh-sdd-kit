@@ -95,8 +95,17 @@ export async function runAction(action, params = {}, deps = {}) {
       return withReload(await (deps.runUpdate ?? runUpdate)(params), params);
     case 'setup':
       return (deps.runSetup ?? runSetup)(params);
-    case 'bridge':
-      return (deps.runBridge ?? runBridge)(params);
+    case 'bridge': {
+      // I7: bridge reports failures as `{ok:false, error}` with no `status`, so a
+      // CLI caller could not tell success from failure and exited 0. Tag the
+      // failure here (bridge.mjs keeps its documented shape for tool callers);
+      // the success payload is returned untouched.
+      const result = await (deps.runBridge ?? runBridge)(params);
+      if (result && result.ok === false && result.status === undefined) {
+        return { ...result, status: 'error' };
+      }
+      return result;
+    }
     case 'upstream':
       return (deps.runUpstream ?? runUpstream)(params);
     case 'guidance':

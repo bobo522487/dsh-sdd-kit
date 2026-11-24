@@ -85,6 +85,62 @@ test('an empty upstream mirror writes no Codex file but keeps warnings readable 
   await assert.rejects(fs.access(path.join(repo, '.codex', 'sdd-kit-discipline.md')));
 });
 
+test('closing the switch after a write removes the Codex block (C2/REQ-12/AC-08)', async () => {
+  const repo = await makeRepo();
+  const first = await applyCodexGuidance({ cwd: repo });
+  assert.equal(first.written, true);
+  await fs.access(path.join(repo, '.codex', 'sdd-kit-discipline.md'));
+
+  await fs.writeFile(
+    path.join(repo, '.specify', 'sdd-kit.json'),
+    JSON.stringify({ guidance: { enabled: false } }),
+    'utf8'
+  );
+  const closed = await applyCodexGuidance({ cwd: repo });
+  assert.equal(closed.enabled, false);
+  assert.equal(closed.written, false);
+  assert.equal(closed.removed, true, 'the stale block must be reported as removed');
+  await assert.rejects(
+    fs.access(path.join(repo, '.codex', 'sdd-kit-discipline.md')),
+    'a closed switch must leave no resident Codex content behind'
+  );
+});
+
+test('an empty upstream mirror also removes a previously written Codex block (C2/REQ-12)', async () => {
+  const repo = await makeRepo();
+  await applyCodexGuidance({ cwd: repo });
+  const emptied = await applyCodexGuidance({ cwd: repo, env: await emptyMirrorEnv() });
+  assert.equal(emptied.written, false);
+  assert.equal(emptied.removed, true);
+  await assert.rejects(fs.access(path.join(repo, '.codex', 'sdd-kit-discipline.md')));
+});
+
+test('a user-authored Codex file without the managed markers is never deleted (C2)', async () => {
+  const repo = await makeRepo({ switchEnabled: false });
+  const target = path.join(repo, '.codex', 'sdd-kit-discipline.md');
+  const userText = '# 我自己的 Codex 纪律\n\n- 用户手写内容，不含 sdd-kit 标记\n';
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, userText, 'utf8');
+
+  const result = await applyCodexGuidance({ cwd: repo });
+  assert.equal(result.written, false);
+  assert.equal(result.removed, false, 'a foreign file must be reported as kept');
+  assert.equal(await fs.readFile(target, 'utf8'), userText, 'user content must survive byte for byte');
+});
+
+test('a natively injecting Codex host removes the resident managed block (C2/REQ-12)', async () => {
+  const repo = await makeRepo();
+  await applyCodexGuidance({ cwd: repo });
+  const target = path.join(repo, '.codex', 'sdd-kit-discipline.md');
+  await fs.access(target);
+
+  const native = await applyCodexGuidance({ cwd: repo, nativeEventsAvailable: true });
+  assert.equal(native.channel, 'native-event');
+  assert.equal(native.written, false, 'a native-event host must not write a file');
+  assert.equal(native.removed, true);
+  await assert.rejects(fs.access(target), 'native injection must not leave a stale block behind');
+});
+
 test('Codex startup clears only its own pending marker (T081)', async () => {
   const repo = await makeRepo({ switchEnabled: false });
   await writeMarker({ cwd: repo, host: 'dsh', reason: 'dsh pending' });

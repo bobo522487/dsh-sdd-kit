@@ -8,10 +8,14 @@ import {
   describeClaude,
   applyClaudeGuidance,
   claudeManagedBlock,
+  detectNativeEvents,
+} from '../src/adapters/claude/index.mjs';
+import {
+  DISCIPLINE_SKILL_NAMES,
+  HOST_CAPABILITIES,
   hasDisciplineSkills,
   isDisciplineSkill,
-} from '../src/adapters/claude/index.mjs';
-import { HOST_CAPABILITIES } from '../src/core/host-capabilities.mjs';
+} from '../src/core/host-capabilities.mjs';
 import { readMarkers, writeMarker } from '../src/core/marker.mjs';
 
 const ADAPTER_SRC = await fs.readFile(
@@ -84,12 +88,27 @@ test('Claude falls back to an idempotent managed block when native events are un
   assert.equal(claudeManagedBlock(first.text), bytes1);
 });
 
-test('a closed guidance switch writes no Claude managed block and reports its state (T067)', async () => {
+test('a closed guidance switch removes a previously written Claude block (T067/REQ-12)', async () => {
   const repo = await makeRepo({ switchEnabled: false });
+  const target = path.join(repo, '.claude', 'sdd-kit-discipline.md');
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, claudeManagedBlock('OLD'), 'utf8');
   const result = await applyClaudeGuidance({ cwd: repo, nativeEventsAvailable: false });
   assert.equal(result.enabled, false);
   assert.equal(result.written, false);
-  await assert.rejects(fs.access(path.join(repo, '.claude', 'sdd-kit-discipline.md')));
+  assert.equal(result.removed, true);
+  await assert.rejects(fs.access(target));
+});
+
+test('a native event supersedes and removes a stale Claude managed block (I1/REQ-12)', async () => {
+  const repo = await makeRepo();
+  const target = path.join(repo, '.claude', 'sdd-kit-discipline.md');
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, claudeManagedBlock('OLD'), 'utf8');
+  const result = await applyClaudeGuidance({ cwd: repo, nativeEventsAvailable: true });
+  assert.equal(result.channel, 'native-event');
+  assert.equal(result.removed, true);
+  await assert.rejects(fs.access(target));
 });
 
 test('an empty upstream mirror writes no Claude file but keeps warnings readable (T069)', async () => {
@@ -176,6 +195,113 @@ test('the Claude adapter contains no business judgement over the shared bundle (
   assert.doesNotMatch(ADAPTER_SRC, /bundle\.toolMapping/, 'adapters only format/IO the shared bundle');
   assert.doesNotMatch(ADAPTER_SRC, /bundle\.sddPointer/, 'adapters only format/IO the shared bundle');
   assert.doesNotMatch(ADAPTER_SRC, /upstreamText\s*[=!]==/, 'no upstream-text policy belongs in an adapter');
+});
+
+// ---- I9: one shared discipline-skill list, owned by core ----
+
+test('the discipline skill list is a single core-owned export that includes diagnosing-superpowers (I9)', () => {
+  assert.ok(Array.isArray(DISCIPLINE_SKILL_NAMES), 'core must export the shared name list');
+  assert.equal(DISCIPLINE_SKILL_NAMES.length, 15, [...DISCIPLINE_SKILL_NAMES].sort().join(','));
+  assert.equal(DISCIPLINE_SKILL_NAMES.includes('diagnosing-superpowers'), true);
+  assert.equal(isDisciplineSkill('diagnosing-superpowers'), true, 'the Claude-side predicate must accept every shared name');
+  for (const name of DISCIPLINE_SKILL_NAMES) {
+    assert.equal(isDisciplineSkill(name), true, `${name} must be accepted`);
+  }
+});
+
+test('the Claude adapter holds no skill-name list or business predicate of its own (I9/T087)', () => {
+  // A second copy of the list is exactly the drift I9 reported: the adapter must
+  // import the judgement from core and keep only IO.
+  for (const name of ['diagnosing-superpowers', 'test-driven-development', 'brainstorming', 'writing-plans']) {
+    assert.doesNotMatch(ADAPTER_SRC, new RegExp(`['"\`]${name}['"\`]`), `adapter must not literalise ${name}`);
+  }
+  assert.doesNotMatch(ADAPTER_SRC, /new\s+Set\s*\(/, 'no local name set may live in the adapter');
+  assert.doesNotMatch(ADAPTER_SRC, /\^speckit-/, 'the upstream-command predicate belongs to core');
+  assert.doesNotMatch(ADAPTER_SRC, /superpowers|upstream-mirror/, 'no provenance matching in the adapter');
+  assert.match(ADAPTER_SRC, /isDisciplineSkill|hasDisciplineSkills/, 'the adapter must consume the core judgement');
+});
+
+// ---- I1: production probe for the native session_start event ----
+
+test('detectNativeEvents is a read-only probe over the project settings and extension manifest (I1)', async () => {
+  const bare = await makeRepo();
+  assert.equal(await detectNativeEvents({ cwd: bare, env: {} }), false, 'no settings and no manifest means no native event');
+
+  const settingsRepo = await makeRepo();
+  await fs.mkdir(path.join(settingsRepo, '.claude'), { recursive: true });
+  await fs.writeFile(
+    path.join(settingsRepo, '.claude', 'settings.json'),
+    JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'sdd-kit guidance --text' }] }] } }),
+    'utf8'
+  );
+  assert.equal(await detectNativeEvents({ cwd: settingsRepo, env: {} }), true, 'a SessionStart hook that mentions sdd-kit counts');
+
+  const foreignRepo = await makeRepo();
+  await fs.mkdir(path.join(foreignRepo, '.claude'), { recursive: true });
+  await fs.writeFile(
+    path.join(foreignRepo, '.claude', 'settings.json'),
+    JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] } }),
+    'utf8'
+  );
+  assert.equal(await detectNativeEvents({ cwd: foreignRepo, env: {} }), false, 'an unrelated SessionStart hook is not ours');
+
+  const manifestRepo = await makeRepo();
+  await fs.writeFile(
+    path.join(manifestRepo, '.specify', 'extensions.yml'),
+    'installed:\n  - superpowers-hooks\nhooks:\n  session_start:\n    - command: guidance\n',
+    'utf8'
+  );
+  assert.equal(await detectNativeEvents({ cwd: manifestRepo, env: {} }), true, 'a manifest session_start event counts');
+
+  const brokenRepo = await makeRepo();
+  await fs.mkdir(path.join(brokenRepo, '.claude'), { recursive: true });
+  await fs.writeFile(path.join(brokenRepo, '.claude', 'settings.json'), '{ not json', 'utf8');
+  assert.equal(await detectNativeEvents({ cwd: brokenRepo, env: {} }), false, 'malformed settings must not throw');
+});
+
+test('Claude guidance auto-detects the channel and falls back to a written managed block (I1)', async () => {
+  const repo = await makeRepo();
+  const result = await applyClaudeGuidance({ cwd: repo });
+  assert.equal(result.channel, 'managed-block', 'no detectable native event must fall back');
+  assert.equal(result.written, true, 'the fallback must actually write the block');
+  const bytes = await fs.readFile(path.join(repo, '.claude', 'sdd-kit-discipline.md'), 'utf8');
+  assert.equal(bytes, claudeManagedBlock(result.text));
+  assert.ok(result.nativeEventsAvailable === false, 'the detected verdict must be reported');
+  assert.ok(
+    result.warnings.some((w) => /session_start|原生事件|托管块/.test(w)),
+    `the fallback must be explained: ${result.warnings}`
+  );
+});
+
+test('Claude guidance uses the native channel when the probe finds a rendered event (I1)', async () => {
+  const repo = await makeRepo();
+  await fs.writeFile(
+    path.join(repo, '.specify', 'extensions.yml'),
+    'hooks:\n  session_start:\n    - command: guidance\n',
+    'utf8'
+  );
+  const result = await applyClaudeGuidance({ cwd: repo });
+  assert.equal(result.channel, 'native-event');
+  assert.equal(result.written, false);
+  assert.equal(result.nativeEventsAvailable, true);
+  await assert.rejects(fs.access(path.join(repo, '.claude', 'sdd-kit-discipline.md')));
+});
+
+test('an explicit nativeEventsAvailable still overrides the probe in both directions (I1)', async () => {
+  const forcedOff = await makeRepo();
+  await fs.writeFile(
+    path.join(forcedOff, '.specify', 'extensions.yml'),
+    'hooks:\n  session_start:\n    - command: guidance\n',
+    'utf8'
+  );
+  const off = await applyClaudeGuidance({ cwd: forcedOff, nativeEventsAvailable: false });
+  assert.equal(off.channel, 'managed-block');
+  assert.equal(off.written, true);
+
+  const forcedOn = await makeRepo();
+  const on = await applyClaudeGuidance({ cwd: forcedOn, nativeEventsAvailable: true });
+  assert.equal(on.channel, 'native-event');
+  assert.equal(on.written, false);
 });
 
 test('Claude adapter is a thin shell (≤100 lines) (REQ-01)', () => {

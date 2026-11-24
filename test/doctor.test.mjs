@@ -173,11 +173,15 @@ test('the environment zone probes uv, specify and git through the injected PATH 
 
   const partial = await makeBinDir(['node', 'npm']);
   const partialReport = await runDoctor({ cwd: repo, host: 'dsh', env: { PATH: partial } });
-  for (const code of ['TOOL_UV', 'TOOL_SPECIFY', 'TOOL_GIT']) {
+  for (const code of ['TOOL_UV', 'TOOL_GIT']) {
     const entry = findItem(partialReport.environment, code);
     assert.ok(entry, `environment zone must report ${code}`);
     assert.equal(entry.status, 'warn', `${code} should warn when absent from the injected PATH`);
   }
+  // I5: rendering host artifacts is impossible without the specify CLI, so it is
+  // a required tool rather than an optional convenience.
+  assert.equal(findItem(partialReport.environment, 'TOOL_SPECIFY').status, 'fail');
+  assert.equal(partialReport.environment.status, 'fail', 'a missing required tool must fail the zone (AC-07)');
 });
 
 test('the repository zone compares the project template override with the packaged copy (REQ-33)', async () => {
@@ -252,7 +256,46 @@ test('the host zone reports the guidance channel version and the rendered hook s
   const rendering = findItem(report.host, 'HOOK_RENDERING');
   assert.ok(rendering, 'host zone must report HOOK_RENDERING');
   assert.match(rendering.message, /rendered=0/, rendering.message);
-  assert.equal(rendering.status, 'pass', 'a non-active host legitimately renders zero hook skills');
+  // I4: without an integration manifest nothing can be verified, so zero rendered
+  // hook skills is an unverified state, not a healthy one.
+  assert.equal(rendering.status, 'warn', 'zero rendered hooks without a manifest cannot be claimed healthy');
+  assert.match(rendering.fix, /安装扩展|specify integration/);
+});
+
+test('I4: with a manifest an active unrendered end fails and an inactive one warns', async () => {
+  const repo = await makeRepo();
+  await writeIntegrationManifest(repo, { installed: ['dsh'], active: 'dsh' });
+  const activeUnrendered = findItem((await runDoctor({ cwd: repo, host: 'dsh' })).host, 'HOOK_RENDERING');
+  assert.equal(activeUnrendered.status, 'fail', activeUnrendered.message);
+  assert.match(activeUnrendered.fix, /specify integration switch/);
+
+  // The active/inactive distinction must drive the verdict, not just the label:
+  // a fully rendered active end passes while an unrendered inactive end warns,
+  // and the zone-level verdict takes the worst end.
+  await writeIntegrationManifest(repo, { installed: ['dsh', 'claude'], active: 'dsh' });
+  await installRenderedSkills(repo, '.dsh', HOOK_COMMAND_SKILLS);
+  const mixed = findItem((await runDoctor({ cwd: repo, host: 'dsh' })).host, 'HOOK_RENDERING');
+  assert.equal(mixed.status, 'warn', mixed.message);
+  const dshEnd = mixed.integrations.find((entry) => entry.integration === 'dsh');
+  assert.equal(dshEnd.active, true);
+  assert.equal(dshEnd.status, 'pass', dshEnd.fix);
+  const claudeEnd = mixed.integrations.find((entry) => entry.integration === 'claude');
+  assert.equal(claudeEnd.active, false);
+  assert.equal(claudeEnd.status, 'warn');
+});
+
+test('I4: a manifest with zero installed ends still reports the manifest, never a silent pass', async () => {
+  const repo = await makeRepo();
+  await fs.writeFile(
+    path.join(repo, '.specify', 'integration.json'),
+    JSON.stringify({ version: '1.4.4.dev0', installed_integrations: [], integration: null }),
+    'utf8'
+  );
+  const report = await runDoctor({ cwd: repo, host: 'dsh' });
+  const state = findItem(report.host, 'INTEGRATION_STATE');
+  assert.equal(state.status, 'skip', state.message);
+  const rendering = findItem(report.host, 'HOOK_RENDERING');
+  assert.equal(rendering.status, 'warn', rendering.message);
 });
 
 test('pending markers are classified relative to the run/session, not a fixed 24h', async () => {
@@ -280,6 +323,21 @@ test('pending markers are classified relative to the run/session, not a fixed 24
   assert.deepEqual(baseline.pending, ['claude']);
   assert.deepEqual(baseline.history, ['dsh']);
   assert.match(baseline.fix, /bin\/sdd-kit\.mjs/);
+});
+
+test('a marker just written is pending even when the caller passes no baseline (C1)', async () => {
+  const repo = await makeRepo();
+  const now = Date.parse('2026-11-24T12:00:00.000Z');
+  await fs.writeFile(path.join(repo, '.specify', 'sdd-pending.json'), JSON.stringify({
+    dsh: { host: 'dsh', layer: 'tool_code', timestamp: new Date(now - 2000).toISOString(), reason: 'just now', runId: null },
+  }), 'utf8');
+
+  // The production CLI/register path forwards neither sessionStart nor runId.
+  const item = findItem((await runDoctor({ cwd: repo, host: 'dsh', now })).runtime, 'PENDING_MARKERS');
+  assert.equal(item.status, 'warn');
+  assert.deepEqual(item.pending, ['dsh'], `a fresh marker must not be history: ${item.message}`);
+  assert.deepEqual(item.history, []);
+  assert.match(item.message, /pending markers: dsh/);
 });
 
 test('the bridge source probe is read-only and honestly skipped when nothing is discoverable (REQ-33)', async () => {
@@ -426,9 +484,14 @@ test('T074: environment probes the upstream mirror and discipline skills read-on
   await fs.writeFile(empty, 'not a directory\n', 'utf8');
   const missing = await runDoctor({ cwd: repo, host: 'dsh', env: { PATH: bin, DSH_SDD_KIT_SUPERPOWERS_DIR: empty } });
   const noMirror = findItem(missing.environment, 'DISCIPLINE_SKILLS');
-  assert.equal(noMirror.status, 'warn', noMirror.message);
+  assert.equal(noMirror.status, 'fail', noMirror.message);
   assert.match(noMirror.fix, /specify self upgrade/);
-  assert.match(findItem(missing.environment, 'UPSTREAM_MIRROR').fix, /git clone/);
+  const noUpstream = findItem(missing.environment, 'UPSTREAM_MIRROR');
+  assert.equal(noUpstream.status, 'fail', noUpstream.message);
+  assert.match(noUpstream.fix, /git clone/);
+  // I5/AC-07: an unreadable upstream mirror is an environment failure, so the
+  // zone may not keep claiming `pass` while both items only warn.
+  assert.equal(missing.environment.status, 'fail', 'a missing upstream mirror must fail the environment zone');
 });
 
 test('T075: guidance channel reports the real discipline skill version, not the kit version', async () => {
