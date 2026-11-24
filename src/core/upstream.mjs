@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { selectSuperpowersDir } from './candidates.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -108,7 +109,9 @@ async function countSkills(skillsDir) {
 export async function runUpstream(args = {}, runner = defaultRunner) {
   const action = args.action || 'status';
   const cwd = path.resolve(args.cwd || process.cwd());
-  const superpowersDir = path.resolve(args.superpowersDir || getDefaultSuperpowersDir());
+  // REQ-06..08: one declared-source selection decides the mirror for both actions.
+  const selection = await selectSuperpowersDir(args);
+  const superpowersDir = selection.dir;
   const repoUrl = args.repoUrl || DEFAULT_SUPERPOWERS_REPO;
 
   if (action === 'status') {
@@ -138,6 +141,12 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
         installed: spExists,
         head: spHead,
         skillCount: spSkillCount,
+        selection: {
+          realPath: selection.realPath,
+          reason: selection.reason,
+          mtimeNs: selection.mtimeNs === null ? null : String(selection.mtimeNs),
+          fallback: selection.fallback,
+        },
       },
     };
   }
@@ -147,12 +156,12 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     if (isCloned) {
       const pull = await runner('git', ['-C', superpowersDir, 'pull', '--ff-only']);
       const skillCount = await countSkills(path.join(superpowersDir, 'skills'));
-      return { action, mode: 'pull', dir: superpowersDir, skillCount, ...pull };
+      return { action, mode: 'pull', dir: superpowersDir, selection, skillCount, ...pull };
     }
     await fs.mkdir(path.dirname(superpowersDir), { recursive: true });
     const clone = await runner('git', ['clone', '--depth', '1', repoUrl, superpowersDir]);
     const skillCount = await countSkills(path.join(superpowersDir, 'skills'));
-    return { action, mode: 'clone', dir: superpowersDir, repoUrl, skillCount, ...clone };
+    return { action, mode: 'clone', dir: superpowersDir, selection, repoUrl, skillCount, ...clone };
   }
 
   if (action === 'specify_upgrade') {
