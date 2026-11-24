@@ -102,3 +102,23 @@ node bin/sdd-kit.mjs doctor --json --trigger "修复登录崩溃"
 npm test -- --test-name-pattern="guard|boundary"
 ```
 预期：模拟前置最小验证失败（如引导通道在打包形态不可达）时不进入该里程碑并按止损线降级，其余功能保持可用（AC-21）；在含用户自建普通技能的仓库初始化后不改写、不迁移、不删除该技能，体检标注为非本套件产物，仓库内无上游逻辑复制品（AC-23）。
+
+## 实现阶段执行记录（2026-11-24）
+
+环境：Node v26.13.1、npm、specify 1.4.4.dev0；本机无 `@deepseek-ai/*` 宿主运行时、无 Claude Code / Codex / Cursor 原生宿主进程、无 CI 凭据。下表逐条对应场景 1–11；平台受限项显式标注 skip 原因，不以 skip 记通过。
+
+| 场景 | 结果 | 证据 |
+|---|---|---|
+| 1 核心纯度与 DSH 回归 | PASS | `npm test` 中 `test/contract-core-purity.test.mjs`、`test/adapters.test.mjs`、`test/regression-dsh.test.mjs` 全绿 |
+| 2 CLI 与宿主工具同构 | PARTIAL：CLI/核心同构 PASS；真实 DSH 宿主工具进程 SKIP（无 DSH 运行时） | `test/contract-parity.test.mjs` 断言 `runAction` 与 CLI JSON 结构一致；`test/regression-dsh.test.mjs` 锁定工具委托 |
+| 3 引导常驻、预算与开关 | PASS | `test/guidance.test.mjs`、`test/adapters.test.mjs` 全绿；本机 CLI `guidance --json` tokenEstimate=818、enabled=true、warnings=[] |
+| 4 三态重载与待生效标记 | PASS | `test/reload.test.mjs`、`test/marker.test.mjs`、`test/adapters-marker.test.mjs` 全绿 |
+| 5 依赖下界与规划期护栏 | PASS | `test/compat.test.mjs` 集成用例（DSH_SDD_KIT_INTEGRATION=1）实跑 `>=99.0.0`、`>=1.4.4` 失败与 `>=1.4.0` 成功；`test/guard.test.mjs` 全绿 |
+| 6 Claude Code 适配 | PARTIAL：文件与最小通道 PASS；原生宿主进程 SKIP（无 Claude Code 二进制） | `test/adapters-claude.test.mjs` 全绿；`docs/adapters/claude.md` 记 2026-11-24 上游 settings.json SessionStart 最小验证 |
+| 7 Codex 与 Cursor 适配 | PARTIAL：文件与信任参数 PASS；原生宿主进程 SKIP（无对应二进制） | `test/adapters-codex.test.mjs`、`test/adapters-cursor.test.mjs` 全绿 |
+| 8 四端共存与钩子等价 | PASS（本机 specify 1.4.4.dev0） | 场景内实测矩阵已填；`test/compat.test.mjs` 静态断言六 hooks + session_start |
+| 9 五区体检与触发试跑 | PASS | `test/doctor.test.mjs`、`test/trigger.test.mjs` 全绿；CLI `doctor --json` 五区齐备、零文件变更、≤5s；100 条技能 ≤1s |
+| 10 回归矩阵 | PARTIAL：矩阵定义与 verify 脚本 PASS；GitHub Actions 实跑 SKIP（无网络/凭据） | `test/ci-matrix.test.mjs` 断言三上游×两宿主与 not_executed 失败；`DSH_SDD_KIT_INTEGRATION=1` 实跑 6/6 hooks + session_start |
+| 11 止损与零分叉 | PASS | `test/boundary.test.mjs`、`test/guard.test.mjs` 全绿；`docs/adapters/stop-loss.md` 逐里程碑止损线 |
+
+全量：`npm test` 166 tests / 164 pass / 2 skip（real upstream、version-bound 集成默认 skip；均已在 opt-in 模式实跑通过）。

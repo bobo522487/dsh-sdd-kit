@@ -238,10 +238,10 @@ description: "004-multihost-runtime-governance 任务清单"
 
 **Purpose**：文档、全量验证与收敛。
 
-- [ ] T062 [P] 更新 `README.md`：四端安装步骤、体检用法、重载三态说明；把对外表面枚举同步为章程 v5.0.0 的五项（2 技能 + 2 宿主工具 + 1 宿主中立 CLI `bin/sdd-kit.mjs` + 1 扩展），并核对 `test/sdd-kit.test.mjs` 中关于「严格限定为两个命名技能」的断言仍与章程一致（`README.md`、`test/sdd-kit.test.mjs`）
-- [ ] T063 [P] 编写 `docs/adapters/README.md`：三面契约的实现索引与新增宿主操作手册（`docs/adapters/README.md`）
-- [ ] T064 全量验证：`npm test` 全绿 + 覆盖差集脚本（spec 46 条 REQ / 23 条 AC 全部有实现或验证任务）零缺口（`test/`）
-- [ ] T065 [P] 按 `quickstart.md` 11 组场景逐条执行并记录结果（含显式 skip 的平台受限项与原因）（`quickstart.md`）
+- [x] T062 [P] 更新 `README.md`：四端安装步骤、体检用法、重载三态说明；把对外表面枚举同步为章程 v5.0.0 的五项（2 技能 + 2 宿主工具 + 1 宿主中立 CLI `bin/sdd-kit.mjs` + 1 扩展），并核对 `test/sdd-kit.test.mjs` 中关于「严格限定为两个命名技能」的断言仍与章程一致（`README.md`、`test/sdd-kit.test.mjs`）
+- [x] T063 [P] 编写 `docs/adapters/README.md`：三面契约的实现索引与新增宿主操作手册（`docs/adapters/README.md`）
+- [x] T064 全量验证：`npm test` 全绿 + 覆盖差集脚本（spec 46 条 REQ / 23 条 AC 全部有实现或验证任务）零缺口（`test/`）
+- [x] T065 [P] 按 `quickstart.md` 11 组场景逐条执行并记录结果（含显式 skip 的平台受限项与原因）（`quickstart.md`）
 - [ ] T066 逐任务原子提交（当前分支 `main`，不建分支/worktree），完成后同步 `specs/INDEX.md`（仓库根）
 
 ---

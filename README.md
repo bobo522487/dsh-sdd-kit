@@ -2,7 +2,7 @@
 
 > **零分叉，薄胶水（Zero Fork, Thin Glue）。**
 > 面向 **DeepSeek Harness（DSH）** 的极简 SDD 桥接插件：
-> **GitHub Spec Kit** 决定*做什么*（`specify` CLI），**obra/superpowers** 决定*怎么做*（实时 Git 镜像），**`dsh-sdd-kit`** 用 **2 个技能 + 2 个薄 Host 工具 + 1 个内置 Spec Kit 扩展**把两者粘合起来。
+> **GitHub Spec Kit** 决定*做什么*（`specify` CLI），**obra/superpowers** 决定*怎么做*（实时 Git 镜像），**`dsh-sdd-kit`** 用 **2 个技能 + 2 个薄 Host 工具 + 1 个宿主中立 CLI（`bin/sdd-kit.mjs`）+ 1 个内置 Spec Kit 扩展**把两者粘合起来（章程 v5.0.0 五项对外表面）。
 
 ## 为什么采用这种架构？
 
@@ -59,6 +59,35 @@ dsh plugin --profile web update dsh-sdd-kit --latest
    - 用原生 Spec Kit 评估：`/speckit-bug-assess "<symptom>" slug=<slug>`
    - 用原生 `/speckit-bug-fix slug=<slug>` 修复。`before_bug_fix` 钩子自动注入系统化调试与复现测试纪律，`after_bug_fix` 钩子在写完修复报告后做两阶段自审并提示 `/speckit-bug-test slug=<slug>`，直至 `verified`。
 
+## 跨宿主安装、CLI 与体检
+
+宿主中立 CLI 只做参数解析与结果序列化，所有动作委托 `src/core/action.mjs`；与 DSH 工具输出结构同构（章程 v5.0.0）。
+
+```bash
+# 任一宿主项目中由上游安装/切换集成（扩展命令只渲染到曾激活的集成）
+specify integration install dsh
+specify integration install claude
+specify integration install cursor-agent
+specify integration install codex
+specify integration use <key> --trust-integration
+
+# 零第三方依赖 CLI（包内 bin/sdd-kit.mjs）
+node ./node_modules/dsh-sdd-kit/bin/sdd-kit.mjs doctor --json --trigger "修复登录崩溃"
+node ./node_modules/dsh-sdd-kit/bin/sdd-kit.mjs guard --json
+```
+
+`doctor --json` 返回 environment / host / repository / runtime / triggerDryRun 五区；网络探测显式 skip，不写任何文件，单次 ≤5 秒。触发试跑只对当前可见技能确定性打分（100 条 ≤1 秒），不执行技能；Cursor 的 `-p` / `--trust` / `--approve-mcps` / `--force` 参数由宿主能力表检测并告警。
+
+重载三态由 `HOST_CAPABILITIES.<host>.reloadPolicy` 决定：
+
+| 结果 | 含义 | 待生效标记 |
+|---|---|---|
+| `none` | 无改动，无需处理 | 不落盘 |
+| `new_session` | 开新会话后生效 | `.specify/sdd-pending.json` 按 host 写入 |
+| `restart_host` | 重启宿主后生效 | 同上，宿主启动时只清当前 host 条目 |
+
+详见 [docs/adapters/README.md](docs/adapters/README.md) 与 [止损线](docs/adapters/stop-loss.md)。
+
 ## 安装安全性
 
 模板覆盖（`.specify/templates/overrides/spec-template.md`）不再「文件存在就跳过」。每次 `/sdd-setup` 或 `sdd_bridge(action: "install_overrides")` 都先按内容指纹判定状态，再决定动作：
@@ -88,11 +117,12 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 | 事件 | 触发时机 | 自动加载的上游技能 |
 |---|---|---|
 | `before_implement` | `/speckit.implement` 写第一行源码前 | `test-driven-development`、`systematic-debugging` |
+| `before_clarify` / `before_plan` | 规划命令执行前（只读） | 加载 `/sdd-kit guard`，tasks.md 存在已勾选任务时拦截并提示 |
 | `after_implement` | 全部任务完成后 | `verification-before-completion`、`requesting-code-review` |
 | `before_bug_fix` | `/speckit-bug-fix` 改源码前 | `systematic-debugging`、`test-driven-development` |
 | `after_bug_fix` | 修复报告写完后 | `verification-before-completion`、`requesting-code-review` |
 
-四条钩子均为 `optional: false`（强制）。日常只需敲 Spec Kit 原生命令，纪律由钩子织入；Spec Kit 升级 `/speckit.implement` 模板时不会冲突。
+六条执行钩子均为 `optional: false`（强制），另有一条 `session_start` 事件。日常只需敲 Spec Kit 原生命令，纪律由钩子织入；Spec Kit 升级 `/speckit.implement` 模板时不会冲突。
 
 > 若未来需要硬门禁（例如「未跑测试禁止 commit」），Spec Kit 的 Runtime Events（`pre_tool_use` 等）是现成的可选升级口；当前刻意不使用，保持软门禁。
 

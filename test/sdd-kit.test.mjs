@@ -1276,6 +1276,7 @@ test('US4 the retired /sdd-implement entry point leaves no trace in shipped surf
   assert.match(readme, /2 个技能/, 'README must advertise two skills (AC-05)');
   assert.equal(/3 个技能/.test(readme), false, 'README must not still advertise three skills (AC-05)');
   assert.match(readme, /spec-kit-extension/, 'README must point at the bundled extension source');
+  assert.match(readme, /宿主中立 CLI/, 'README must advertise the v5.0.0 CLI surface');
 
   const constitution = await fs.readFile(
     path.join(PKG_ROOT, '.specify', 'memory', 'constitution.md'),
@@ -1285,6 +1286,11 @@ test('US4 the retired /sdd-implement entry point leaves no trace in shipped surf
     constitution,
     /严格限定为两个命名技能/,
     'the constitution must state the two-skill surface (AC-05)'
+  );
+  assert.match(
+    constitution,
+    /一个宿主中立的命令行入口/,
+    'the constitution must state the v5.0.0 CLI surface (C1)'
   );
 });
 
