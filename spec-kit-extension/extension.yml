@@ -21,6 +21,12 @@ provides:
     - name: speckit.superpowers-hooks.after-bug-fix
       file: commands/speckit.superpowers-hooks.after-bug-fix.md
       description: 修复后两阶段自审并衔接 /speckit-bug-test
+    - name: speckit.superpowers-hooks.guard
+      file: commands/speckit.superpowers-hooks.guard.md
+      description: 只读判定当前特性是否已进入实现阶段（规划期护栏）
+    - name: speckit.superpowers-hooks.guidance
+      file: commands/speckit.superpowers-hooks.guidance.md
+      description: 输出当前特性与宿主工具的引导文本（session_start 事件）
 hooks:
   before_implement:
     command: speckit.superpowers-hooks.before-implement
@@ -42,3 +48,19 @@ hooks:
     optional: false
     priority: 15
     description: 强制加载 verification-before-completion 与 requesting-code-review
+  before_clarify:
+    command: speckit.superpowers-hooks.guard
+    optional: false
+    priority: 5
+    description: 只读检查 tasks.md 勾选状态，实现阶段不得回到定义阶段
+  before_plan:
+    command: speckit.superpowers-hooks.guard
+    optional: false
+    priority: 5
+    description: 只读检查 tasks.md 勾选状态，实现阶段不得回到定义阶段
+
+events:
+  session_start:
+    command: speckit.superpowers-hooks.guidance
+    description: 注入三面契约引导文本（Claude/Codex/Cursor；DSH 走 systemPrompt）
+    timeout: 10

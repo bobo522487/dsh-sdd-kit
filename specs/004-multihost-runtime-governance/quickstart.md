@@ -74,6 +74,15 @@ specify integration use <key>   # 激活以获得扩展命令（实测：仅 act
 ```
 预期：四个执行钩子在该端激活后等价生效；把某端安装但保持非激活（`specify integration list` 显示已装、`Default integration` 指向别端）时，体检如实报告该端钩子命令未渲染而非报成功，且插件不自行写入第二套钩子配置（AC-12）；同一仓库多集成共存时各端技能产物互不覆盖，体检同时识别全部已装集成。
 
+实测矩阵（specify 1.4.4.dev0，本机 2026-11-24；`hooks` 列统计含 `superpowers-hooks` 的目录数，共 6 个扩展命令）：
+
+| 状态 | `.dsh/skills` | `.claude/skills` | `.cursor/skills` | `.agents/skills` |
+|---|---|---|---|---|
+| 四端依次 install，active=dsh | 15 / hooks 6 | 9 / hooks 0 | 9 / hooks 0 | 9 / hooks 0 |
+| `switch claude --trust-integration` | 15 / hooks 6 | 15 / hooks 6 | 9 / hooks 0 | 9 / hooks 0 |
+
+结论：扩展命令只在「曾成为 active」的端渲染（dsh 是 init 时的 active，故保留 6 个）；`switch` 不给其他端补渲染，切走也不清理原端。体检须按此真实状态报告，不得把非 active 端报成「钩子已生效」。
+
 ## 场景 9：五区体检与触发试跑（AC-18、AC-19）
 
 ```bash

@@ -7,6 +7,7 @@
 import { parseArgs } from 'node:util';
 
 import { runAction, unknownActionError } from '../src/core/action.mjs';
+import { formatGuidanceText } from '../src/core/guidance.mjs';
 
 const SUBCOMMANDS = ['update', 'bridge', 'doctor', 'guard', 'guidance'];
 
@@ -15,6 +16,7 @@ function parse(argv) {
     args: argv,
     options: {
       json: { type: 'boolean', default: false },
+      text: { type: 'boolean', default: false },
       trigger: { type: 'string' },
       cwd: { type: 'string' },
       integration: { type: 'string' },
@@ -52,6 +54,7 @@ function parse(argv) {
   if (parsed.values.overwrite !== undefined) params.overwrite = parsed.values.overwrite;
   if (parsed.values['switch-integration'] !== undefined) params.switchIntegration = parsed.values['switch-integration'];
   delete params.json;
+  delete params.text;
   delete params['switch-integration'];
   delete params['superpowers-dir'];
   delete params['extension-dir'];
@@ -59,10 +62,16 @@ function parse(argv) {
 }
 
 async function main() {
-  const { command, params } = parse(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const asText = argv.includes('--text');
+  const { command, params } = parse(argv);
   const result = SUBCOMMANDS.includes(command)
     ? await runAction(command, params)
     : unknownActionError(command);
+  if (asText && command === 'guidance' && result && result.status !== 'error') {
+    process.stdout.write(`${formatGuidanceText(result)}\n`);
+    return;
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result && result.status === 'error') process.exitCode = 1;
 }

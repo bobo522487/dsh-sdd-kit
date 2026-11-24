@@ -130,16 +130,16 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T030 [P] [US4] 写失败测试 `test/guard.test.mjs`：tasks.md 存在且含 `- [x]` 时拦截并非零退出、仅存在未勾选 tasks.md 时不拦截、断言执行前后仓库零文件变更（`test/guard.test.mjs`）
-- [ ] T031 [P] [US4] 在 `test/compat.test.mjs` 增用例：下界以下安装期失败、无半装残留、`>=1.4.4` 对 `1.4.4.dev0` 判失败、`>=1.4.0` 通过（`test/compat.test.mjs`）
+- [x] T030 [P] [US4] 写失败测试 `test/guard.test.mjs`：tasks.md 存在且含 `- [x]` 时拦截并非零退出、仅存在未勾选 tasks.md 时不拦截、断言执行前后仓库零文件变更（`test/guard.test.mjs`）
+- [x] T031 [P] [US4] 在 `test/compat.test.mjs` 增用例：下界以下安装期失败、无半装残留、`>=1.4.4` 对 `1.4.4.dev0` 判失败、`>=1.4.0` 通过（`test/compat.test.mjs`）
 
 ### Implementation for User Story 4
 
-- [ ] T032 [US4] 实现 `src/core/guard.mjs`：读当前 feature 的 `tasks.md`，判定规则对应 `data-model.md` 的 `FeaturePhase.判定`（文件存在且 `^- \[[xX]\]` 命中 ≥1 即实现阶段已开始；仅存在未勾选 tasks.md 不拦截），该判定 MUST 与 `GuidanceBundle.sddPointer.phase` 共用同一实现，零写、无状态文件（`src/core/guard.mjs`）
-- [ ] T033 [US4] `bin/sdd-kit.mjs` 增加 `guard` 子命令：被拦截时非零退出并打印「先回到定义阶段」提示（`bin/sdd-kit.mjs`）
-- [ ] T034 [US4] `spec-kit-extension/extension.yml` 增加 `hooks.before_clarify` 与 `hooks.before_plan`，命令指向 `node <pkg>/bin/sdd-kit.mjs guard`，`optional: false`（`spec-kit-extension/extension.yml`）
-- [ ] T035 [P] [US4] `spec-kit-extension/extension.yml` 增加 `events.session_start` 声明（Claude 引导通道），handler 指向 `guidance` 子命令（`spec-kit-extension/extension.yml`）
-- [ ] T036 [US4] 里程碑 M3 前置验证：四端依次安装并确认扩展命令仅渲染到 active 集成，把实测矩阵写入 `quickstart.md` 场景 8（`quickstart.md`）
+- [x] T032 [US4] 实现 `src/core/guard.mjs`：读当前 feature 的 `tasks.md`，判定规则对应 `data-model.md` 的 `FeaturePhase.判定`（文件存在且 `^- \[[xX]\]` 命中 ≥1 即实现阶段已开始；仅存在未勾选 tasks.md 不拦截），该判定 MUST 与 `GuidanceBundle.sddPointer.phase` 共用同一实现，零写、无状态文件（`src/core/guard.mjs`）
+- [x] T033 [US4] `bin/sdd-kit.mjs` 增加 `guard` 子命令：被拦截时非零退出并打印「先回到定义阶段」提示（`bin/sdd-kit.mjs`）
+- [x] T034 [US4] `spec-kit-extension/extension.yml` 增加 `hooks.before_clarify` 与 `hooks.before_plan`，命令指向 `node <pkg>/bin/sdd-kit.mjs guard`，`optional: false`（`spec-kit-extension/extension.yml`）
+- [x] T035 [P] [US4] `spec-kit-extension/extension.yml` 增加 `events.session_start` 声明（Claude 引导通道），handler 指向 `guidance` 子命令（`spec-kit-extension/extension.yml`）
+- [x] T036 [US4] 里程碑 M3 前置验证：四端依次安装并确认扩展命令仅渲染到 active 集成，把实测矩阵写入 `quickstart.md` 场景 8（`quickstart.md`）
 
 **Checkpoint**：规划期不再悄悄漂移；扩展下界失败在安装期即暴露。
 

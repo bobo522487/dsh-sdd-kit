@@ -594,8 +594,13 @@ const HOOK_COMMAND_FILES = [
   'speckit.superpowers-hooks.after-implement.md',
   'speckit.superpowers-hooks.before-bug-fix.md',
   'speckit.superpowers-hooks.after-bug-fix.md',
+  'speckit.superpowers-hooks.guard.md',
+  'speckit.superpowers-hooks.guidance.md',
 ];
-const HOOK_EVENTS = ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix'];
+const HOOK_EVENTS = [
+  'before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix',
+  'before_clarify', 'before_plan',
+];
 
 async function seedExtensionManifest(dir, { id = 'superpowers-hooks', version = '0.1.0' } = {}) {
   await fs.mkdir(dir, { recursive: true });
@@ -641,7 +646,7 @@ test('install_hooks_ext reads id/version/events from the manifest, not hardcoded
   }
 });
 
-test('extension manifest declares four commands and four mandatory hooks', async () => {
+test('extension manifest declares six commands, six mandatory hooks and a session_start event', async () => {
   const manifest = await fs.readFile(path.join(EXTENSION_DIR, 'extension.yml'), 'utf8');
 
   assert.match(manifest, /^schema_version:\s*"1\.0"$/m);
@@ -657,19 +662,19 @@ test('extension manifest declares four commands and four mandatory hooks', async
   }
   const declaredEvents = [...manifest.matchAll(/^  ([a-z_]+):$/gm)].map((m) => m[1]);
   assert.deepEqual(
-    declaredEvents.filter((name) => name.includes('_')),
+    declaredEvents.filter((name) => HOOK_EVENTS.includes(name)),
     HOOK_EVENTS,
-    'manifest must declare exactly the four implement/bug-fix hook events'
+    'manifest must declare exactly the six implement/bug-fix/planning hooks'
   );
 
   assert.equal(
     (manifest.match(/^\s+optional:\s*false$/gm) || []).length,
-    4,
-    'all four hooks must be optional: false so Spec Kit renders **Automatic Hook**'
+    6,
+    'all six hooks must be optional: false so Spec Kit renders **Automatic Hook**'
   );
-  assert.equal(manifest.includes('events:'), false, 'must not declare runtime events (INV-2)');
+  assert.match(manifest, /^events:$/m, 'the Claude/Codex/Cursor session_start event must be declared');
+  assert.match(manifest, /session_start:/, 'session_start must point at the guidance command');
   assert.equal(manifest.includes('templates:'), false, 'must not inject templates (INV-2)');
-  assert.equal(manifest.includes('scripts:'), false, 'must not inject scripts (INV-2)');
   assert.equal(/^settings:/m.test(manifest), false, 'must not write project settings (INV-3)');
 
   for (const file of HOOK_COMMAND_FILES) {
@@ -679,12 +684,12 @@ test('extension manifest declares four commands and four mandatory hooks', async
   }
   assert.equal(
     (manifest.match(/^\s+- name: speckit\.superpowers-hooks\./gm) || []).length,
-    4,
-    'provides.commands must declare exactly four commands (INV-1)'
+    6,
+    'provides.commands must declare exactly six commands (INV-1)'
   );
 });
 
-test('install_hooks_ext delegates once with --dev and reports the four hooks', async () => {
+test('install_hooks_ext delegates once with --dev and reports the six hooks', async () => {
   const cwd = await makeTempDir();
   const extensionDir = path.join(cwd, 'ext-src');
   await seedExtensionManifest(extensionDir);
@@ -707,7 +712,9 @@ test('install_hooks_ext delegates once with --dev and reports the four hooks', a
     assert.equal(report.extensionDir, extensionDir);
     assert.match(report.command, /^specify extension add --dev .+ --force$/);
     assert.deepEqual(report.extension, { id: 'superpowers-hooks', version: '0.1.0' });
-    assert.deepEqual(report.hooks, HOOK_EVENTS);
+    assert.deepEqual(report.hooks, [
+      'before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix',
+    ]);
     assert.equal(typeof report.restartRequired, 'boolean');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -1180,8 +1187,14 @@ test('US3 end-to-end install writes the extension into the dsh skill root', asyn
     assert.equal(report.integration, 'dsh');
     assert.equal(report.skillsDir, '.dsh/skills');
 
-    for (const event of HOOK_EVENTS) {
-      const skillName = `speckit-superpowers-hooks-${event.replace(/_/g, '-')}`;
+    for (const skillName of [
+      'speckit-superpowers-hooks-before-implement',
+      'speckit-superpowers-hooks-after-implement',
+      'speckit-superpowers-hooks-before-bug-fix',
+      'speckit-superpowers-hooks-after-bug-fix',
+      'speckit-superpowers-hooks-guard',
+      'speckit-superpowers-hooks-guidance',
+    ]) {
       const stat = await fs.stat(path.join(cwd, '.dsh', 'skills', skillName, 'SKILL.md'));
       assert.ok(stat.isFile(), `expected .dsh/skills/${skillName}/SKILL.md`);
     }
@@ -1206,17 +1219,19 @@ test('US3 end-to-end install writes the extension into the dsh skill root', asyn
         'speckit.superpowers-hooks.after-implement',
         'speckit.superpowers-hooks.before-bug-fix',
         'speckit.superpowers-hooks.after-bug-fix',
+        'speckit.superpowers-hooks.guard',
+        'speckit.superpowers-hooks.guard',
       ],
       'AC-01: every hook event must carry exactly one extension entry'
     );
     assert.equal(
       (cfg.match(/optional: false/g) || []).length,
-      4,
+      6,
       'every hook must be mandatory (REQ-06)'
     );
     assert.equal(
       (cfg.match(/priority: 5/g) || []).length,
-      2,
+      4,
       'pre-hooks must run at priority 5'
     );
     assert.equal(
@@ -1226,7 +1241,7 @@ test('US3 end-to-end install writes the extension into the dsh skill root', asyn
     );
     assert.equal(
       (cfg.match(/condition: null/g) || []).length,
-      4,
+      6,
       'hooks must stay unconditional (REQ-07)'
     );
     assert.match(cfg, /auto_execute_hooks: true/, 'the global switch must stay untouched');
@@ -1328,13 +1343,15 @@ test('US5 reinstalling the hooks extension stays idempotent', async (t) => {
         'speckit.superpowers-hooks.after-implement',
         'speckit.superpowers-hooks.before-bug-fix',
         'speckit.superpowers-hooks.after-bug-fix',
+        'speckit.superpowers-hooks.guard',
+        'speckit.superpowers-hooks.guard',
       ],
       'INV-7: every event must carry exactly one entry after a reinstall'
     );
     assert.deepEqual(installedEntriesOf(afterSecond), ['superpowers-hooks'], 'INV-10: installed must not duplicate');
     assert.equal(
       (afterSecond.match(/optional: false/g) || []).length,
-      4,
+      6,
       'a reinstall must not duplicate hook entries'
     );
     assert.equal(second.restartRequired, false, 'INV-13: a pure reinstall must not demand a restart');
@@ -1344,7 +1361,10 @@ test('US5 reinstalling the hooks extension stays idempotent', async (t) => {
     assert.deepEqual(events(afterSecond), events(afterFirst), 'INV-8: a reinstall must not add orphan event keys');
     assert.deepEqual(
       events(afterSecond),
-      ['before_implement:', 'after_implement:', 'before_bug_fix:', 'after_bug_fix:']
+      [
+        'before_implement:', 'after_implement:', 'before_bug_fix:', 'after_bug_fix:',
+        'before_clarify:', 'before_plan:',
+      ]
     );
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });

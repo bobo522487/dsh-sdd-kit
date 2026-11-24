@@ -10,6 +10,7 @@ import { runSetup } from './setup.mjs';
 import { assembleGuidance } from './guidance.mjs';
 import { decideReload } from './reload.mjs';
 import { markerPath, writeMarker } from './marker.mjs';
+import { checkPlanningGuard } from './guard.mjs';
 
 export function actionError(code, message, fix) {
   return { status: 'error', code, message, fix };
@@ -73,8 +74,9 @@ export async function runAction(action, params = {}, deps = {}) {
       return (deps.runUpstream ?? runUpstream)(params);
     case 'guidance':
       return (deps.assembleGuidance ?? assembleGuidance)(params);
-    case 'doctor':
     case 'guard':
+      return (deps.checkPlanningGuard ?? checkPlanningGuard)(params);
+    case 'doctor':
       return unknownActionError(action);
     default:
       return unknownActionError(action);

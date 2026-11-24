@@ -5,25 +5,13 @@
  */
 
 import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
-import { assembleGuidance } from '../../core/guidance.mjs';
+import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 
 const CAP = HOST_CAPABILITIES.dsh;
 
 export function renderGuidanceText(bundle) {
-  const pointer = Object.entries(bundle.sddPointer)
-    .filter(([, value]) => value)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join('\n');
-  const mapping = Object.entries(bundle.toolMapping)
-    .map(([action, tool]) => `${action} -> ${tool}`)
-    .join('\n');
-  return [
-    '## SDD 运行时纪律（dsh-sdd-kit）',
-    bundle.upstreamText,
-    mapping ? `工具映射：\n${mapping}` : '',
-    pointer ? `当前进度：\n${pointer}` : '',
-  ].filter(Boolean).join('\n\n');
+  return formatGuidanceText(bundle);
 }
 
 /**
