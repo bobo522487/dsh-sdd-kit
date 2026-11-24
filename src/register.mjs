@@ -29,6 +29,12 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
             type: 'string',
             description: 'Repository root directory (defaults to process.cwd()).',
           },
+          candidateDirs: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'For actions "status" and "sync_superpowers": extra mirror candidates to consider (declaration index 1, below an explicit superpowersDir and above DSH_SDD_KIT_SUPERPOWERS_DIR / DSH_HOME / the default ~/.dsh path). Deduplicated by realpath, newest mtime wins.',
+          },
           switchIntegration: {
             type: 'boolean',
             description: 'Explicit opt-in for action "setup": switch a non-dsh integration to dsh, then reinstall hooks (default false; the default path only reports the mismatch).',
@@ -87,7 +93,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           action: {
             type: 'string',
             required: true,
-            description: 'One of: inspect, install_overrides, sync_index.',
+            description: 'One of: inspect, install_overrides, restore_overrides, sync_index.',
           },
           cwd: {
             type: 'string',
@@ -103,7 +109,12 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           },
           overwrite: {
             type: 'boolean',
-            description: 'Overwrite existing .specify/templates/overrides/spec-template.md when true.',
+            description:
+              'For action "install_overrides": overwrite a user-modified or outdated .specify/templates/overrides/spec-template.md (default false; the default path never touches hand edits).',
+          },
+          artifact: {
+            type: 'string',
+            description: 'For action "restore_overrides": restore only this artifact id (default: every snapshot in the manifest).',
           },
         },
         output: {
