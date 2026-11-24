@@ -217,9 +217,9 @@ test('toolMapping derives from HOST_CAPABILITIES for every host (T068/REQ-13)', 
   for (const host of ['claude', 'codex', 'cursor']) {
     assert.deepEqual(toolMapping(host), CLI_FACE, `${host} must use the host-neutral CLI form`);
   }
-  // Unknown hosts must not inherit DSH-only tool names.
+  // Missing host must not inherit DSH-only tool names.
   assert.deepEqual(toolMapping('unknown-host'), CLI_FACE);
-  assert.deepEqual(toolMapping(), DSH_FACE, 'default host stays dsh');
+  assert.deepEqual(toolMapping(), CLI_FACE, 'no injected host uses the host-neutral face');
 });
 
 test('assembleGuidance threads host into the tool mapping (T068/REQ-13)', async () => {

@@ -2,23 +2,29 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { HOST_CAPABILITIES } from './host-capabilities.mjs';
+
+const DEFAULT_CAP = HOST_CAPABILITIES.dsh;
+const HOST_PREFIX = DEFAULT_CAP.key.toUpperCase();
+function defaultSuperpowersDir() {
+  return path.join(os.homedir(), path.dirname(DEFAULT_CAP.skillsDir), 'upstream', 'superpowers');
+}
+
 /**
  * Pick one Superpowers mirror from a fixed, declared set of sources.
  *
- * This is the only place in src/ that reads process.env: a named pair of
- * variables is the only cross-process / cross-profile channel available to a
- * lightweight host tool. We deliberately do NOT scan any directory, and we
- * read no other variable (no prefix scan, no writes).
+ * Host-specific names and the fallback mirror are read from HOST_CAPABILITIES;
+ * a caller may override all of them through `args`. No env name is hard-coded.
+ * The DSH adapter injects DSH_SDD_KIT_SUPERPOWERS_DIR and DSH_HOME; this module
+ * derives their equivalents from the capability key and never parses them here.
  *
  * @param {{superpowersDir?: string, candidateDirs?: string[], envKeys?: {mirror?: string, home?: string}, defaultDir?: string}} args
  * @param {NodeJS.ProcessEnv} env injectable for tests; defaults to process.env
  */
 export async function selectSuperpowersDir(args = {}, env = process.env) {
-  // A host adapter can inject its own variable names / default path. The
-  // literals below are compatibility defaults only; new hosts need no core edit.
   const envKeys = {
-    mirror: args.envKeys?.mirror ?? 'DSH_SDD_KIT_SUPERPOWERS_DIR',
-    home: args.envKeys?.home ?? 'DSH_HOME',
+    mirror: args.envKeys?.mirror ?? `${HOST_PREFIX}_SDD_KIT_SUPERPOWERS_DIR`,
+    home: args.envKeys?.home ?? `${HOST_PREFIX}_HOME`,
   };
   const declarations = [];
   const push = (declaredIndex, reason, input) => {
@@ -30,9 +36,9 @@ export async function selectSuperpowersDir(args = {}, env = process.env) {
   for (const dir of args.candidateDirs ?? []) push(1, 'candidateDirs', dir);
   push(2, 'env', env?.[envKeys.mirror]);
   const injectedHome = env?.[envKeys.home];
-  if (injectedHome) push(3, 'dsh_home', path.join(injectedHome, 'upstream', 'superpowers'));
+  if (injectedHome) push(3, `${DEFAULT_CAP.key}_home`, path.join(injectedHome, 'upstream', 'superpowers'));
   // os.homedir() follows HOME on POSIX / USERPROFILE on Windows; no third env var is read here.
-  push(4, 'default', args.defaultDir ?? path.join(os.homedir(), '.dsh', 'upstream', 'superpowers'));
+  push(4, 'default', args.defaultDir ?? defaultSuperpowersDir());
 
   const seenRealPaths = new Set();
   const candidates = [];

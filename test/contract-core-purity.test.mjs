@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { toolMapping } from '../src/core/guidance.mjs';
+import { HOST_NEUTRAL_TOOL_NAMES } from '../src/core/host-capabilities.mjs';
+import { resolveGuidanceHost } from '../src/adapters/dsh/index.mjs';
+
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CORE_DIR = path.join(PKG_ROOT, 'src', 'core');
 
@@ -38,38 +42,6 @@ const HOST_PATTERNS = [
 ];
 
 /**
- * T079: a host-owned legacy reference is tolerated only when the file, the
- * pattern code and the technical reason are all recorded here. Every entry is
- * self-verifying: a code that no longer occurs in its file fails the allowlist
- * test, so stale exemptions cannot accumulate.
- */
-const LEGACY_HOST_REFERENCES = Object.freeze({
-  'candidates.mjs': {
-    codes: ['HOST_ENV_DSH'],
-    reason: 'Candidate discovery reads the documented DSH_SDD_KIT_SUPERPOWERS_DIR override as a compatibility default; injected envKeys/defaultDir remain the supported path.',
-  },
-  'doctor.mjs': {
-    codes: ['HOST_ENV_DSH', 'HOST_DEFAULT_DSH'],
-    reason: 'The read-only doctor reports on the host it was launched for: host defaults to the DSH key and the bridge probe accepts the documented DSH_PROFILE_DIR layout.',
-  },
-  'guidance.mjs': {
-    codes: ['HOST_DEFAULT_DSH'],
-    reason: 'assembleGuidance and toolMapping keep the DSH key as the parameter default so existing callers stay source-compatible; the capability table is the lookup that resolves it.',
-  },
-  'upstream.mjs': {
-    codes: ['HOST_DEFAULT_DSH'],
-    reason: 'EXPECTED_INTEGRATION pins the integration key the update path compares against, so a switch away from the DSH key is detected instead of silently accepted.',
-  },
-});
-
-const VALID_PATTERN_CODES = new Set(HOST_PATTERNS.map((pattern) => pattern.code));
-
-function isAllowlisted(violation) {
-  const entry = LEGACY_HOST_REFERENCES[violation.file];
-  return Boolean(entry && entry.codes.includes(violation.code));
-}
-
-/**
  * Collect every `.mjs` file under `coreDir`, at any depth, as paths relative to
  * `coreDir` with forward slashes. A top-level-only scan would let a host
  * reference hide in `src/core/<sub>/x.mjs`.
@@ -88,12 +60,24 @@ async function listCoreModules(coreDir, prefix = '') {
   return files;
 }
 
+/**
+ * Remove source comments before matching: a comment may legitimately document
+ * which host variables an adapter injects, while the executable module must
+ * still derive them from HOST_CAPABILITIES.
+ */
+function stripComments(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
 async function scanCore(coreDir) {
   const violations = [];
   for (const relative of await listCoreModules(coreDir)) {
     const text = await fs.readFile(path.join(coreDir, ...relative.split('/')), 'utf8');
+    const code = stripComments(text);
     for (const pattern of HOST_PATTERNS) {
-      if (pattern.re.test(text)) {
+      if (pattern.re.test(code)) {
         violations.push({ file: relative, code: pattern.code });
       }
     }
@@ -101,35 +85,18 @@ async function scanCore(coreDir) {
   return violations;
 }
 
-test('core directory stays free of host-specific references (REQ-01/REQ-02/AC-01)', async () => {
-  const violations = (await scanCore(CORE_DIR)).filter((violation) => !isAllowlisted(violation));
+test('core directory stays free of host-specific references (REQ-01/REQ-02/AC-01/T097)', async () => {
+  const violations = await scanCore(CORE_DIR);
   assert.deepEqual(violations, [], `core purity violations: ${JSON.stringify(violations)}`);
 });
 
-test('legacy host references are confined to an explicit, documented allowlist (T079)', async () => {
-  const violations = await scanCore(CORE_DIR);
-  for (const [file, entry] of Object.entries(LEGACY_HOST_REFERENCES)) {
-    assert.ok((await fs.stat(path.join(CORE_DIR, file))).isFile(), `allowlisted file must exist: ${file}`);
-    assert.ok(entry.reason.length > 20, `allowlisted file must carry a reason: ${file}`);
-    // A technical reason names the mechanism, not the change process: no
-    // ownership, ticket or "another agent" bookkeeping survives here (I10).
-    assert.doesNotMatch(
-      entry.reason,
-      /another agent|owner|owned by|lead |TODO|FIXME|will be|临时|待办/i,
-      `${file} reason must state the technical mechanism`
-    );
-    for (const code of entry.codes) {
-      assert.ok(VALID_PATTERN_CODES.has(code), `unknown allowlist code ${code} for ${file}`);
-      // Self-verifying: an exemption for a pattern the file no longer contains is
-      // stale and must be removed rather than silently widening the allowlist.
-      assert.ok(
-        violations.some((violation) => violation.file === file && violation.code === code),
-        `stale allowlist entry: ${file} no longer matches ${code}`
-      );
-    }
-  }
-  const stray = violations.filter((violation) => !isAllowlisted(violation));
-  assert.deepEqual(stray, [], `unallowlisted host references: ${JSON.stringify(stray)}`);
+test('T097: DSH defaults live in the adapter, not in core tool mapping', () => {
+  assert.equal(resolveGuidanceHost({ env: {} }), 'dsh', 'adapter supplies the DSH startup default');
+  assert.deepEqual(
+    toolMapping(),
+    { ...HOST_NEUTRAL_TOOL_NAMES },
+    'core with no injected host must use the host-neutral face'
+  );
 });
 
 test('host environment and default-host patterns are precise enough to stay useful (I10)', async () => {

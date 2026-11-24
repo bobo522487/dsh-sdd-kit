@@ -4,11 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
 import { selectSuperpowersDir } from './candidates.mjs';
 
 const execFileAsync = promisify(execFile);
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const DEFAULT_CAP = HOST_CAPABILITIES.dsh;
 
 export const DEFAULT_SUPERPOWERS_REPO = 'https://github.com/obra/superpowers.git';
 
@@ -39,21 +41,23 @@ async function readExtensionManifest(extensionDir) {
   return { id, version, events };
 }
 
-/** Expected integration for new projects; `.dsh/skills` is inside DSH's default skill roots. */
-export const EXPECTED_INTEGRATION = 'dsh';
+/** Expected integration from the capability table; no host key is hard-coded in core. */
+export const EXPECTED_INTEGRATION = DEFAULT_CAP.integrationKey;
 
-const SKILLS_DIR_BY_INTEGRATION = Object.freeze({
-  dsh: '.dsh/skills',
-  claude: '.claude/skills',
-});
+const SKILLS_DIR_BY_INTEGRATION = Object.freeze(Object.fromEntries(
+  HOST_KEYS.map((host) => [
+    HOST_CAPABILITIES[host].integrationKey,
+    HOST_CAPABILITIES[host].skillsDir,
+  ])
+));
 
 const INTEGRATION_MISMATCH_NOTE =
-  '当前项目的 Spec Kit 技能落在非 DSH 技能根内，DSH 可能看不到 /speckit-* 命令。'
-  + '显式执行 `specify integration switch dsh` 可切换：未修改的托管文件会被卸载重装，'
+  `当前项目的 Spec Kit 技能落在非 ${DEFAULT_CAP.key.toUpperCase()} 技能根内，${DEFAULT_CAP.key.toUpperCase()} 可能看不到 /speckit-* 命令。`
+  + `显式执行 \`specify integration switch ${EXPECTED_INTEGRATION}\` 可切换：未修改的托管文件会被卸载重装，`
   + '被本地修改过的文件会保留为残留，.specify/extensions.yml、templates、scripts 不受影响。';
 
 export function getDefaultSuperpowersDir() {
-  return path.join(os.homedir(), '.dsh', 'upstream', 'superpowers');
+  return path.join(os.homedir(), path.dirname(DEFAULT_CAP.skillsDir), 'upstream', 'superpowers');
 }
 
 async function defaultRunner(cmd, args, options = {}) {
@@ -332,7 +336,7 @@ function describeIntegration(integration) {
   const known = SKILLS_DIR_BY_INTEGRATION[integration];
   const description = {
     integration,
-    skillsDir: known || '.dsh/skills',
+    skillsDir: known || DEFAULT_CAP.skillsDir,
     skillsDirInDshRoots: integration === EXPECTED_INTEGRATION,
     integrationMismatch:
       integration === EXPECTED_INTEGRATION

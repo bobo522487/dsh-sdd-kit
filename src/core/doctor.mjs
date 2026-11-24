@@ -500,7 +500,9 @@ async function repositoryZone({ cwd, host }) {
 /** Candidate bridge configuration files: explicit paths first, then well-known ones. */
 function bridgeCandidates({ cwd, env }) {
   const candidates = [];
-  for (const key of ['SDD_BRIDGE_CONFIG', 'DSH_CONFIG', 'DSH_PROFILE_DIR']) {
+  const cap = HOST_CAPABILITIES.dsh;
+  const hostPrefix = cap.key.toUpperCase();
+  for (const key of ['SDD_BRIDGE_CONFIG', `${hostPrefix}_CONFIG`, `${hostPrefix}_PROFILE_DIR`]) {
     const value = env?.[key];
     if (typeof value !== 'string' || value.length === 0) continue;
     let isDir = false;
@@ -513,9 +515,10 @@ function bridgeCandidates({ cwd, env }) {
       candidates.push({ key, file: value });
     }
   }
-  candidates.push({ key: 'cwd', file: path.join(cwd, '.dsh', 'cordis.patch.yml') });
-  candidates.push({ key: 'cwd', file: path.join(cwd, '.dsh', 'cordis.yml') });
-  candidates.push({ key: 'cwd', file: path.join(cwd, '.dsh', 'package.json') });
+  const hostRoot = path.dirname(cap.skillsDir);
+  candidates.push({ key: 'cwd', file: path.join(cwd, hostRoot, 'cordis.patch.yml') });
+  candidates.push({ key: 'cwd', file: path.join(cwd, hostRoot, 'cordis.yml') });
+  candidates.push({ key: 'cwd', file: path.join(cwd, hostRoot, 'package.json') });
   return candidates;
 }
 
@@ -531,16 +534,16 @@ async function probeBridgeSource({ cwd, env }) {
   if (!chosen) {
     return item(
       'skip', 'BRIDGE_SOURCE',
-      'no host bridge configuration discoverable from the environment or the repository; provenance not probed',
-      'Point SDD_BRIDGE_CONFIG (or DSH_CONFIG) at the host plugin configuration to enable this probe.'
+      '未从环境或仓库发现宿主桥接配置；未探测来源',
+      `请将 SDD_BRIDGE_CONFIG（或 ${HOST_CAPABILITIES.dsh.key.toUpperCase()}_CONFIG）指向宿主插件配置以启用该探针。`
     );
   }
-  const where = `${path.relative(cwd, chosen.file) || chosen.file} (via ${chosen.key})`;
+  const where = `${path.relative(cwd, chosen.file) || chosen.file}（via ${chosen.key}）`;
   return item(
     mounted ? 'pass' : 'warn',
     'BRIDGE_SOURCE',
-    `bridge source observed at ${where}${mounted ? '; sdd-kit mount found' : '; no sdd-kit mount found'}`,
-    mounted ? 'No action needed.' : 'Check whether the bridge plugin is mounted for this host.',
+    `桥接来源发现于 ${where}${mounted ? '；发现 sdd-kit 挂载' : '；未发现 sdd-kit 挂载'}`,
+    mounted ? '无需处理。' : '请检查该 host 是否已挂载桥接插件。',
     { source: chosen.file, via: chosen.key, observed: observed.map((entry) => entry.file) }
   );
 }
@@ -692,9 +695,10 @@ async function safe(name, runner, fallback) {
  */
 export async function runDoctor({
   trigger,
-  host = 'dsh',
+  host = HOST_CAPABILITIES.dsh.key,
   cwd = process.cwd(),
   env = process.env,
+  platform = process.platform,
   skills = [],
   trustFlags = [],
   now,

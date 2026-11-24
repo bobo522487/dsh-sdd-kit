@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { HOST_NEUTRAL_TOOL_NAMES, getHostCapability } from './host-capabilities.mjs';
+import { HOST_CAPABILITIES, HOST_NEUTRAL_TOOL_NAMES, getHostCapability } from './host-capabilities.mjs';
 import { detectFeaturePhase } from './feature-phase.mjs';
 import { selectSuperpowersDir } from './candidates.mjs';
 
@@ -73,9 +73,9 @@ async function readUpstreamText(dir, warnings) {
 }
 
 /** Explicit paths stay byte-compatible; otherwise share the declared candidate selection. */
-async function resolveSkillsDir({ superpowersDir, candidateDirs, env }) {
+async function resolveSkillsDir({ superpowersDir, candidateDirs, env, envKeys, defaultDir }) {
   if (superpowersDir) return superpowersDir;
-  const selection = await selectSuperpowersDir({ candidateDirs }, env);
+  const selection = await selectSuperpowersDir({ candidateDirs, envKeys, defaultDir }, env);
   return path.join(selection.dir, 'skills');
 }
 
@@ -123,7 +123,7 @@ export async function resolveGuidanceSwitch({ cwd = process.cwd(), env = process
  * actions through the host-neutral CLI, so no DSH-only name leaks out.
  * Unknown hosts fall back to the host-neutral face rather than inheriting DSH.
  */
-export function toolMapping(host = 'dsh') {
+export function toolMapping(host) {
   const cap = getHostCapability(host);
   return { ...(cap?.toolNames ?? HOST_NEUTRAL_TOOL_NAMES) };
 }
@@ -154,14 +154,16 @@ export function formatGuidanceText(bundle) {
 
 /**
  * Assemble one guidance bundle shared by every host adapter.
- * @param {{host?: string, cwd?: string, skills?: Array<{name:string,description:string}>, superpowersDir?: string, candidateDirs?: string[], env?: object}} options
+ * @param {{host?: string, cwd?: string, skills?: Array<{name:string,description:string}>, superpowersDir?: string, candidateDirs?: string[], envKeys?: {mirror?: string, home?: string}, defaultDir?: string, env?: object}} options
  */
 export async function assembleGuidance({
-  host = 'dsh',
+  host = HOST_CAPABILITIES.dsh.key,
   cwd = process.cwd(),
   skills,
   superpowersDir,
   candidateDirs,
+  envKeys,
+  defaultDir,
   env,
 } = {}) {
   const warnings = [];
@@ -175,7 +177,7 @@ export async function assembleGuidance({
   const upstreamText = providedSkills
     ? providedSkills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
     : await readUpstreamText(
-      await resolveSkillsDir({ superpowersDir, candidateDirs, env }),
+      await resolveSkillsDir({ superpowersDir, candidateDirs, env, envKeys, defaultDir }),
       warnings
     );
   const pointerRaw = detectFeaturePhase ? await detectFeaturePhase({ cwd }) : null;

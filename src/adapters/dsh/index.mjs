@@ -8,11 +8,22 @@
  * loading the DSH runtime.
  */
 
+import os from 'node:os';
+import path from 'node:path';
+
 import { HOST_CAPABILITIES, HOST_KEYS } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 
 const CAP = HOST_CAPABILITIES.dsh;
+const HOST_PREFIX = CAP.key.toUpperCase();
+const CANDIDATE_ENV_KEYS = Object.freeze({
+  mirror: `${HOST_PREFIX}_SDD_KIT_SUPERPOWERS_DIR`,
+  home: `${HOST_PREFIX}_HOME`,
+});
+function defaultSuperpowersDir() {
+  return path.join(os.homedir(), path.dirname(CAP.skillsDir), 'upstream', 'superpowers');
+}
 
 export function renderGuidanceText(bundle) {
   return formatGuidanceText(bundle);
@@ -55,7 +66,13 @@ export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process
     return withStatus(() => {}, { enabled: null, registered: false, reason: 'no-service', warnings });
   }
 
-  const bundle = await assembleGuidance({ host: CAP.key, cwd, env });
+  const bundle = await assembleGuidance({
+    host: CAP.key,
+    cwd,
+    env,
+    envKeys: CANDIDATE_ENV_KEYS,
+    defaultDir: defaultSuperpowersDir(),
+  });
   warnings.push(...bundle.warnings);
   const enabled = bundle.enabled !== false;
   const hasText = Boolean(bundle.upstreamText?.trim?.());
