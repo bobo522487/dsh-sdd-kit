@@ -91,7 +91,7 @@ export const HOST_CAPABILITIES = freezeCapabilities({
       skill_data: 'new_session',
       extension_command: 'none',
     }),
-    trustFlagPattern: /--trust\b|--approve-mcps\b|--force\b|\b-p\b/,
+    trustFlagPattern: /--trust\b|--approve-mcps\b|--force\b|(?:^|\s)-p(?:\s|$)/,
   },
 });
 

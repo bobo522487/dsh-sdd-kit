@@ -173,14 +173,14 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T041 [P] [US6] 写失败测试 `test/adapters-codex.test.mjs`：技能面读 `.agents/skills`、调用前缀 `$`、托管块幂等（连续执行两次内容不变）、实现 ≤100 行（`test/adapters-codex.test.mjs`）
-- [ ] T042 [P] [US6] 写失败测试 `test/adapters-cursor.test.mjs`：技能面读 `.cursor/skills`、调用前缀 `/`、引导落 `.cursor/rules/`、检测到 trust 类参数时输出安全告警、默认写入配置不含该参数、实现 ≤100 行（`test/adapters-cursor.test.mjs`）
+- [x] T041 [P] [US6] 写失败测试 `test/adapters-codex.test.mjs`：技能面读 `.agents/skills`、调用前缀 `$`、托管块幂等（连续执行两次内容不变）、实现 ≤100 行（`test/adapters-codex.test.mjs`）
+- [x] T042 [P] [US6] 写失败测试 `test/adapters-cursor.test.mjs`：技能面读 `.cursor/skills`、调用前缀 `/`、引导落 `.cursor/rules/`、检测到 trust 类参数时输出安全告警、默认写入配置不含该参数、实现 ≤100 行（`test/adapters-cursor.test.mjs`）
 
 ### Implementation for User Story 6
 
-- [ ] T043 [P] [US6] 实现 `src/adapters/codex/index.mjs`（≤100 行）：项目级幂等托管块（标记包裹、重复执行字节一致）（`src/adapters/codex/index.mjs`）
-- [ ] T044 [P] [US6] 实现 `src/adapters/cursor/index.mjs`（≤100 行）：`.cursor/rules/sdd-kit-discipline.mdc` 常驻规则 + trust 参数告警（按 `HOST_CAPABILITIES.cursor.trustFlagPattern` 匹配）（`src/adapters/cursor/index.mjs`）
-- [ ] T045 [US6] 编写 `docs/adapters/codex.md` 与 `docs/adapters/cursor.md`：各自通道选择、调用前缀、Cursor 安全边界说明（`docs/adapters/codex.md`、`docs/adapters/cursor.md`）
+- [x] T043 [P] [US6] 实现 `src/adapters/codex/index.mjs`（≤100 行）：项目级幂等托管块（标记包裹、重复执行字节一致）（`src/adapters/codex/index.mjs`）
+- [x] T044 [P] [US6] 实现 `src/adapters/cursor/index.mjs`（≤100 行）：`.cursor/rules/sdd-kit-discipline.mdc` 常驻规则 + trust 参数告警（按 `HOST_CAPABILITIES.cursor.trustFlagPattern` 匹配）（`src/adapters/cursor/index.mjs`）
+- [x] T045 [US6] 编写 `docs/adapters/codex.md` 与 `docs/adapters/cursor.md`：各自通道选择、调用前缀、Cursor 安全边界说明（`docs/adapters/codex.md`、`docs/adapters/cursor.md`）
 
 **Checkpoint**：四端收官，每端实现均 ≤100 行且核心未改。
 
