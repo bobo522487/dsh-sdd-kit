@@ -510,7 +510,7 @@ async function repositoryZone({ cwd, host }) {
 /** Candidate bridge configuration files: explicit paths first, then well-known ones. */
 function bridgeCandidates({ cwd, env }) {
   const candidates = [];
-  const cap = HOST_CAPABILITIES.dsh;
+  const cap = HOST_CAPABILITIES[HOST_KEYS[0]];
   const hostPrefix = cap.key.toUpperCase();
   for (const key of ['SDD_BRIDGE_CONFIG', `${hostPrefix}_CONFIG`, `${hostPrefix}_PROFILE_DIR`]) {
     const value = env?.[key];
@@ -545,7 +545,7 @@ async function probeBridgeSource({ cwd, env }) {
     return item(
       'skip', 'BRIDGE_SOURCE',
       '未从环境或仓库发现宿主桥接配置；未探测来源',
-      `请将 SDD_BRIDGE_CONFIG（或 ${HOST_CAPABILITIES.dsh.key.toUpperCase()}_CONFIG）指向宿主插件配置以启用该探针。`
+      `请将 SDD_BRIDGE_CONFIG（或 ${HOST_KEYS[0].toUpperCase()}_CONFIG）指向宿主插件配置以启用该探针。`
     );
   }
   const where = `${path.relative(cwd, chosen.file) || chosen.file}（via ${chosen.key}）`;
@@ -705,7 +705,7 @@ async function safe(name, runner, fallback) {
  */
 export async function runDoctor({
   trigger,
-  host = HOST_CAPABILITIES.dsh.key,
+  host = HOST_KEYS[0],
   cwd = process.cwd(),
   env = process.env,
   platform = process.platform,

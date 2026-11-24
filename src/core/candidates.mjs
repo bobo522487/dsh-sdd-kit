@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES } from './host-capabilities.mjs';
+import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
 
-const DEFAULT_CAP = HOST_CAPABILITIES.dsh;
+const DEFAULT_CAP = HOST_CAPABILITIES[HOST_KEYS[0]];
 const HOST_PREFIX = DEFAULT_CAP.key.toUpperCase();
 function defaultSuperpowersDir() {
   return path.join(os.homedir(), path.dirname(DEFAULT_CAP.skillsDir), 'upstream', 'superpowers');

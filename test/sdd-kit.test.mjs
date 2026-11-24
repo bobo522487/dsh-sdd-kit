@@ -1671,7 +1671,7 @@ test('unknown actions return structured E_ARGS instead of throwing', async () =>
   const br = await runBridge({ action: 'check_task', featureName: 'x', taskMatch: 'T001' });
   assert.equal(br.ok, false);
   assert.equal(br.error.code, 'E_ARGS');
-  assert.match(br.error.message, /Unknown sdd_bridge action/);
+  assert.match(br.error.message, /未知的 sdd_bridge action/);
 });
 
 test('ensure_integration_commands repairs a real project whose .dsh/skills was deleted', async (t) => {
@@ -2153,7 +2153,7 @@ test('sdd_bridge: an unknown action enumerates all four supported actions (REQ-1
   const result = await runBridge({ action: 'nope' });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'E_ARGS');
-  assert.match(result.error.message, /Unknown sdd_bridge action "nope"/);
+  assert.match(result.error.message, /未知的 sdd_bridge action "nope"/);
   for (const name of ['inspect', 'install_overrides', 'restore_overrides', 'sync_index']) {
     assert.match(result.error.message, new RegExp(name), `the hint must list ${name}`);
   }

@@ -10,7 +10,7 @@ import { selectSuperpowersDir } from './candidates.mjs';
 const execFileAsync = promisify(execFile);
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const DEFAULT_CAP = HOST_CAPABILITIES.dsh;
+const DEFAULT_CAP = HOST_CAPABILITIES[HOST_KEYS[0]];
 
 export const DEFAULT_SUPERPOWERS_REPO = 'https://github.com/obra/superpowers.git';
 
@@ -295,8 +295,8 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
       commands,
       error: {
         code: 'E_INTEGRATION_COMMANDS',
-        message: `native Spec Kit commands are missing under ${description.skillsDir} and could not be restored`,
-        hint: 'run `specify init --here --force`, or `specify integration uninstall <key>` then `specify integration install <key>`, and re-run /sdd-setup',
+        message: `原生 Spec Kit 命令技能在 ${description.skillsDir} 下缺失，且无法自动修复`,
+        hint: '请先运行 `specify init --here --force`，或依次运行 `specify integration uninstall <key>` 与 `specify integration install <key>`，然后重新执行 /sdd-setup',
       },
     };
   }
@@ -321,8 +321,8 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
     action,
     error: {
       code: 'E_ARGS',
-      message: `Unknown sdd_upstream action "${action}".`,
-      hint: 'Expected one of: setup, status, sync_superpowers, specify_upgrade, specify_init, ensure_integration_commands, install_bug_ext, install_hooks_ext, switch_integration, update_all.',
+      message: `未知的 sdd_upstream 动作 "${action}"。`,
+      hint: '可用动作：setup、status、sync_superpowers、specify_upgrade、specify_init、ensure_integration_commands、install_bug_ext、install_hooks_ext、switch_integration、update_all。',
     },
   };
 }

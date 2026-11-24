@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES, HOST_NEUTRAL_TOOL_NAMES, getHostCapability } from './host-capabilities.mjs';
+import { HOST_CAPABILITIES, HOST_KEYS, HOST_NEUTRAL_TOOL_NAMES, getHostCapability } from './host-capabilities.mjs';
 import { detectFeaturePhase } from './feature-phase.mjs';
 import { selectSuperpowersDir } from './candidates.mjs';
 
@@ -157,7 +157,7 @@ export function formatGuidanceText(bundle) {
  * @param {{host?: string, cwd?: string, skills?: Array<{name:string,description:string}>, superpowersDir?: string, candidateDirs?: string[], envKeys?: {mirror?: string, home?: string}, defaultDir?: string, env?: object}} options
  */
 export async function assembleGuidance({
-  host = HOST_CAPABILITIES.dsh.key,
+  host = HOST_KEYS[0],
   cwd = process.cwd(),
   skills,
   superpowersDir,

@@ -39,6 +39,9 @@ const HOST_PATTERNS = [
   { code: 'DYNAMIC_IMPORT_CONCAT', re: /\bimport\s*\(\s*['"`][^'"`]*['"`]\s*\+/ },
   // C3 (AC-01): the same evasion spelled as a segment array joined at runtime.
   { code: 'COMPUTED_ADAPTER_SPECIFIER', re: /\[[^\]]*['"](?:\.\.|adapters)['"][^\]]*\]\s*\.\s*join\s*\(/ },
+  // T097 (review I3): a direct HOST_CAPABILITIES.dsh lookup reintroduces the
+  // host-specific default in core. HOST_KEYS[0] is the neutral first-entry form.
+  { code: 'HOST_DSH_CAPABILITY_DEFAULT', re: /\bHOST_CAPABILITIES\s*\.\s*dsh\b/ },
 ];
 
 /**
@@ -66,9 +69,45 @@ async function listCoreModules(coreDir, prefix = '') {
  * still derive them from HOST_CAPABILITIES.
  */
 function stripComments(text) {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  let code = '';
+  let quote = null;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (quote !== null) {
+      code += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      quote = char;
+      code += char;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      while (i < text.length && text[i] !== '\n') i += 1;
+      if (i < text.length) code += '\n';
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
+        if (text[i] === '\n') code += '\n';
+        i += 1;
+      }
+      i += 1;
+      continue;
+    }
+    code += char;
+  }
+  return code;
 }
 
 async function scanCore(coreDir) {
@@ -156,15 +195,34 @@ test('purity scanner self-check: an injected host reference must turn the assert
   try {
     await fs.writeFile(
       path.join(tmp, 'injected.mjs'),
-      "import { defineTool } from '@deepseek-ai/dsh-tools';\nexport const x = ctx.tools;\nconst envName = 'DSH_HOME';\nconst defaultHost = host = 'dsh';\n",
+      "import { defineTool } from '@deepseek-ai/dsh-tools';\nexport const x = ctx.tools;\nconst envName = 'DSH_HOME';\nconst defaultHost = host = 'dsh';\nconst defaultCap = HOST_CAPABILITIES.dsh;\n",
       'utf8'
     );
     const violations = await scanCore(tmp);
-    assert.ok(violations.length >= 4, 'injected host references must be detected');
+    assert.ok(violations.length >= 5, 'injected host references must be detected');
     assert.ok(violations.some((v) => v.code === 'HOST_PACKAGE'));
     assert.ok(violations.some((v) => v.code === 'HOST_CTX'));
     assert.ok(violations.some((v) => v.code === 'HOST_ENV_DSH'));
     assert.ok(violations.some((v) => v.code === 'HOST_DEFAULT_DSH'));
+    assert.ok(violations.some((v) => v.code === 'HOST_DSH_CAPABILITY_DEFAULT'));
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('purity scanner keeps host references inside strings after an inline // sequence (review I1)', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-sdd-kit-purity-string-'));
+  try {
+    await fs.writeFile(
+      path.join(tmp, 'inline.mjs'),
+      'export const url = "a//b"; const tool = "@deepseek-ai/dsh-tools";\n',
+      'utf8'
+    );
+    const violations = await scanCore(tmp);
+    assert.ok(
+      violations.some((v) => v.code === 'HOST_PACKAGE'),
+      `host reference after an inline // inside a string must be detected: ${JSON.stringify(violations)}`
+    );
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

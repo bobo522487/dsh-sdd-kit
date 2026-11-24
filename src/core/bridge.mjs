@@ -259,7 +259,7 @@ async function restoreOverrides(cwd, artifactId, deps = {}) {
       ok: false,
       error: {
         code: 'E_ARGS',
-        message: `Unknown artifact "${artifactId}". Expected one of: ${artifacts.map((a) => a.id).join(', ')}.`,
+        message: `未知的工件 "${artifactId}"。可用工件：${artifacts.map((a) => a.id).join('、')}。`,
       },
     };
   }
@@ -319,8 +319,8 @@ export async function runBridge(args = {}, deps = {}) {
         action,
         error: {
           code: 'E_ARGS',
-          message: `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, restore_overrides, sync_index.`,
-          hint: 'Task checkbox updates belong to upstream /speckit.implement, not to this bridge.',
+          message: `未知的 sdd_bridge action "${action}"。可用 action：inspect、install_overrides、restore_overrides、sync_index。`,
+          hint: '任务勾选更新属于上游 /speckit.implement，不属于本桥接器。',
         },
       };
   }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -231,6 +232,24 @@ test('T096: static guard rejects English prose in doctor/CLI message and fix lit
     }
   }
   assert.ok(scanned > 20);
+});
+
+test('T096: user-facing error text in core uses Chinese prose (review I2)', () => {
+  const files = fsSync.readdirSync(path.join(PKG_ROOT, 'src', 'core'))
+    .filter((name) => name.endsWith('.mjs'))
+    .map((name) => path.join(PKG_ROOT, 'src', 'core', name));
+  const fieldRe = /\b(?:message|hint|fix|reason)\s*:\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/g;
+  let checked = 0;
+  for (const file of files) {
+    const source = fsSync.readFileSync(file, 'utf8');
+    for (const match of source.matchAll(fieldRe)) {
+      const value = match[2];
+      checked += 1;
+      if (isTechnicalLiteral(value)) continue;
+      assertChineseProse(value, `${path.relative(PKG_ROOT, file)} user-facing field`);
+    }
+  }
+  assert.ok(checked > 10, `expected to check user-facing fields, got ${checked}`);
 });
 
 test('T098: POSIX PATH probes exact executable names only', async () => {

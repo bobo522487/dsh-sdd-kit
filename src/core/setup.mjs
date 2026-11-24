@@ -41,7 +41,7 @@ export async function runSetup(args = {}, deps = {}) {
 
   const status = await upstream({ action: 'status', cwd, superpowersDir: args.superpowersDir });
   if (!status.uv.installed) {
-    record('specify_cli', 'failed', { hint: 'uv is required: https://docs.astral.sh/uv/getting-started/installation/' });
+    record('specify_cli', 'failed', { hint: '需要 uv：https://docs.astral.sh/uv/getting-started/installation/' });
     return finish({ restartRequired });
   }
   if (!status.specifyCli.installed || args.upgrade === true) {
@@ -57,7 +57,7 @@ export async function runSetup(args = {}, deps = {}) {
     record('specify_init', init.ok ? 'performed' : 'failed', init.ok ? null : { stderr: init.stderr });
     if (!init.ok) return finish({ restartRequired });
   } else {
-    record('specify_init', 'skipped', { reason: 'existing .specify layout preserved (REQ-15)' });
+    record('specify_init', 'skipped', { reason: '已保留现有 .specify 目录结构（REQ-15）' });
   }
 
   // Install artifacts are untracked, so a legacy checkout can lack the generated
