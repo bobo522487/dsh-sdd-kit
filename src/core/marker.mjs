@@ -88,9 +88,13 @@ export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
 
 /**
  * Pure pending/history partition relative to the current run or session.
- * A marker carrying this run's id is pending even across a wall-clock day
- * boundary; otherwise a timestamp at/after the session baseline is pending.
- * Everything else is history (bad timestamps included).
+ * A marker carrying this run's id is pending across a wall-clock day boundary,
+ * but only inside a bounded run window; otherwise a timestamp at/after the
+ * session baseline is pending. Everything else is history (bad timestamps
+ * included).
+ *
+ * The window matters because the workspace anchor is reused: an unchanged
+ * runId must not keep a years-old marker pending forever (T106).
  *
  * Without a usable baseline the baseline falls back to a bounded history
  * window before `now`. This keeps a freshly written marker pending on the
@@ -98,19 +102,23 @@ export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
  * history instead of warning forever (final review C1).
  */
 export const MARKER_HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const MAX_SAME_RUN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function classifyMarkers(markers = {}, { now = Date.now(), sessionStart, runId } = {}) {
   const parsed = typeof sessionStart === 'number'
     ? sessionStart
     : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : Number.NaN);
   const baseline = Number.isFinite(parsed) ? parsed : now - MARKER_HISTORY_WINDOW_MS;
+  const runFloor = now - MAX_SAME_RUN_AGE_MS;
   const pending = [];
   const history = [];
   for (const [host, marker] of Object.entries(markers ?? {})) {
     if (!marker || typeof marker !== 'object') continue;
-    const sameRun = runId != null && marker.runId === runId;
     const stamped = Date.parse(String(marker.timestamp ?? ''));
-    const withinSession = Number.isFinite(stamped) && stamped >= baseline;
+    const hasTimestamp = Number.isFinite(stamped);
+    const sameRun = runId != null && marker.runId === runId
+      && hasTimestamp && stamped >= runFloor;
+    const withinSession = hasTimestamp && stamped >= baseline;
     (sameRun || withinSession ? pending : history).push(host);
   }
   return { pending, history };

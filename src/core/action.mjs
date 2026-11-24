@@ -13,7 +13,7 @@ import { markerPath, writeMarker } from './marker.mjs';
 import { checkPlanningGuard } from './guard.mjs';
 import { runDoctor } from './doctor.mjs';
 import { HOST_KEYS } from './host-capabilities.mjs';
-import { getRunContext } from './run-context.mjs';
+import { createRunContext, ensureRunAnchor, getRunContext } from './run-context.mjs';
 
 const DEFAULT_HOST = HOST_KEYS[0];
 
@@ -46,17 +46,54 @@ export function resolveRunContext({ params = {}, env = process.env } = {}) {
   const supplied = params.runContext && typeof params.runContext === 'object'
     ? params.runContext
     : null;
-  const generated = supplied ?? getRunContext({ cwd: params.cwd ?? process.cwd() });
-  const declared = params.sessionStart ?? env?.DSH_SDD_KIT_SESSION_START ?? generated?.sessionStart;
+  // Merge supplied facts into the generator: a partial context (for example an
+  // explicit runId without sessionStart) must still get a generated start.
+  const generated = getRunContext({
+    cwd: params.cwd ?? process.cwd(),
+    ...(supplied ?? {}),
+  });
+  const declared = params.sessionStart ?? env?.DSH_SDD_KIT_SESSION_START
+    ?? supplied?.sessionStart ?? generated?.sessionStart;
   const numeric = typeof declared === 'string' && declared.trim() !== '' ? Number(declared) : Number.NaN;
   const parsed = typeof declared === 'number'
     ? declared
     : (Number.isFinite(numeric) ? numeric : (typeof declared === 'string' ? Date.parse(declared) : Number.NaN));
-  const runId = params.runId ?? env?.DSH_SDD_KIT_RUN_ID ?? generated?.runId ?? null;
+  const runId = params.runId ?? env?.DSH_SDD_KIT_RUN_ID
+    ?? supplied?.runId ?? generated?.runId ?? null;
   return {
     ...(Number.isFinite(parsed) ? { sessionStart: parsed } : {}),
     ...(typeof runId === 'string' && runId !== '' ? { runId } : {}),
   };
+}
+
+function hasExplicitRunOverride(params = {}, env = process.env) {
+  const present = (value) => value !== undefined && value !== null && value !== '';
+  return present(params.sessionStart) || present(params.runId)
+    || present(env?.DSH_SDD_KIT_SESSION_START) || present(env?.DSH_SDD_KIT_RUN_ID);
+}
+
+async function stableActionContext(action, params, env) {
+  const resolved = resolveRunContext({ params, env });
+  // Doctor must stay read-only (REQ-38/REQ-39); explicit params/env never persist.
+  // Only the CLI/Host/startup paths that hand in a generated runContext create
+  // the shared anchor; a bare direct runAction call stays side-effect free.
+  const supplied = params.runContext && typeof params.runContext === 'object'
+    ? params.runContext
+    : null;
+  if (!supplied || action === 'doctor' || hasExplicitRunOverride(params, env)) return resolved;
+
+  const cwd = params.cwd ?? process.cwd();
+  const anchor = await ensureRunAnchor({ cwd, context: resolved });
+  const merged = anchor
+    ? { ...supplied, ...anchor }
+    : {
+      ...supplied,
+      ...createRunContext({ cwd, ...supplied, fallbackToProcessStart: true }),
+    };
+  return resolveRunContext({
+    params: { ...params, runContext: merged },
+    env,
+  });
 }
 
 /**
@@ -114,7 +151,9 @@ async function withReload(report, params) {
  * @param {object} params shared parameters (cwd, trigger, ...)
  */
 export async function runAction(action, params = {}, deps = {}) {
-  const withContext = { ...params, ...resolveRunContext({ params, env: params.env ?? process.env }) };
+  const env = params.env ?? process.env;
+  const context = await stableActionContext(action, params, env);
+  const withContext = { ...params, ...context };
   switch (action) {
     case 'update':
       return withReload(await (deps.runUpdate ?? runUpdate)(withContext), withContext);

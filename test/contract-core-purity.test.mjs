@@ -317,3 +317,25 @@ test('a literal dynamic import stays legal so lazy loading is not banned outrigh
     await fs.rm(tmp, { recursive: true, force: true });
   }
 });
+
+test('003 verify-upstream 契约表保留历史 0，当前状态说明写在表外', async () => {
+  const doc = await fs.readFile(
+    path.join(PKG_ROOT, 'specs', '003-install-safety-hardening', 'contracts', 'verify-upstream-script.md'),
+    'utf8'
+  );
+  const lines = doc.split('\n');
+  const historicalRows = lines.filter((line) => [
+    '| `specify` 不在 PATH',
+    '| `uv` 不在 PATH',
+    '| 无网络（`init` 需下载模板）',
+  ].some((prefix) => line.startsWith(prefix)));
+  assert.equal(historicalRows.length, 3, '三条历史场景必须仍在契约表内');
+  for (const row of historicalRows) {
+    assert.match(row, /\|\s*`0`\s*\|/, '历史退出码必须原样保留为 0');
+    assert.ok(!row.includes('已被 T099 取代'), '表格单元格不得混入当前状态说明');
+  }
+  assert.ok(
+    lines.some((line) => !line.startsWith('|') && line.includes('已被 T099 取代')),
+    '当前状态说明必须写在表格外'
+  );
+});

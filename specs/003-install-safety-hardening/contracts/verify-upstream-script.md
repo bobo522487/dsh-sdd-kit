@@ -89,13 +89,15 @@ Status: passed
 
 | 场景 | `status` | 退出码 | 输出要求 |
 |---|---|---|---|
-| `specify` 不在 PATH | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 「未执行（环境不可用）：specify not found on PATH」 |
-| `uv` 不在 PATH | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 同上 |
-| 无网络（`init` 需下载模板） | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 含原始 stderr 片段与「未执行（环境不可用）：network」 |
+| `specify` 不在 PATH | `not_executed` | `0` | 「未执行（环境不可用）：specify not found on PATH」 |
+| `uv` 不在 PATH | `not_executed` | `0` | 同上 |
+| 无网络（`init` 需下载模板） | `not_executed` | `0` | 含原始 stderr 片段与「未执行（环境不可用）：network」 |
 | `init` 参数被上游改名 | `failed` | `1` | `checks[init-args].detail` 含完整命令与 exit code；附 stderr 前 2000 字符 |
 | `extension add --dev` 被移除 | `failed` | `1` | 同上，指明 `--dev` 参数 |
 | `provides.hooks` 数量变化 | `failed` | `1` | `manifest-contract` 的 detail 写明实际值 vs 期望值 |
 | `extension.yml` 少一个事件 | `failed` | `1` | `hooks-registered` 的 detail 列出缺失事件名 |
+
+> **当前状态（T099）**：上表三条历史场景的退出码按原文保留为 `0`；T099 之后当前实现把 `not_executed` 改为非零退出（`1`），该变更记录在本节末尾与第 6 节测试契约，不改写历史表格。
 
 ## 5. 调用位置与报告要求
 

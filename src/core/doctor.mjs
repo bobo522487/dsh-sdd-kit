@@ -574,6 +574,8 @@ async function probeBridgeSource({ cwd, env }) {
 async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   const items = [];
   const markers = await readMarkers({ cwd });
+  // classifyMarkers bounds same-run reuse to MAX_SAME_RUN_AGE_MS (7 days):
+  // a reused workspace anchor cannot keep a years-old marker pending forever.
   const classified = classifyMarkers(markers, { now, sessionStart, runId });
   const pending = [...classified.pending].sort();
   const history = [...classified.history].sort();
