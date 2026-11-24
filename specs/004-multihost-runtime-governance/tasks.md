@@ -442,3 +442,14 @@ Task: "实现 src/adapters/cursor/index.mjs（规则目录 + trust 告警）"
 - 每任务一次原子提交（章程 IV），提交信息标明实现的任务编号
 - 勾选任务前 `npm test` MUST 全绿（章程 III）
 - 避免：含糊任务、同文件冲突、破坏故事独立性的跨故事依赖
+
+---
+
+## Phase 13: Convergence（终轮规格差距收敛）
+
+- [x] T096 [US7] 按章程 VI 将 `src/core/doctor.mjs` 与 `bin/sdd-kit.mjs` 中新增的面向用户 `message`/`fix` 英文散文完整中文化；命令、路径、字段名、上游原文引用与模板固定标题保留原文，并补一条测试防止未豁免英文说明回流（`src/core/doctor.mjs`, `bin/sdd-kit.mjs`, `test/doctor.test.mjs`, `test/contract-parity.test.mjs`）per Constitution VI (contradicts)
+- [x] T097 [US1] 将 core 中残留的 `DSH_*` 环境/路径解析与 `host='dsh'`、`EXPECTED_INTEGRATION='dsh'` 默认值下沉到 `src/adapters/dsh/` 或 `HOST_CAPABILITIES`，core 只接受注入参数；删除 `test/contract-core-purity.test.mjs` 的 `LEGACY_HOST_REFERENCES`，保留注入违规即红的静态自证（`src/core/candidates.mjs`, `src/core/guidance.mjs`, `src/core/upstream.mjs`, `src/core/doctor.mjs`, `src/adapters/dsh/index.mjs`, `test/contract-core-purity.test.mjs`）per REQ-01/REQ-02/AC-01/T079 (partial)
+- [x] T098 [US7] 让 `findOnPath` 平台感知：POSIX 继续精确名探测，Windows 追加 `PATHEXT`/`.exe`/`.cmd`/`.ps1` 候选；补 Windows-shaped PATH 回归证明已安装工具不被误报缺失且零写不变（`src/core/doctor.mjs`, `test/doctor.test.mjs`）per REQ-34/AC-18/T074 (partial)
+- [x] T099 [US7] 让 `scripts/verify-upstream.mjs` 自身对 `not_executed` 与 `versionDrift.needsAdjustment` 返回非零退出码，CI gate 继续二次拦截；同步修订 `INV-23` 测试并补进程级退出码断言（`scripts/verify-upstream.mjs`, `test/sdd-kit.test.mjs`, `test/ci-matrix.test.mjs`）per T090/REQ-41 (partial)
+- [x] T100 [US7] 在具备宿主运行时的环境实测三项 peer 依赖下界并写入 `package.json`，把版本下界与预发布用例移入常态 CI/脚本而非仅靠 `DSH_SDD_KIT_INTEGRATION`，同步 `stop-loss.md` 的 M4 记录（`package.json`, `test/compat.test.mjs`, `.github/workflows/upstream-integration.yml`, `docs/adapters/stop-loss.md`）per REQ-21/AC-11/T091 (partial)
+- [x] T101 [US4] 让规划期护栏拦截响应显式提示“先回到定义阶段”，同步 `extension.yml` 钩子描述与命令文档，补精确文案断言；保持只读、不写状态文件、判定仍为当前 feature 的 `tasks.md` 有勾选任务（`src/core/guard.mjs`, `spec-kit-extension/extension.yml`, `spec-kit-extension/commands/speckit.superpowers-hooks.guard.md`, `test/guard.test.mjs`）per REQ-23/AC-13/T033 (contradicts)
