@@ -117,7 +117,7 @@
 **不变量**
 
 - `INV-10`：`candidates` 中 `realPath` 非 `null` 的项 MUST 两两不同（realpath 去重，保留首次声明序号）。
-- `INV-11`：被选中项 MUST 是所有 `eligible` 项中 `mtimeNs` 最大者；`mtimeNs` 相同或为 `null` 时 MUST 取 `declaredIndex` 最小者（确定性，REQ-07）。
+- `INV-11`：除 `reason === 'explicit'` 外，被选中项 MUST 是所有 `eligible` 项中 `mtimeNs` 最大者；`mtimeNs` 相同或为 `null` 时 MUST 取 `declaredIndex` 最小者（确定性，REQ-07）。显式来源代表调用方意志，即使目录尚不存在（是 clone 目标）也直接胜出，不参与新鲜度排序；否则会被静默改道到别的镜像。
 - `INV-12`：`candidates.filter(c => c.selected).length === 1` 恒成立。
 - `INV-13`：`fallback === true` 时 `reason === 'default'` 且 `realPath === null`；`candidates` 仍列出全部声明项（含不可解析者，`eligible:false`），MUST NOT 裁剪成 1 项——排错时需要看到「本来还有哪些候选、为什么都不行」。
 
@@ -183,7 +183,7 @@
 | `status` | enum | 顶层兼容字段，取 `artifacts[0].status` | 六个取值之一，见下行 |
 | `path` | string | 顶层兼容字段，取 `artifacts[0].path` | — |
 | `artifacts[].id` | string | 见 E1 | — |
-| `artifacts[].status` | enum | 六类之一，与 `verdict` + 覆盖意图一一对应 | `written`（`not_installed`）\| `unchanged`（`installed_consistent`）\| `skipped_user_modified`（`user_modified` 且未显式覆盖）\| `skipped_stale`（`stale_upstream` 且未显式覆盖）\| `refreshed`（`stale_upstream` 且显式覆盖）\| `failed` |
+| `artifacts[].status` | enum | 六类之一，与 `verdict` + 覆盖意图一一对应 | `written`（`not_installed`，或 `user_modified` / `unknown` 且显式覆盖成功）\| `unchanged`（`installed_consistent`）\| `skipped_user_modified`（`user_modified` 且未显式覆盖）\| `skipped_stale`（`stale_upstream` 且未显式覆盖）\| `refreshed`（仅 `stale_upstream` 且显式覆盖）\| `failed` |
 | `artifacts[].verdict` | enum | 见 E2 | — |
 | `artifacts[].reason` | string \| null | 失败时 MUST 非空且含错误码前缀 | `"E_SYMLINK: /abs/x"` |
 | `artifacts[].nextAction` | object \| null | 仅「需要用户决定」时非空；形如 `{ tool, args }` | `{ "tool": "sdd_bridge", "args": { "action": "install_overrides", "overwrite": true } }` |

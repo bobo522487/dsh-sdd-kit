@@ -38,6 +38,8 @@
 8. 其余失败 → status='failed'，逐项 detail 写明「哪个命令 / 哪个参数 / 哪个字段」
 9. finally: 若 !--keep 则 rm -rf tmp
 10. 输出报告；exit code = status==='failed' ? 1 : 0
+    （CI 额外用 --json 读取 status，非 'passed' 即失败：工具缺失导致的 not_executed
+    在本脚本里是合法退出码 0，但在夜班里绝不能静默绿灯。）
 ```
 
 **关键约束**：

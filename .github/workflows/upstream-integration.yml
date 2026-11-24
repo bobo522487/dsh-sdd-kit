@@ -14,5 +14,14 @@ jobs:
         with:
           node-version: '20'
       - uses: astral-sh/setup-uv@v5
+      - name: Install the CLI under test
+        # The runner does not ship `specify`; without this step the verifier
+        # would take its documented `not_executed` path and the nightly job
+        # would go green without testing anything.
+        run: |
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
       - name: Verify the live upstream contract
-        run: node scripts/verify-upstream.mjs
+        run: |
+          node scripts/verify-upstream.mjs --json > /tmp/upstream-report.json
+          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + (r.reason ? ' — ' + r.reason : '')); process.exit(1); }"

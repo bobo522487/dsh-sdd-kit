@@ -40,7 +40,8 @@
 13. if eligible 为空:
 14.     selected ← candidates 中 reason === 'default' 的那一项；fallback ← true
 15. else:
-16.     selected ← eligible 按 (mtimeNs 降序, declaredIndex 升序) 排序后的首项；fallback ← false
+16.     selected ← 若存在 reason:'explicit' 的声明则直接选中（即使其 realPath 为 null——它是 clone 目标，
+             静默改道会违背调用方意图）；否则取 eligible 按 (mtimeNs 降序, declaredIndex 升序) 排序后的首项；fallback ← false
 17. 给 candidates 逐项打 selected 标记：仅 selected 那一项为 true（INV-12）
 18. 返回 { dir: resolve(selected.input), realPath: selected.realPath ?? null,
            reason: selected.reason, mtimeNs: selected.mtimeNs ?? null, fallback, candidates }

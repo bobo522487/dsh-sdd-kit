@@ -63,7 +63,6 @@ export async function classifyArtifact(artifact) {
   if (localSha256 === bundledSha256) {
     return result(bundledSha256, bundledVersion, VERDICT.INSTALLED_CONSISTENT, {
       localSha256,
-      localVersion: bundledVersion,
       action: 'skip',
     });
   }

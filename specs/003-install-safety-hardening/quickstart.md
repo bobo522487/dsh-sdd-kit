@@ -64,7 +64,7 @@ import("/home/bobo/Projects/dsh-sdd-kit/src/core/bridge.mjs").then(async ({ runB
 '
 ```
 
-期望：`refreshed {"captured":true,"refreshed":false,...}` —— 覆盖前留下了你的定制内容作为快照（`refreshed` 表示「显式覆盖了一个已存在的文件」）。
+期望：`written {"captured":true,"refreshed":false,"path":"…"}` —— 覆盖前留下了你的定制内容作为快照；`written` 表示显式覆盖成功，`refreshed` 只用于「历史版本刷新」（`stale_upstream` + 显式覆盖）。
 
 检查快照目录是否**自忽略**（关键：新 `specify init` 项目的 `.specify/.gitignore` 并**不**忽略 `templates/overrides/`，所以本插件必须自带忽略规则；快照目录只在首次显式覆盖时创建）：
 

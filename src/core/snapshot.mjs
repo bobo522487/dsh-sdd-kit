@@ -35,7 +35,7 @@ export async function readManifest(artifact) {
 
 async function writeManifest(artifact, manifest) {
   const target = path.join(artifact.snapshotDir, 'manifest.json');
-  await fs.writeFile(target, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await atomicWriteFile(target, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf8'));
 }
 
 /**
@@ -61,14 +61,14 @@ export async function captureSnapshot(cwd, artifact, deps = {}) {
   const entry = {
     relativePath: toPosix(path.relative(root, artifact.path)),
     sha256: currentSha256,
-    sourceVersion: (await versionForSha(artifact, currentSha256)) ?? 'unknown',
+    sourceVersion: (await versionForSha(artifact, currentSha256)) ?? null,
     capturedAt: clock(),
   };
   manifest.schema = SCHEMA;
   manifest.snapshots = { ...manifest.snapshots, [artifact.id]: entry };
   await writeManifest(artifact, manifest);
 
-  return { captured: true, entry };
+  return { captured: true, refreshed: Boolean(existing), path: path.join(artifact.snapshotDir, `${artifact.id}.bak`), entry };
 }
 
 function restoredEntry(id, status, extra = {}) {

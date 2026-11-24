@@ -176,7 +176,8 @@ async function installOne(root, artifact, overwrite, clock) {
         entry.status = 'unchanged';
         return entry;
       case VERDICT.UNKNOWN:
-        return entry;
+        if (!overwrite) return entry;
+        break;
       case VERDICT.NOT_INSTALLED:
         await writeArtifact(root, artifact);
         entry.status = 'written';
@@ -200,12 +201,23 @@ async function installOne(root, artifact, overwrite, clock) {
         return entry;
     }
 
-    // Explicit overwrite of an existing file: snapshot the bytes we are about to
-    // replace, then swap them in.
+    // Explicit overwrite of an existing file: guard BOTH the target and the
+    // snapshot directory before touching anything. The snapshot lives under
+    // the same parent, so a symlinked parent would otherwise write outside.
+    assertInside(root, artifact.path);
+    assertInside(root, artifact.snapshotDir);
+    await assertNoSymlinkComponent(root, artifact.path);
+    await assertNoSymlinkComponent(root, artifact.snapshotDir);
+
     const snapshot = await captureSnapshot(root, artifact, clock ? { clock } : {});
-    entry.snapshot = snapshot.entry ?? null;
+    entry.snapshot = {
+      captured: Boolean(snapshot.captured),
+      refreshed: Boolean(snapshot.refreshed),
+      path: snapshot.path ?? null,
+    };
     await writeArtifact(root, artifact);
-    entry.status = 'refreshed';
+    entry.status = classification.verdict === VERDICT.STALE_UPSTREAM ? 'refreshed' : 'written';
+    entry.reason = null;
     return entry;
   } catch (error) {
     entry.status = 'failed';

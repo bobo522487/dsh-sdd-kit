@@ -37,9 +37,14 @@ export async function findSymlinkComponent(baseDir, targetPath) {
     let stat;
     try {
       stat = await fs.lstat(cursor);
-    } catch {
-      // The remaining components do not exist yet; nothing further can be a link.
-      return null;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+        // The remaining components do not exist yet; nothing further can be a link.
+        return null;
+      }
+      // EACCES and friends must NOT be mistaken for "missing" — that would let
+      // the guard pass for a path we never actually inspected.
+      throw codedError(error.code ?? 'E_LSTAT', cursor);
     }
     if (stat.isSymbolicLink()) return cursor;
   }

@@ -86,7 +86,7 @@ export async function runSetup(args = {}, deps = {}) {
     nextAction: ov.artifacts?.[0]?.nextAction ?? null,
     artifacts: ov.artifacts ?? [],
   };
-  const ovStep = ov.status === 'failed'
+  const ovStep = ov.ok === false || ov.status === 'failed'
     ? 'failed'
     : ov.status === 'written' || ov.status === 'refreshed'
       ? 'performed'

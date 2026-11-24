@@ -1508,6 +1508,28 @@ test('runSetup: the install_overrides step reports the classification detail (RE
   assert.equal(step.detail.artifacts.length, 1);
 });
 
+test('runSetup: a partial artifact failure fails the whole run even when the top status looks written (REQ-16)', async () => {
+  const { deps } = setupFakes({ hasSpecifyDir: true });
+  const partial = async (args) =>
+    args.action === 'inspect'
+      ? { hasSpecifyDir: true, hasConstitution: true, hasEarsOverride: false, features: [], bugs: [] }
+      : {
+          action: 'install_overrides',
+          ok: false,
+          status: 'written',
+          path: '/tmp/x/.specify/templates/overrides/spec-template.md',
+          artifacts: [
+            { id: 'ears-spec-template', status: 'written', verdict: 'not_installed', reason: null, nextAction: null, snapshot: null },
+            { id: 'other', status: 'failed', verdict: 'unknown', reason: 'EACCES', nextAction: null, snapshot: null },
+          ],
+        };
+  const report = await runSetup({ cwd: process.cwd() }, { ...deps, runBridge: partial });
+  const step = report.steps.find((s) => s.name === 'install_overrides');
+  assert.equal(step.status, 'failed', 'ok:false must win over the backwards-compatible top status');
+  assert.equal(step.detail.artifacts.length, 2);
+  assert.equal(report.ok, false);
+});
+
 test('runSetup: a failed override install fails the whole run without hiding other steps (REQ-16)', async () => {
   const { deps } = setupFakes({ hasSpecifyDir: true });
   const failing = async (args) =>
@@ -1721,6 +1743,19 @@ test('fsutil: guards reject path escapes and symlinked components', async (t) =>
     assert.equal(await findSymlinkComponent(cwd, path.join(cwd, 'a-link', 'x.md')), link);
     await assert.rejects(() => assertNoSymlinkComponent(cwd, path.join(cwd, 'a-link', 'x.md')), /E_SYMLINK/);
     assert.equal(await assertNoSymlinkComponent(cwd, path.join(cwd, 'a', 'x.md')), null);
+
+    if (process.getuid?.() !== 0) {
+      const locked = path.join(cwd, 'locked');
+      await fs.mkdir(locked);
+      await fs.writeFile(path.join(locked, 'x.md'), 'x\n', 'utf8');
+      await fs.chmod(locked, 0o000);
+      await assert.rejects(
+        () => findSymlinkComponent(cwd, path.join(locked, 'x.md')),
+        /EACCES/,
+        'an unreadable component is not the same as a missing one'
+      );
+      await fs.chmod(locked, 0o755);
+    }
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
     await fs.rm(outside, { recursive: true, force: true });
@@ -1765,7 +1800,7 @@ test('snapshot: capture self-ignores the backup directory and refreshes only on 
     const entry = manifest.snapshots['ears-spec-template'];
     assert.equal(entry.relativePath, '.specify/templates/overrides/spec-template.md');
     assert.equal(entry.sha256, await sha256File(artifact.path));
-    assert.equal(entry.sourceVersion, 'unknown', 'content that no ledger entry knows reports unknown');
+    assert.equal(entry.sourceVersion, null, 'content that no ledger entry knows has no version');
     assert.equal(entry.capturedAt, '2026-01-01T00:00:00.000Z');
     assert.equal(Object.keys(manifest.snapshots).includes('.gitignore'), false, 'the ignore file is not a snapshot entry');
 
@@ -1811,6 +1846,7 @@ test('install_overrides: writes only when absent and then leaves a consistent fi
     assert.equal(second.ok, true);
     assert.equal(second.status, 'unchanged');
     assert.equal(second.artifacts[0].verdict, 'installed_consistent');
+    assert.equal(second.artifacts[0].localVersion, null, 'localVersion is only meaningful for stale_upstream');
     assert.equal(after.mtimeNs, before.mtimeNs, 'INV-5: a consistent install must not touch the file');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -1929,7 +1965,12 @@ test('restore_overrides: restores the pre-overwrite bytes and keeps the snapshot
     await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
 
     const forced = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
-    assert.equal(forced.status, 'refreshed');
+    assert.equal(forced.status, 'written', 'only stale_upstream + overwrite is `refreshed`');
+    assert.deepEqual(forced.artifacts[0].snapshot, {
+      captured: true,
+      refreshed: false,
+      path: path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'),
+    });
     assert.equal(await fs.readFile(target, 'utf8'), shipped);
 
     const restored = await runBridge({ action: 'restore_overrides', cwd });
@@ -1938,7 +1979,7 @@ test('restore_overrides: restores the pre-overwrite bytes and keeps the snapshot
     assert.equal(restored.restored.length, 1);
     assert.equal(restored.restored[0].id, 'ears-spec-template');
     assert.equal(restored.restored[0].path, target);
-    assert.equal(restored.restored[0].sourceVersion, 'unknown');
+    assert.equal(restored.restored[0].sourceVersion, null, 'an unledgered snapshot has no version');
     assert.equal(await fs.readFile(target, 'utf8'), 'hand edited\n');
     assert.equal(
       await fs.readFile(path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'), 'utf8'),
@@ -2132,6 +2173,50 @@ test('install_overrides: a symlinked parent directory is refused on first instal
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
     await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: explicit overwrite guards the snapshot path before writing outside (REQ-15)', async (t) => {
+  if (process.platform === 'win32') return t.skip('creating symlinks on Windows needs elevation; covered on POSIX only');
+  const cwd = await makeTempDir();
+  const outside = await makeTempDir();
+  try {
+    await fs.mkdir(path.join(cwd, '.specify', 'templates'), { recursive: true });
+    await fs.writeFile(path.join(outside, 'spec-template.md'), 'outside hand edit\n', 'utf8');
+    await fs.symlink(outside, path.join(cwd, '.specify', 'templates', 'overrides'));
+
+    const result = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'failed');
+    assert.match(result.artifacts[0].reason, /^E_SYMLINK: /);
+    assert.deepEqual(await fs.readdir(outside), ['spec-template.md'], 'no snapshot may be created behind the link');
+    assert.equal(await fs.readFile(path.join(outside, 'spec-template.md'), 'utf8'), 'outside hand edit\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: an unknown target is overwritable on explicit intent (REQ-05)', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX permission bits are not enforceable on Windows');
+  if (process.getuid?.() === 0) return t.skip('root ignores file permission bits');
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await fs.chmod(target, 0o000);
+
+    const forced = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+    assert.equal(forced.status, 'written', 'overwrite:true must be a way out of `unknown`');
+    assert.equal(forced.artifacts[0].verdict, 'unknown');
+    assert.equal(forced.artifacts[0].reason, null, 'a successful write clears the earlier read error');
+    assert.equal(
+      await fs.readFile(target, 'utf8'),
+      await fs.readFile(path.join(PKG_ROOT, 'overrides', 'spec-template.md'), 'utf8')
+    );
+  } finally {
+    await fs.chmod(target, 0o644).catch(() => {});
+    await fs.rm(cwd, { recursive: true, force: true });
   }
 });
 
@@ -2437,6 +2522,8 @@ test('verify-upstream: the daily workflow exists with schedule and manual dispat
   assert.match(workflow, /schedule:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /verify-upstream/);
+  assert.match(workflow, /uv tool install specify-cli/, 'CI must install the tool it verifies');
+  assert.match(workflow, /status\s*!==\s*['"]passed['"]/, 'CI must fail on not_executed instead of silently going green');
 });
 
 test('verify-upstream: the unit suite never imports the real verification module (REQ-18)', async () => {

@@ -71,7 +71,7 @@ dsh plugin --profile web update dsh-sdd-kit --latest
 | `stale_upstream` | 指纹命中旧版本台账 | 保留现状并提示可刷新（附 `localVersion`/`bundledVersion`） |
 | `unknown` | 读不了（权限、符号链接等） | 不写入，报告原因 |
 
-`nextAction` 是机器可读建议（形如 `{ tool, args }`），技能只原样展示并等确认，绝不自行执行——所以手工定制不会被静默覆盖。
+`nextAction` 是机器可读建议（形如 `{ tool, args }`），技能只原样展示并等确认，绝不自行执行——所以手工定制不会被静默覆盖。确认显式覆盖后，报告状态为 `written`（手改/未知来源）或 `refreshed`（仅历史版本刷新）；`unknown` 有了显式意图也可恢复。
 
 **快照与一键回滚**：显式覆盖前，原内容先快照到 `.specify/templates/overrides/.backup/`（`<id>.bak` + `manifest.json`）。该目录**自带 `.gitignore`（内容 `*`）**，因此永远不出现在 `git status` 里，也不依赖、不改写你项目根目录的 `.gitignore`。回滚用 `sdd_bridge(action: "restore_overrides")`（可传 `artifact` 只还原某一项）：逐项校验快照指纹，只还原清单内的文件，空清单返回 `ok:false` 而不是假装成功；成功后快照保留，可重复回滚。
 
