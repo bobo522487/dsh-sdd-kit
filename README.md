@@ -59,6 +59,28 @@ dsh plugin --profile web update dsh-sdd-kit --latest
    - 用原生 Spec Kit 评估：`/speckit-bug-assess "<symptom>" slug=<slug>`
    - 用原生 `/speckit-bug-fix slug=<slug>` 修复。`before_bug_fix` 钩子自动注入系统化调试与复现测试纪律，`after_bug_fix` 钩子在写完修复报告后做两阶段自审并提示 `/speckit-bug-test slug=<slug>`，直至 `verified`。
 
+## 安装安全性
+
+模板覆盖（`.specify/templates/overrides/spec-template.md`）不再「文件存在就跳过」。每次 `/sdd-setup` 或 `sdd_bridge(action: "install_overrides")` 都先按内容指纹判定状态，再决定动作：
+
+| 状态 | 含义 | 默认行为 |
+|---|---|---|
+| `not_installed` | 目标文件不存在 | 写入随包模板 |
+| `installed_consistent` | 指纹与随包模板一致 | 不写入、不碰 mtime |
+| `user_modified` | 指纹既非随包也不在历史台账里 | 保留你的改动，报告 `nextAction` |
+| `stale_upstream` | 指纹命中旧版本台账 | 保留现状并提示可刷新（附 `localVersion`/`bundledVersion`） |
+| `unknown` | 读不了（权限、符号链接等） | 不写入，报告原因 |
+
+`nextAction` 是机器可读建议（形如 `{ tool, args }`），技能只原样展示并等确认，绝不自行执行——所以手工定制不会被静默覆盖。
+
+**快照与一键回滚**：显式覆盖前，原内容先快照到 `.specify/templates/overrides/.backup/`（`<id>.bak` + `manifest.json`）。该目录**自带 `.gitignore`（内容 `*`）**，因此永远不出现在 `git status` 里，也不依赖、不改写你项目根目录的 `.gitignore`。回滚用 `sdd_bridge(action: "restore_overrides")`（可传 `artifact` 只还原某一项）：逐项校验快照指纹，只还原清单内的文件，空清单返回 `ok:false` 而不是假装成功；成功后快照保留，可重复回滚。
+
+**写入安全**：所有写入走「同目录临时文件 → `fsync` → 单次 `rename`」，异常时清理临时文件且目标保持原内容；写入前逐段检查路径分量，任一层是符号链接或逃出项目根即拒绝（`E_SYMLINK` / `E_ESCAPE`），不会顺着软链改到项目外。多个产物时单个失败不影响其余，报告里逐项给出状态。
+
+**候选目录选择**：`~/.dsh/upstream/superpowers` 不再是硬编码唯一答案。候选按声明顺序来自：显式 `superpowersDir` → 调用方 `candidateDirs` → `DSH_SDD_KIT_SUPERPOWERS_DIR` → `$DSH_HOME/upstream/superpowers` → 默认 `~/.dsh/upstream/superpowers`；按 `realpath` 去重（同一目录的多个别名只算一次）、最近修改时间优先、同时间按声明顺序决胜，报告里给出所选绝对路径与依据。不扫描文件系统，只认这五个声明来源。
+
+**真实上游验证**：`npm run verify:upstream` 会在临时项目里真跑 `specify init`、`specify extension add --dev`、`specify extension list --json`，核对参数与扩展契约今天是否仍成立。工具缺失或断网时输出「未执行（环境不可用）」并返回 0，契约不符才返回 1。它不进 `npm test`（日常不联网），`.github/workflows/upstream-integration.yml` 每日 03:00 UTC 跑一次，也可手动触发。
+
 ## 扩展钩子（Hooks）
 
 执行纪律不再由一个桥接技能承载，而是由仓库内 `spec-kit-extension/` 这个标准 Spec Kit 扩展注入：
