@@ -167,7 +167,7 @@ Status: not_executed
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `verdict: "unknown"` + `reason: "EACCES"` | 目标文件不可读 | `chmod 644` 后重试；或先回滚 |
+| `verdict: "unknown"` + `reason: "EACCES"` | 目标文件不可读 | `chmod 644` 后重试；或先回滚。加 `overwrite:true` 也不会绕过——读不出字节就没有可回滚快照，会报 `E_SNAPSHOT_UNREADABLE` |
 | `E_SYMLINK: /abs/path` | 路径某一层是符号链接 | 用真实路径重跑；不要用软链指向模板目录 |
 | `E_ESCAPE: /abs/outside` | 目标解析后落在项目根外 | 检查 `cwd` 是否传错；插件不会写项目外 |
 | `status: "no_snapshot"` | 从未发生过覆盖 | 先跑一次带 `overwrite:true` 的安装 |

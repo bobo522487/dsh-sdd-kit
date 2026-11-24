@@ -45,21 +45,26 @@
 16.  else if verdict == unknown and not overwrite:
 17.      status ← 'failed'; reason ← <error.code>
 18.  else:                              # 显式覆盖路径
-19.      guard ← assertInside(cwd, a.path) then assertNoSymlinkComponent(cwd, a.path)
-20.      if guard fails → status ← 'failed'; reason ← 'E_ESCAPE: …' | 'E_SYMLINK: …'
-21.      else captureSnapshot(a) then atomicWriteFile(a.path, bundledBytes)
-22.           status ← (verdict == stale_upstream ? 'refreshed' : 'written')
+19.      guard ← assertInside(cwd, a.path) and assertInside(cwd, a.snapshotDir)
+20.              then assertNoSymlinkComponent(cwd, a.path) and assertNoSymlinkComponent(cwd, a.snapshotDir)
+21.      if guard fails → status ← 'failed'; reason ← 'E_ESCAPE: …' | 'E_SYMLINK: …'   # 快照目录同样可能被链接
+22.      snap ← captureSnapshot(a)
+23.      if snap.restorable == false and snap.reason != 'target_missing':
+24.          status ← 'failed'; reason ← snap.reason      # 没有可还原副本就不许覆盖（REQ-09/REQ-11）
+25.      else atomicWriteFile(a.path, bundledBytes)
+26.           status ← (verdict == stale_upstream ? 'refreshed' : 'written'); reason ← null
 23. return { action:'install_overrides', ok, status, path, artifacts:[…] }
 ```
 
 **关键约束**：
 
+- **没有快照就不许覆盖**（REQ-09/REQ-11）：`captureSnapshot()` 返回 `restorable === false` 时 MUST 立即 `failed`，MUST NOT 走到 `atomicWriteFile()`；唯一例外是 `target_missing`（首次安装，没有内容需要备份）。`unknown` + `overwrite:true` 不是「总能写」的通行证——目标读不出字节时根本无法留下可回滚副本。
 - **判定先于任何写入**（REQ-01）：`classifyArtifact` 必须在第 4 步完成，MUST NOT 先写后判。
 - **`installed_consistent` 零副作用**（REQ-02 / INV-5）：不 `open` 目标、不 `utimes`、不留快照、不刷新清单。
 - **`user_modified` 默认不改写**（REQ-03 / INV-20）：`nextAction` 必须非空，且是**机器可读对象**而非命令行字符串——技能正文因此不必硬编码动作名。
 - **`stale_upstream` 默认不改写**（REQ-04）：报告必须同时含 `localVersion` 与 `bundledVersion`；只有 `overwrite:true` 才刷新，且此时 `status === 'refreshed'`（与首次安装的 `written` 可区分）。
 - **`unknown` 不降级**（REQ-05 / INV-4）：异常只能落 `unknown`；`unknown` 且未显式覆盖时 `status` 为 `failed` 并附 `error.code`，MUST NOT 当作 `not_installed` 写入。
-- **快照先于覆盖**（REQ-09）：只在「目标已存在且将被改写」时留快照；刷新语义见 [restore 契约](./sdd-bridge-restore-overrides.md) 的 INV-14。
+- **快照先于覆盖**（REQ-09）：只在「目标已存在且将被改写」时留快照；刷新语义见 [restore 契约](./sdd-bridge-restore-overrides.md) 的 INV-14。快照未刷新但 `.bak` 仍可回滚时，报告 MUST 回填 `path`（`{captured:false, refreshed:false, path:'…'}`），不得让调用方以为「没有快照」。
 - **快照目录自忽略**（INV-17）：创建 `.backup/` 时 MUST 同时写入 `.backup/.gitignore`（内容恰为 `*`）。MUST NOT 依赖宿主项目的 `.gitignore`——实测下游 `specify init` 项目并不忽略 `templates/overrides/`，也 MUST NOT 改写宿主的 `.gitignore`。
 - **原子写入**（REQ-13/14）：同目录临时文件 `.<basename>.<pid>.<random>.tmp` → `writeFile` → `sync` → `close` → `rename`；`finally` 清理残留；异常上抛但目标保持原内容。
 - **拒绝顺序**（REQ-15）：`E_ESCAPE`（realpath 越界）先于 `E_SYMLINK`（路径分量是链接），二者都先于任何 `open`。目标自身是符号链接同样拒绝——`rename` 会替换链接本身（实测），不检查就是静默破坏。
@@ -103,6 +108,7 @@
 | realpath 逃出项目根 | `false` | `failed` | 原判定 | `E_ESCAPE: /abs/outside` |
 | 临时文件创建失败（磁盘满/权限） | `false` | `failed` | 原判定 | `EEXIST` / `ENOSPC` / `EACCES` |
 | 快照写入失败 | `false` | `failed` | 原判定 | 快照错误码；目标未被改写 |
+| 目标存在但读不出字节（`EACCES` 等），却要求覆盖 | `false` | `failed` | `unknown` | `E_SNAPSHOT_UNREADABLE: EACCES` |
 | 随包文件缺失（打包错误） | `false` | `failed` | — | `E_BUNDLED_MISSING` |
 
 失败时 MUST NOT 抛异常（与既有 `runBridge` 的 `E_ARGS` 风格一致），且 MUST NOT 留下临时文件或半写目标。

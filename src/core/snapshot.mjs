@@ -46,13 +46,32 @@ export async function captureSnapshot(cwd, artifact, deps = {}) {
   const root = path.resolve(cwd || process.cwd());
   const clock = deps.clock ?? (() => new Date().toISOString());
 
-  const currentSha256 = await sha256File(artifact.path).catch(() => null);
-  if (currentSha256 === null) return { captured: false, reason: 'target_missing' };
+  let currentSha256;
+  try {
+    currentSha256 = await sha256File(artifact.path);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { captured: false, restorable: false, reason: 'target_missing' };
+    // The file exists but cannot be read, so its bytes can never be restored.
+    // Refusing here is what keeps REQ-09 honest: no snapshot, no overwrite.
+    return {
+      captured: false,
+      restorable: false,
+      reason: `E_SNAPSHOT_UNREADABLE: ${error.code ?? error.message}`,
+    };
+  }
 
   const manifest = (await readManifest(artifact)) ?? { schema: SCHEMA, snapshots: {} };
   const existing = manifest.snapshots[artifact.id];
   if (existing && existing.sha256 === currentSha256) {
-    return { captured: false, reason: 'up_to_date', entry: existing };
+    // Nothing was written, but the existing .bak is still the restorable copy
+    // for the bytes on disk — reporting `path:null` would read as "no snapshot".
+    return {
+      captured: false,
+      restorable: true,
+      refreshed: false,
+      path: path.join(artifact.snapshotDir, `${artifact.id}.bak`),
+      entry: existing,
+    };
   }
 
   await ensureSnapshotDir(artifact.snapshotDir);
@@ -68,7 +87,13 @@ export async function captureSnapshot(cwd, artifact, deps = {}) {
   manifest.snapshots = { ...manifest.snapshots, [artifact.id]: entry };
   await writeManifest(artifact, manifest);
 
-  return { captured: true, refreshed: Boolean(existing), path: path.join(artifact.snapshotDir, `${artifact.id}.bak`), entry };
+  return {
+    captured: true,
+    restorable: true,
+    refreshed: Boolean(existing),
+    path: path.join(artifact.snapshotDir, `${artifact.id}.bak`),
+    entry,
+  };
 }
 
 function restoredEntry(id, status, extra = {}) {

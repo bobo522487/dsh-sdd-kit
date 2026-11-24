@@ -168,6 +168,8 @@
 - `INV-16`：每个产物最多 1 份快照（就地刷新，不做时间戳轮转）。
 - `INV-17`：快照与清单 MUST NOT 出现在 `git status` 的未跟踪列表中。实现方式**不依赖下游项目的 `.gitignore`**（实测：新 `specify init` 项目里 `.specify/.gitignore` 只忽略 `feature.json`、`extensions/*/local-config.yml`、`integrations/packages*`，**不含** `templates/overrides/`；本仓库能命中是因为本仓库自己的 `.gitignore:8`）。因此创建 `.backup/` 时 MUST 同时写入自忽略文件 `.backup/.gitignore`，内容恰为 `*\n`；测试以 `git check-ignore` 退出码 0 断言。
 - `INV-18`：回滚成功后 MUST 保留快照（允许重复回滚到同一内容）。
+- `INV-18a`：**没有可还原副本就不许覆盖**（REQ-09/REQ-11）。`captureSnapshot()` 在目标存在但读不出字节时 MUST 返回 `{captured:false, restorable:false, reason:'E_SNAPSHOT_UNREADABLE: <code>'}`，`installOne()` MUST 以 `failed` 结束且 MUST NOT 调用 `writeArtifact()`；把 `unknown` + `overwrite:true` 当成「总能写」会让用户内容在没有快照的情况下被永久替换，`restore_overrides` 随后只能回 `no_snapshot`。
+- `INV-18b`：快照内容与目标当前内容一致时 `captureSnapshot()` 不刷新（INV-14），但 MUST 返回 `{captured:false, restorable:true, path:'…/<id>.bak'}`——`.bak` 仍是可回滚的副本，报 `path:null` 会让调用方误判「无可回滚快照」。
 
 **校验责任**：`src/core/snapshot.mjs`（新增）`captureSnapshot()` / `readManifest()` / `restoreSnapshot()`。
 
@@ -183,11 +185,11 @@
 | `status` | enum | 顶层兼容字段，取 `artifacts[0].status` | 六个取值之一，见下行 |
 | `path` | string | 顶层兼容字段，取 `artifacts[0].path` | — |
 | `artifacts[].id` | string | 见 E1 | — |
-| `artifacts[].status` | enum | 六类之一，与 `verdict` + 覆盖意图一一对应 | `written`（`not_installed`，或 `user_modified` / `unknown` 且显式覆盖成功）\| `unchanged`（`installed_consistent`）\| `skipped_user_modified`（`user_modified` 且未显式覆盖）\| `skipped_stale`（`stale_upstream` 且未显式覆盖）\| `refreshed`（仅 `stale_upstream` 且显式覆盖）\| `failed` |
+| `artifacts[].status` | enum | 六类之一，与 `verdict` + 覆盖意图一一对应；`unknown` 的显式覆盖只有**在能取到快照时**才可能成功，否则 `failed`（INV-18a） | `written`（`not_installed`，或 `user_modified` / `unknown` 且显式覆盖成功）\| `unchanged`（`installed_consistent`）\| `skipped_user_modified`（`user_modified` 且未显式覆盖）\| `skipped_stale`（`stale_upstream` 且未显式覆盖）\| `refreshed`（仅 `stale_upstream` 且显式覆盖）\| `failed` |
 | `artifacts[].verdict` | enum | 见 E2 | — |
 | `artifacts[].reason` | string \| null | 失败时 MUST 非空且含错误码前缀 | `"E_SYMLINK: /abs/x"` |
 | `artifacts[].nextAction` | object \| null | 仅「需要用户决定」时非空；形如 `{ tool, args }` | `{ "tool": "sdd_bridge", "args": { "action": "install_overrides", "overwrite": true } }` |
-| `artifacts[].snapshot` | object \| null | 本次是否产生/刷新快照 | `{ "captured": true, "refreshed": false, "path": "…" }` |
+| `artifacts[].snapshot` | object \| null | 本次是否产生/刷新快照；`path` 指向可回滚的 `.bak`（即使本次未刷新，INV-18b）；无法取得快照时整个条目为 `null` 并 `failed`（INV-18a） | `{ "captured": true, "refreshed": false, "path": "…" }` |
 
 **不变量**
 

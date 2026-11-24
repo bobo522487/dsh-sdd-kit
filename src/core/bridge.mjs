@@ -210,6 +210,12 @@ async function installOne(root, artifact, overwrite, clock) {
     await assertNoSymlinkComponent(root, artifact.snapshotDir);
 
     const snapshot = await captureSnapshot(root, artifact, clock ? { clock } : {});
+    if (snapshot.restorable === false && snapshot.reason !== 'target_missing') {
+      // No restorable copy means no overwrite (REQ-09/REQ-11): reporting
+      // `written` here would destroy content that can never be rolled back.
+      entry.reason = snapshot.reason ?? 'E_SNAPSHOT_FAILED';
+      return entry;
+    }
     entry.snapshot = {
       captured: Boolean(snapshot.captured),
       refreshed: Boolean(snapshot.refreshed),

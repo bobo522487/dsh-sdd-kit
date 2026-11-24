@@ -59,7 +59,7 @@
 specs/003-install-safety-hardening/
 ├── plan.md              # 本文件
 ├── research.md          # Phase 0：R1–R8 实测事实与决策（已完成）
-├── data-model.md        # Phase 1：E1–E7 实体、字段与 INV-1…INV-25（含 INV-20a，已完成）
+├── data-model.md        # Phase 1：E1–E7 实体、字段与 INV-1…INV-25（含 INV-18a/18b/20a，已完成）
 ├── quickstart.md        # Phase 1：手工验证路径与排错表（已完成）
 ├── contracts/           # Phase 1：四份契约（已完成）
 │   ├── sdd-bridge-install-overrides.md
@@ -131,7 +131,7 @@ package.json                         # 改：scripts 增加 verify:upstream（fi
 
 ## Phase 1 设计摘要
 
-- 数据形状见 [data-model.md](./data-model.md)：E1 受管产物、E2 状态判定、E3 版本台账、E4 候选选择、E5 快照与清单、E6 安装报告、E7 集成验证结果；共 26 条不变量（INV-1…INV-25，含 INV-20a）。
+- 数据形状见 [data-model.md](./data-model.md)：E1 受管产物、E2 状态判定、E3 版本台账、E4 候选选择、E5 快照与清单、E6 安装报告、E7 集成验证结果；共 28 条不变量（INV-1…INV-25，含 INV-18a/18b/20a）。
 - 契约见 [contracts/](./contracts/)：`sdd-bridge-install-overrides.md`（判定/快照/原子写/拒绝）、`sdd-bridge-restore-overrides.md`（一键回滚）、`sdd-upstream-candidate-selection.md`（候选选择与报告）、`verify-upstream-script.md`（真实上游验证）。
 - 手工验收路径见 [quickstart.md](./quickstart.md)（9 个小节，含 9 行排错表与 10 项自检清单）。
 
@@ -149,7 +149,7 @@ package.json                         # 改：scripts 增加 verify:upstream（fi
 | 原则 | 复核结果 | 设计证据 |
 |------|----------|----------|
 | I. 零分叉，薄胶水层 | PASS | 新增代码全部在 `src/core/` 内、由既有两个工具动作暴露；工具与技能数量不变；四份契约都写了「禁止新增的入参」，排除的是会扩大写权或改变语义的参数——`install_overrides` 禁 `artifact`/`content`/`backupDir`/`force`，`restore_overrides` 禁 `content`/`sha256`/`version`/`snapshotId`/`overwrite`/`dryRun`，候选选择禁 `env`/`sortBy`/`prefer`/`scanRoots`/`depth`，验证脚本禁 `--repo`/`--ref`/`--offline`/`--fix`。技能正文只加两句展示要求，不含动作名（`install_overrides`、`restore_overrides` 均不出现在 `skills/*/SKILL.md`）。 |
-| II. 规范优先 | PASS | INV-1…INV-25（含 INV-20a）与四份契约逐条可回溯到 REQ/AC 编号（每份契约头部有「对应」行）；未定义行为为零。复核期发现并修正一处假设错误：INV-17 原写「由宿主 `.gitignore` 覆盖」，实测下游不成立，已改为「快照目录自忽略」（见 Phase 0 决策 5 与 install 契约 §2）。 |
+| II. 规范优先 | PASS | INV-1…INV-25（含 INV-18a/18b/20a）与四份契约逐条可回溯到 REQ/AC 编号（每份契约头部有「对应」行）；未定义行为为零。复核期发现并修正两处实质缺陷：INV-17 原写「由宿主 `.gitignore` 覆盖」，实测下游不成立，已改为「快照目录自忽略」（Phase 0 决策 5 与 install 契约 §2）；INV-18a 新增「没有可还原副本就不许覆盖」，堵住 `unknown` + `overwrite:true` 无快照改写用户文件的路径。 |
 | III. 严格 TDD | PASS | 每份契约 §6 的断言表可直接转成失败测试；平台受限用例的 `t.skip` 条件已在表中写明（Windows symlink、root/POSIX 权限位）。 |
 | IV. 原子提交 | PASS | 任务将按「fsutil+artifacts 单测 → status → snapshot → candidates → bridge 编排 → setup/register → 技能/文档 → 脚本+CI」切分，每步独立可测可提交。 |
 | V. 免值守上游同步 | PASS | `specify init` 参数集未变；验证脚本只读；CI 与 `npm test` 完全隔离（不同文件、不同入口）。 |

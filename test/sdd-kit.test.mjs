@@ -1806,6 +1806,8 @@ test('snapshot: capture self-ignores the backup directory and refreshes only on 
 
     const second = await captureSnapshot(cwd, artifact, { clock: () => '2026-01-02T00:00:00.000Z' });
     assert.equal(second.captured, false, 'INV-14: an up-to-date snapshot is not refreshed');
+    assert.equal(second.restorable, true, 'the existing .bak is still the copy to roll back to');
+    assert.equal(second.path, path.join(artifact.snapshotDir, 'ears-spec-template.bak'));
     assert.equal((await readManifest(artifact)).snapshots['ears-spec-template'].capturedAt, '2026-01-01T00:00:00.000Z');
 
     await writeSeed(cwd, '.specify/templates/overrides/spec-template.md', 'v2\n');
@@ -2197,25 +2199,57 @@ test('install_overrides: explicit overwrite guards the snapshot path before writ
   }
 });
 
-test('install_overrides: an unknown target is overwritable on explicit intent (REQ-05)', async (t) => {
+test('install_overrides: an unreadable target is never overwritten without a snapshot (REQ-09/REQ-11)', async (t) => {
   if (process.platform === 'win32') return t.skip('POSIX permission bits are not enforceable on Windows');
   if (process.getuid?.() === 0) return t.skip('root ignores file permission bits');
   const cwd = await makeTempDir();
   const target = path.join(cwd, EARS_OVERRIDE);
+  const irreplaceable = 'IRREPLACEABLE USER CONTENT\n';
   try {
     await runBridge({ action: 'install_overrides', cwd });
+    await fs.writeFile(target, irreplaceable, 'utf8');
     await fs.chmod(target, 0o000);
 
     const forced = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
-    assert.equal(forced.status, 'written', 'overwrite:true must be a way out of `unknown`');
+    assert.equal(forced.ok, false, 'an unrecoverable overwrite must not be reported as success');
+    assert.equal(forced.status, 'failed');
     assert.equal(forced.artifacts[0].verdict, 'unknown');
-    assert.equal(forced.artifacts[0].reason, null, 'a successful write clears the earlier read error');
-    assert.equal(
-      await fs.readFile(target, 'utf8'),
-      await fs.readFile(path.join(PKG_ROOT, 'overrides', 'spec-template.md'), 'utf8')
-    );
+    assert.match(forced.artifacts[0].reason, /E_SNAPSHOT_UNREADABLE/);
+    assert.equal(forced.artifacts[0].snapshot, null);
+
+    await fs.chmod(target, 0o644);
+    assert.equal(await fs.readFile(target, 'utf8'), irreplaceable, 'the user content must still be there');
+
+    const restored = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(restored.ok, false, 'and no snapshot may be pretended into existence');
+    assert.equal(restored.status, 'no_snapshot');
   } finally {
     await fs.chmod(target, 0o644).catch(() => {});
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: a repeated overwrite still reports the reusable snapshot path (REQ-10)', async () => {
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await writeSeed(cwd, EARS_OVERRIDE, 'first hand edit\n');
+    await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+
+    await writeSeed(cwd, EARS_OVERRIDE, 'second hand edit\n');
+    const again = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+    assert.equal(again.ok, true);
+    assert.deepEqual(again.artifacts[0].snapshot, {
+      captured: true,
+      refreshed: true,
+      path: path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'),
+    });
+
+    const restored = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(restored.ok, true);
+    assert.equal(await fs.readFile(target, 'utf8'), 'second hand edit\n');
+  } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
