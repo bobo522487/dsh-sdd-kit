@@ -153,13 +153,13 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T037 [P] [US5] 写失败测试 `test/adapters-claude.test.mjs`：技能面检测 `.claude/skills`、工具面走 CLI、引导面在「原生事件」与「托管块」间可切换且缺插件时降级为安装提示、输出结构与 DSH 一致、实现 ≤100 行（`test/adapters-claude.test.mjs`）
+- [x] T037 [P] [US5] 写失败测试 `test/adapters-claude.test.mjs`：技能面检测 `.claude/skills`、工具面走 CLI、引导面在「原生事件」与「托管块」间可切换且缺插件时降级为安装提示、输出结构与 DSH 一致、实现 ≤100 行（`test/adapters-claude.test.mjs`）
 
 ### Implementation for User Story 5
 
-- [ ] T038 [US5] 实现 `src/adapters/claude/index.mjs`（≤100 行）：技能面读 `.claude/skills`、工具面委托 CLI、引导面按 `HOST_CAPABILITIES.claude.guidanceChannel` 选择 `native-event` 或降级 `managed-block`；四个必答项（三面契约 + 重载语义）对应 `data-model.md` 的 `ThreeFaceContract.toolFace`、`ThreeFaceContract.guidanceFace`、`ThreeFaceContract.skillFace`、`ThreeFaceContract.reloadSemantics`（`src/adapters/claude/index.mjs`）
-- [ ] T039 [US5] 实现 Claude 引导降级路径：纪律技能插件或上游镜像缺失时输出一句可执行安装提示，不阻断宿主其余功能（`src/adapters/claude/index.mjs`）
-- [ ] T040 [US5] 编写 `docs/adapters/claude.md`：记录通道选择（events vs 托管块）的最小验证结论与选择理由（REQ-26 要求文档化）（`docs/adapters/claude.md`）
+- [x] T038 [US5] 实现 `src/adapters/claude/index.mjs`（≤100 行）：技能面读 `.claude/skills`、工具面委托 CLI、引导面按 `HOST_CAPABILITIES.claude.guidanceChannel` 选择 `native-event` 或降级 `managed-block`；四个必答项（三面契约 + 重载语义）对应 `data-model.md` 的 `ThreeFaceContract.toolFace`、`ThreeFaceContract.guidanceFace`、`ThreeFaceContract.skillFace`、`ThreeFaceContract.reloadSemantics`（`src/adapters/claude/index.mjs`）
+- [x] T039 [US5] 实现 Claude 引导降级路径：纪律技能插件或上游镜像缺失时输出一句可执行安装提示，不阻断宿主其余功能（`src/adapters/claude/index.mjs`）
+- [x] T040 [US5] 编写 `docs/adapters/claude.md`：记录通道选择（events vs 托管块）的最小验证结论与选择理由（REQ-26 要求文档化）（`docs/adapters/claude.md`）
 
 **Checkpoint**：首个外部端可用，四端阶段的第一道门槛通过。
 
