@@ -138,17 +138,17 @@ description: "Task list for feature implementation"
 
 ### 测试（先写，必须失败）
 
-- [ ] T035 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增 `describe('candidates: selection')` 覆盖 AC-05（REQ-06）：`new Set(realPaths).size === realPaths.length`（INV-10）、`candidates.filter(c => c.selected).length === 1`（INV-12）、选中项为 `mtimeNs` 最大者（INV-11）
-- [ ] T036 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增决胜与回落用例（REQ-07）：`mtimeNs` 相同 ⇒ 取 `declaredIndex` 最小者（REQ-07）；全部不可解析 ⇒ `fallback === true` + `reason === 'default'` + `realPath === null` 且 `candidates` 不裁剪（INV-13）
-- [ ] T037 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增来源优先级用例（REQ-08）：`DSH_SDD_KIT_SUPERPOWERS_DIR` 与 `DSH_HOME` 同设 ⇒ `reason === 'env'`（REQ-08）；再传 `superpowersDir` ⇒ `reason === 'explicit'`；`finally` 恢复两个环境变量
-- [ ] T038 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增结构性断言（REQ-06/REQ-08）：`src/core/candidates.mjs` 源码不含 `readdir`（不扫描文件系统）；POSIX 下用 `HOME` 指向临时目录隔离默认路径，`t.skip` 条件：`process.platform === 'win32'`（`os.homedir()` 取 `USERPROFILE`）
+- [x] T035 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增 `describe('candidates: selection')` 覆盖 AC-05（REQ-06）：`new Set(realPaths).size === realPaths.length`（INV-10）、`candidates.filter(c => c.selected).length === 1`（INV-12）、选中项为 `mtimeNs` 最大者（INV-11）
+- [x] T036 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增决胜与回落用例（REQ-07）：`mtimeNs` 相同 ⇒ 取 `declaredIndex` 最小者（REQ-07）；全部不可解析 ⇒ `fallback === true` + `reason === 'default'` + `realPath === null` 且 `candidates` 不裁剪（INV-13）
+- [x] T037 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增来源优先级用例（REQ-08）：`DSH_SDD_KIT_SUPERPOWERS_DIR` 与 `DSH_HOME` 同设 ⇒ `reason === 'env'`（REQ-08）；再传 `superpowersDir` ⇒ `reason === 'explicit'`；`finally` 恢复两个环境变量
+- [x] T038 [P] [US4] 在 `test/sdd-kit.test.mjs` 新增结构性断言（REQ-06/REQ-08）：`src/core/candidates.mjs` 源码不含 `readdir`（不扫描文件系统）；POSIX 下用 `HOME` 指向临时目录隔离默认路径，`t.skip` 条件：`process.platform === 'win32'`（`os.homedir()` 取 `USERPROFILE`）
 
 ### 实现
 
-- [ ] T039 [US4] 实现 `src/core/candidates.mjs` 的 `selectSuperpowersDir(args, env)`：按 `contracts/sdd-upstream-candidate-selection.md` §2 第 1–18 行生成五个声明来源、`realpath` 去重（仅对非 `null` 项）、`fs.stat(p,{bigint:true}).mtimeNs` 降序 + `declaredIndex` 升序决胜；返回 `data-model.md` E4 的 `dir`/`realPath`/`reason`/`mtimeNs`/`fallback`/`candidates[]`；`process.env` 只读两个具名变量并在注释里说明原因
-- [ ] T040 [US4] 改 `src/core/upstream.mjs`：`status` 与 `sync_superpowers` 消费 `selectSuperpowersDir()`，把 `selection` 放进 `superpowers.selection`（`data-model.md` E4 载体）；`sync_superpowers` 的 `dir` 用选中的 `dir`（clone 目标）
-- [ ] T041 [US4] 改 `src/core/setup.mjs` 的 `sync_superpowers` 步骤：`detail` 增加 `{dir, selection:{reason, realPath}}`（`contracts/sdd-upstream-candidate-selection.md` §5）
-- [ ] T042 [US4] 改 `src/register.mjs`：`sdd_upstream` 增加 `candidateDirs`（string[]）入参定义；`sdd_bridge` 的动作描述改为四个动作并新增 `artifact` 入参；复核两者 `isConcurrencySafe`
+- [x] T039 [US4] 实现 `src/core/candidates.mjs` 的 `selectSuperpowersDir(args, env)`：按 `contracts/sdd-upstream-candidate-selection.md` §2 第 1–18 行生成五个声明来源、`realpath` 去重（仅对非 `null` 项）、`fs.stat(p,{bigint:true}).mtimeNs` 降序 + `declaredIndex` 升序决胜；返回 `data-model.md` E4 的 `dir`/`realPath`/`reason`/`mtimeNs`/`fallback`/`candidates[]`；`process.env` 只读两个具名变量并在注释里说明原因
+- [x] T040 [US4] 改 `src/core/upstream.mjs`：`status` 与 `sync_superpowers` 消费 `selectSuperpowersDir()`，把 `selection` 放进 `superpowers.selection`（`data-model.md` E4 载体）；`sync_superpowers` 的 `dir` 用选中的 `dir`（clone 目标）
+- [x] T041 [US4] 改 `src/core/setup.mjs` 的 `sync_superpowers` 步骤：`detail` 增加 `{dir, selection:{reason, realPath}}`（`contracts/sdd-upstream-candidate-selection.md` §5）
+- [x] T042 [US4] 改 `src/register.mjs`：`sdd_upstream` 增加 `candidateDirs`（string[]）入参定义；`sdd_bridge` 的动作描述改为四个动作并新增 `artifact` 入参；复核两者 `isConcurrencySafe`
 
 **Checkpoint**: AC-05 全绿；同一台机器重复运行选择结果一致。
 
@@ -162,14 +162,14 @@ description: "Task list for feature implementation"
 
 ### 测试（先写，必须失败）
 
-- [ ] T043 [P] [US5] 新增 `test/upstream-contract.test.mjs`（REQ-17/REQ-19）：顶层 `if (process.env.DSH_SDD_KIT_INTEGRATION !== '1') t.skip(...)` 整文件跳过；`=1` 时 `import { verifyUpstream }` 并断言 `status !== 'failed'`（INV-25：该文件 MUST NOT 被 `test/sdd-kit.test.mjs` 引用）
-- [ ] T044 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增脚本契约用例（REQ-18/REQ-19）：空 `PATH` 跑脚本 ⇒ 退出码 0、`--json` 的 `checks.length === 0` 且 `reason` 非空（INV-23）；假 `specify` shim（exit 2）⇒ 退出码 1 且至少一项 `ok === false` 且 `detail` 非空（INV-24）；`passed` 时 `checks.map(c=>c.id).sort()` 等于四个 id（`data-model.md` E7.`checks[].id`）
-- [ ] T045 [P] [US5] 新增结构断言（REQ-18）：`test/sdd-kit.test.mjs` 源码不含 `verify-upstream` 字样（REQ-18「不阻塞日常」）；`.github/workflows/upstream-integration.yml` 含 `schedule` 与 `workflow_dispatch`
+- [x] T043 [P] [US5] 新增 `test/upstream-contract.test.mjs`（REQ-17/REQ-19）：顶层 `if (process.env.DSH_SDD_KIT_INTEGRATION !== '1') t.skip(...)` 整文件跳过；`=1` 时 `import { verifyUpstream }` 并断言 `status !== 'failed'`（INV-25：该文件 MUST NOT 被 `test/sdd-kit.test.mjs` 引用）
+- [x] T044 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增脚本契约用例（REQ-18/REQ-19）：空 `PATH` 跑脚本 ⇒ 退出码 0、`--json` 的 `checks.length === 0` 且 `reason` 非空（INV-23）；假 `specify` shim（exit 2）⇒ 退出码 1 且至少一项 `ok === false` 且 `detail` 非空（INV-24）；`passed` 时 `checks.map(c=>c.id).sort()` 等于四个 id（`data-model.md` E7.`checks[].id`）
+- [x] T045 [P] [US5] 新增结构断言（REQ-18）：`test/sdd-kit.test.mjs` 源码不含 `verify-upstream` 字样（REQ-18「不阻塞日常」）；`.github/workflows/upstream-integration.yml` 含 `schedule` 与 `workflow_dispatch`
 
 ### 实现
 
-- [ ] T046 [US5] 实现 `scripts/verify-upstream.mjs`：导出 `verifyUpstream({json, keep})` 并支持 `node scripts/verify-upstream.mjs [--json] [--keep]`；按 `contracts/verify-upstream-script.md` §2 第 1–10 行执行四个契约点（`init-args` / `extension-add-args` / `manifest-contract` / `hooks-registered`）；网络类错误 ⇒ `not_executed` + 退出码 0，契约失败 ⇒ `failed` + 退出码 1；`finally` 清理 `mkdtemp` 目录（`--keep` 除外）；单命令超时 120 s
-- [ ] T047 [US5] 新增 `.github/workflows/upstream-integration.yml`：`on: schedule`（`cron: '0 3 * * *'`）+ `workflow_dispatch`；`ubuntu-latest`，`astral-sh/setup-uv` 后跑 `node scripts/verify-upstream.mjs`
+- [x] T046 [US5] 实现 `scripts/verify-upstream.mjs`：导出 `verifyUpstream({json, keep})` 并支持 `node scripts/verify-upstream.mjs [--json] [--keep]`；按 `contracts/verify-upstream-script.md` §2 第 1–10 行执行四个契约点（`init-args` / `extension-add-args` / `manifest-contract` / `hooks-registered`）；网络类错误 ⇒ `not_executed` + 退出码 0，契约失败 ⇒ `failed` + 退出码 1；`finally` 清理 `mkdtemp` 目录（`--keep` 除外）；单命令超时 120 s
+- [x] T047 [US5] 新增 `.github/workflows/upstream-integration.yml`：`on: schedule`（`cron: '0 3 * * *'`）+ `workflow_dispatch`；`ubuntu-latest`，`astral-sh/setup-uv` 后跑 `node scripts/verify-upstream.mjs`
 
 **Checkpoint**: AC-10 全绿；上游契约漂移可在一次手动/夜间验证内被发现，且不影响 `npm test` 结论。
 
@@ -179,11 +179,11 @@ description: "Task list for feature implementation"
 
 **Purpose**: 把新语义暴露到用户可见表面，并做全量回归。
 
-- [ ] T048 [P] 改 `skills/sdd-setup/SKILL.md` 第 3/4 步各加一句：`detail.nextAction` 非空时**原样展示**并等用户确认；`detail.selection.reason !== 'explicit'` 时报告所选绝对路径与依据。**MUST NOT** 出现任何动作名（`install_overrides`/`restore_overrides`），保持 `test/sdd-kit.test.mjs:480`、`:1135` 的 forbidden 名单为绿（INV-22）
-- [ ] T049 [P] 改 `README.md`：新增「安装安全性」小节，说明四分类状态、`nextAction` 的展示方式、`.backup/` 快照与一键回滚、候选目录选择依据、`npm run verify:upstream` 的用法；**MUST NOT** 声称快照依赖宿主 `.gitignore`（INV-17）
-- [ ] T050 跑 [quickstart.md](./quickstart.md) 的 9 个小节做手工验收，逐条核对期望输出（含 `git check-ignore` 命中 `.backup/.gitignore`、`git status --porcelain` 不含 `.backup`）
-- [ ] T051 全量回归：`npm test` 必须 `fail 0`；`node scripts/verify-upstream.mjs --json` 在联网环境下 `status !== 'failed'`；`git status --porcelain` 仅含预期改动（无 `.tmp`、无探针目录）
-- [ ] T052 复核章程原则 I 的三条硬边界：技能与工具数量未变（`grep -c` 技能目录、`register.mjs` 中 `defineTool` 调用数各为 2）、`src/` 内 `process.env` 仅两个具名变量、`skills/` 不含动作名
+- [x] T048 [P] 改 `skills/sdd-setup/SKILL.md` 第 3/4 步各加一句：`detail.nextAction` 非空时**原样展示**并等用户确认；`detail.selection.reason !== 'explicit'` 时报告所选绝对路径与依据。**MUST NOT** 出现任何动作名（`install_overrides`/`restore_overrides`），保持 `test/sdd-kit.test.mjs:480`、`:1135` 的 forbidden 名单为绿（INV-22）
+- [x] T049 [P] 改 `README.md`：新增「安装安全性」小节，说明四分类状态、`nextAction` 的展示方式、`.backup/` 快照与一键回滚、候选目录选择依据、`npm run verify:upstream` 的用法；**MUST NOT** 声称快照依赖宿主 `.gitignore`（INV-17）
+- [x] T050 跑 [quickstart.md](./quickstart.md) 的 9 个小节做手工验收，逐条核对期望输出（含 `git check-ignore` 命中 `.backup/.gitignore`、`git status --porcelain` 不含 `.backup`）
+- [x] T051 全量回归：`npm test` 必须 `fail 0`；`node scripts/verify-upstream.mjs --json` 在联网环境下 `status !== 'failed'`；`git status --porcelain` 仅含预期改动（无 `.tmp`、无探针目录）
+- [x] T052 复核章程原则 I 的三条硬边界：技能与工具数量未变（`grep -c` 技能目录、`register.mjs` 中 `defineTool` 调用数各为 2）、`src/` 内 `process.env` 仅两个具名变量、`skills/` 不含动作名
 
 ---
 
