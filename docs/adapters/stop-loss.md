@@ -82,11 +82,12 @@ node scripts/verify-upstream.mjs --json
 断言：
 
 - `package.json` 的 `peerDependencies` 为 `>=4.1.0`、`>=0.2.2-rc.3`、`>=0.2.2-rc.3`（正是上述实测版本），且三项 `peerDependenciesMeta.<name>.optional === true`；`research.md` 旧条目仍写 `*`，由 lead 决定是否回填（本任务文件清单不含它）。
-- `npm run verify:compat` 常态全绿：版本下界与预发布用例不依赖 `DSH_SDD_KIT_INTEGRATION`；`DSH_SDD_KIT_HOST_MODULES` 只用于把已安装 peer 探针带到真实宿主 CI，未设置时明确 skip 而非伪绿。常态 CI（`.github/workflows/upstream-integration.yml`）每轮都跑该脚本。
+- `npm run verify:compat` 常态全绿：安装期下界硬失败用例与预发布用例均执行，不再依赖 `DSH_SDD_KIT_INTEGRATION`；常态 CI 在安装 specify 后显式设置 `DSH_SDD_KIT_INTEGRATION=1` 标记集成探测通道，工具缺失时用例以 `not_executed (REQ-42)` 明确失败且进程退出码非零，绝不静默 skip；`DSH_SDD_KIT_HOST_MODULES` 只用于把已安装 peer 探针带到真实宿主 CI，未设置时仍明确 skip 而非伪绿。常态 CI（`.github/workflows/upstream-integration.yml`）每轮都跑该脚本。
+- 失败安装必须同时断言非零退出码、`Compatibility Error` 与零残留：`.specify/extensions/superpowers-hooks` 不存在、`.specify/extensions.yml` 未注册、`.dsh/skills` 无 `speckit-superpowers-hooks-*` 渲染产物。
 - `verify-upstream` 报告 `versionDrift.needsAdjustment === false`；若为 `true`，按 `versionDrift.suggestedBound` 调整 `spec-kit-extension/extension.yml` 的 `requires.speckit_version`。
 - CI 无凭据时报告 `status === 'not_executed'`：T099 起验证器进程自身即以退出码 1 失败，workflow 的 `status !== 'passed'` 与 `needsAdjustment` 门禁继续二次拦截，绝不当成功。
 
-自动化守护：`test/compat.test.mjs`（实测下界、预发布语义、可选宿主探针），`test/ci-matrix.test.mjs`（常态 CI 接线、漂移门禁与 `not_executed` 不得当成功）。
+自动化守护：`test/compat.test.mjs`（实测下界、预发布语义、可选宿主探针、常态安装期下界硬失败与零残留）、`test/ci-matrix.test.mjs`（常态 CI 接线、漂移门禁与 `not_executed` 不得当成功）、`test/phase15-ci.test.mjs`（T107 下界用例常态执行、进程退出码与 CI 接线回归）。
 
 判负即触发 M4 处置：冻结后续端开发，只保留已验证端；若某宿主版本低于下界，以该宿主实际版本为准重测并更新下界与本报告，不得回退到 `*` 掩盖问题。
 

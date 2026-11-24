@@ -24,6 +24,43 @@ function runSpecify(cwd, args) {
   return spawnSync('specify', args, { cwd, encoding: 'utf8', timeout: 60_000 });
 }
 
+function notExecuted(reason) {
+  assert.fail(`not_executed (REQ-42): ${reason}`);
+}
+
+function probeSpecify() {
+  const probe = spawnSync('specify', ['--version'], { encoding: 'utf8', timeout: 30_000 });
+  if (probe.error?.code === 'ENOENT') {
+    notExecuted('specify is not installed on PATH; the install-time probe cannot be executed');
+  }
+  assert.equal(probe.status, 0, `specify --version failed: ${probe.stderr || probe.stdout}`);
+  return probe.stdout.trim();
+}
+
+function assertNoHalfInstall(dir, label) {
+  assert.equal(
+    fsSync.existsSync(path.join(dir, '.specify', 'extensions', 'superpowers-hooks')),
+    false,
+    `${label}: no half install`
+  );
+  const extensionsYml = path.join(dir, '.specify', 'extensions.yml');
+  if (fsSync.existsSync(extensionsYml)) {
+    assert.doesNotMatch(
+      fsSync.readFileSync(extensionsYml, 'utf8'),
+      /superpowers-hooks/,
+      `${label}: no half-registered extension`
+    );
+  }
+  const skillsDir = path.join(dir, '.dsh', 'skills');
+  if (fsSync.existsSync(skillsDir)) {
+    assert.deepEqual(
+      fsSync.readdirSync(skillsDir).filter((name) => name.startsWith('speckit-superpowers-hooks-')),
+      [],
+      `${label}: no rendered hook skill residue`
+    );
+  }
+}
+
 test('host peers are declared optional so a pure Node install has no mandatory peer set (REQ-21/AC-11)', async () => {
   const pkg = await readPkg();
   const peers = Object.keys(pkg.peerDependencies ?? {});
@@ -78,32 +115,38 @@ test('extension declares a version bound, four execution hooks, guard hooks and 
   assert.match(raw, /session_start:/);
 });
 
-test('version bound failures happen at install time with no half-installed residue (REQ-24/AC-14)', { skip: !process.env.DSH_SDD_KIT_INTEGRATION }, () => {
+test('version bound failures happen at install time with no half-installed residue (REQ-24/AC-14)', () => {
+  const observed = probeSpecify();
   for (const { required, shouldInstall, label } of LOW_BOUND_CASES) {
     const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'dsh-compat-'));
     try {
       const init = runSpecify(dir, ['init', '.', '--integration', 'dsh', '--non-interactive', '--force', '--ignore-agent-tools']);
-      if (init.status !== 0) continue; // toolchain unavailable, skip this case
+      if (init.error?.code === 'ENOENT') {
+        notExecuted('specify disappeared during the install probe');
+      }
+      assert.equal(init.status, 0, `${label}: specify init failed: ${init.stderr || init.stdout}`);
       const ext = path.join(dir, 'ext');
       fsSync.cpSync(path.join(PKG_ROOT, 'spec-kit-extension'), ext, { recursive: true });
       const manifest = path.join(ext, 'extension.yml');
       fsSync.writeFileSync(manifest, fsSync.readFileSync(manifest, 'utf8').replace('">=1.4.0"', `"${required}"`));
       const add = runSpecify(dir, ['extension', 'add', '--dev', './ext']);
       if (shouldInstall) {
-        assert.equal(add.status, 0, `${label}: expected success`);
+        assert.equal(add.status, 0, `${label}: expected success, got ${add.stderr || add.stdout}`);
+        assert.equal(
+          fsSync.existsSync(path.join(dir, '.specify', 'extensions', 'superpowers-hooks')),
+          true,
+          `${label}: a satisfied bound must install the extension`
+        );
       } else {
         assert.notEqual(add.status, 0, `${label}: expected install failure`);
         assert.match(`${add.stdout}${add.stderr}`, /Compatibility Error/);
-        assert.equal(
-          fsSync.existsSync(path.join(dir, '.specify', 'extensions', 'superpowers-hooks')),
-          false,
-          `${label}: no half install`
-        );
+        assertNoHalfInstall(dir, label);
       }
     } finally {
       fsSync.rmSync(dir, { recursive: true, force: true });
     }
   }
+  assert.ok(observed.length > 0, 'the probe must record the observed specify version');
 });
 
 // Versions read from the DSH runtime that is actually installed and active on

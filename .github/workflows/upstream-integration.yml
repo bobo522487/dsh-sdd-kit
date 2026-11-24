@@ -60,18 +60,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Verify peer floors and prerelease cases on every run (T100)
-        # The floor/prerelease assertions need no toolchain and must never be
-        # hidden behind DSH_SDD_KIT_INTEGRATION. A host runner may additionally
-        # point the installed-peer probe at its real node_modules directory.
-        env:
-          DSH_SDD_KIT_HOST_MODULES: ${{ vars.DSH_SDD_KIT_HOST_MODULES || '' }}
-        run: node --test test/compat.test.mjs
       - uses: astral-sh/setup-uv@v5
       - name: Install the CLI under test
         run: |
           uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
           echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+      - name: Verify compat floors and install-time hard fail on every matrix run (T100/T107)
+        # T107: specify is installed now, so the lower-bound install probe can
+        # run deterministically on every matrix leg. The switch is the explicit
+        # CI marker for that live probe; all assertions stay unconditional. A
+        # missing tool is not a silent skip: the test fails with an explicit
+        # not_executed (REQ-42) and a non-zero process exit.
+        env:
+          DSH_SDD_KIT_INTEGRATION: '1'
+          DSH_SDD_KIT_HOST_MODULES: ${{ vars.DSH_SDD_KIT_HOST_MODULES || '' }}
+        run: node --test test/compat.test.mjs
       - name: Install the pinned Spec Kit ref (pinned-spec-kit only)
         if: matrix.upstream == 'pinned-spec-kit'
         run: uv tool install specify-cli --force --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_REF}"

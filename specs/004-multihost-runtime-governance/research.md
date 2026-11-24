@@ -48,10 +48,11 @@
 - **Decision**：`spec-kit-extension/extension.yml` 保持 `requires.speckit_version: ">=1.4.0"`，不改代码；以 CI 用例固化「低于下界安装失败、不留半装」。
 - **Rationale**：实测 `extensions/__init__.py:2432-2467 check_compatibility()` 在任何文件写入前抛 `CompatibilityError`，`>=99.0.0` → 退出码 1 且 `.specify/extensions/` 无残留；`version_satisfies` 用 `specifier.contains(current, prereleases=True)`（解析失败返回 False），`1.4.4.dev0` 对 `>=1.4.4` 判失败、对 `>=1.4.0` 通过 → 预发布结论确定，符合 REQ-24。
 - **Alternatives considered**：自己实现版本校验 → 违反零分叉；放宽为 `>=1.0.0` → 失去护栏意义。
+- **T107 常态执行记录（2026-11-24）**：`test/compat.test.mjs` 的 `>=99.0.0`、`>=1.4.4`、`>=1.4.0` 安装用例从 `DSH_SDD_KIT_INTEGRATION` skip 中移出，常态随 `npm run verify:compat` 执行；CI 在安装 specify 后以 `DSH_SDD_KIT_INTEGRATION=1` 显式开启集成探测通道。失败安装断言退出码非零、`Compatibility Error`、无 `.specify/extensions/superpowers-hooks` 目录、无 `.specify/extensions.yml` 注册与无渲染 hook 技能残留；缺失 specify 时按 `not_executed (REQ-42)` 明确失败而非静默 skip，进程退出码非零。此记录只覆盖扩展版本下界语义，不改 R8 的 peer 下界结论。
 
 ## R8 peerDependencies 收口（REQ-21/AC-11）
 
-- **Decision**：`package.json` 三个 peer 加 `peerDependenciesMeta.<name>.optional = true`；版本串收紧为「实测下界」的具体数值留到 M1 在有宿主运行时的机器上测定（纯 Node 环境无法定，见 open items）。
+- **Decision**：`package.json` 三个 peer 加 `peerDependenciesMeta.<name>.optional = true`；版本串按 DSH 0.2.2-rc.3 宿主实测收紧为 `@deepseek-ai/cordis >=4.1.0`、`@deepseek-ai/dsh-skill-filesystem >=0.2.2-rc.3`、`@deepseek-ai/dsh-tools >=0.2.2-rc.3`，并由 `npm run verify:compat` 常态校验。
 - **Rationale**：实测当前 `npm pack` 在裸 consumer `added 26 packages`（npm 7+ 自动装 peer，无 warning 但强制安装）；加 `peerDependenciesMeta.optional:true` 后只 `added 1 package`、无 warning。宿主环境下可选 peer 仍会被满足，既有行为不变。
 - **Alternatives considered**：仅加 warning 文案 → 不改变 npm 强制安装；删除 peer → 宿主环境丢失类型与能力声明。
 
