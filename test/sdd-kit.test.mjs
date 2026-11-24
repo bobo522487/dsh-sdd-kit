@@ -2537,13 +2537,16 @@ async function makeShimBin(root, shims) {
   return binDir;
 }
 
-test('verify-upstream: a missing toolchain reports not_executed with exit 0 (INV-23)', async (t) => {
+// Phase 13 T099 reverses the Phase 12 reading of INV-23: "not executed" is
+// still a distinct report status, but the process must now fail so a missing
+// toolchain can never be mistaken for a green run. The JSON contract is intact.
+test('verify-upstream: a missing toolchain reports not_executed with a non-zero exit (INV-23/T099)', async (t) => {
   if (process.platform === 'win32') return t.skip('POSIX shell shims; covered on POSIX only');
   const result = await runNode([VERIFY_SCRIPT, '--json'], {
     PATH: '',
     HOME: os.tmpdir(),
   });
-  assert.equal(result.code, 0, 'INV-23: an unusable environment must not fail the run');
+  assert.equal(result.code, 1, 'T099: not_executed must fail the process, never exit 0');
   const report = JSON.parse(result.stdout);
   assert.equal(report.status, 'not_executed');
   assert.equal(report.checks.length, 0);
@@ -2570,6 +2573,10 @@ test('verify-upstream: a broken specify exits 1 and names the failing contract p
     assert.equal(report.status, 'failed');
     const failed = report.checks.filter((check) => check.ok === false);
     assert.ok(failed.length > 0);
+    for (const check of failed) {
+      assert.deepEqual(Object.keys(check).sort(), ['detail', 'id', 'ok', 'stderr'],
+        'the four-field check error contract must survive the T099 exit-code change');
+    }
     assert.ok(failed.every((check) => typeof check.detail === 'string' && check.detail.length > 0));
     assert.ok(failed.some((check) => check.id === 'init-args'));
   } finally {

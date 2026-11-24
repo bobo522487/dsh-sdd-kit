@@ -261,5 +261,9 @@ if (isMain) {
     json: process.argv.includes('--json'),
     keep: process.argv.includes('--keep'),
   });
-  process.exitCode = report.status === 'failed' ? 1 : 0;
+  // T099: a run that did not execute, or that found the declared floor needs
+  // adjustment, is as blocking as a failed contract check. The CI gate still
+  // re-checks both fields; this is the first line of defence in the process.
+  const blocked = report.status !== 'passed' || report.versionDrift?.needsAdjustment === true;
+  process.exitCode = blocked ? 1 : 0;
 }

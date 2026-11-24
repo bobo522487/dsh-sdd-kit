@@ -18,10 +18,26 @@ test('CI matrix covers three upstream and two host dimensions (REQ-40)', async (
   assert.match(workflow, /matrix\.host/);
 });
 
-test('CI never treats not_executed as success (REQ-42)', async () => {
+test('CI never treats not_executed as success (REQ-42/T099)', async () => {
   const workflow = await fs.readFile(path.join(PKG_ROOT, '.github', 'workflows', 'upstream-integration.yml'), 'utf8');
   assert.match(workflow, /status !== 'passed'/);
   assert.match(workflow, /not_executed/);
+
+  // T099: the workflow is a second line of defence, not the only one. The
+  // verifier process itself must also fail when nothing could be executed.
+  const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-empty-bin-'));
+  try {
+    const result = spawnSync(process.execPath, [path.join(PKG_ROOT, 'scripts', 'verify-upstream.mjs'), '--json'], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: { PATH: emptyBin, HOME: emptyBin, TMPDIR: emptyBin },
+    });
+    assert.notEqual(result.status, 0, 'T099: the verifier itself must fail on not_executed');
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, 'not_executed');
+  } finally {
+    await fs.rm(emptyBin, { recursive: true, force: true });
+  }
 });
 
 test('verify-upstream checks the expanded six-hook contract (REQ-22)', async () => {
@@ -271,6 +287,66 @@ const SPECIFY_SHIM = (version) => `case "$1" in
   extension) echo "boom: cannot add" >&2; exit 2 ;;
   *) exit 2 ;;
 esac`;
+
+// A spec-kit shim that really satisfies all four contract points, so a test
+// can isolate the version-bound verdict from a broken contract.
+const PASSING_SPECIFY_SHIM = (version) => `case "$1" in
+  --version) echo "specify ${version}" ;;
+  init)
+    mkdir -p .specify/templates .dsh/skills
+    for i in 1 2 3 4 5; do : > ".specify/templates/\${i}-template.md"; done
+    ;;
+  extension)
+    case "$2" in
+      add)
+        printf '%s\\n' \\
+          'hooks:' \\
+          '  before_implement:' \\
+          '  after_implement:' \\
+          '  before_bug_fix:' \\
+          '  after_bug_fix:' \\
+          '  before_clarify:' \\
+          '  before_plan:' \\
+          > .specify/extensions.yml
+        ;;
+      list)
+        printf '%s\\n' '[{"id":"superpowers-hooks","version":"0.5.1","enabled":true,"provides":{"hooks":6}}]'
+        ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac`;
+
+test('verify-upstream exits non-zero when only the version bound drifts (T099)', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX shell shims; covered on POSIX only');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-drift-only-'));
+  try {
+    const bin = await makeShimPath(root, {
+      specify: PASSING_SPECIFY_SHIM('1.3.0'),
+      uv: 'echo "uv 0.13.9"',
+      git: 'echo "git version 2.43.0"',
+    });
+    const result = await runVerifyUpstream({
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      HOME: root,
+      TMPDIR: root,
+    });
+    assert.equal(result.error, undefined, result.error?.message);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, 'passed', 'the shim must satisfy all four contract points');
+    assert.equal(report.checks.length, 4);
+    assert.ok(report.checks.every((check) => check.ok === true), JSON.stringify(report.checks));
+    for (const check of report.checks) {
+      assert.deepEqual(Object.keys(check).sort(), ['detail', 'id', 'ok', 'stderr'],
+        'T099 must not break the four-field check error contract');
+    }
+    assert.equal(report.versionDrift.needsAdjustment, true, '1.3.0 is below the >=1.4.0 floor');
+    assert.notEqual(result.status, 0, 'T099: version drift alone must fail the process');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
 
 test('verify-upstream reports the declared/observed version bound drift (T090)', async (t) => {
   if (process.platform === 'win32') return t.skip('POSIX shell shims; covered on POSIX only');
