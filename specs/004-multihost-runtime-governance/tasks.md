@@ -43,11 +43,11 @@ description: "004-multihost-runtime-governance 任务清单"
 
 **⚠️ CRITICAL**：本阶段未完成前，任何用户故事不得开始。
 
-- [ ] T004 [P] 写失败测试 `test/contract-core-purity.test.mjs`：静态扫描 `src/core/*.mjs`，出现 `@deepseek-ai/`、`ctx.`、`require(`、宿主目录名任一即失败；并含一条「人为注入宿主引用 → 断言必须变红」的自证用例（`test/contract-core-purity.test.mjs`）
-- [ ] T005 实现 `src/core/host-capabilities.mjs`：导出冻结常量 `HOST_CAPABILITIES`，四键 `dsh|claude|codex|cursor`，每键含 `key`、`integrationKey`、`toolPrefix`、`skillsDir`、`guidanceChannel`、`guidanceConfig`、`reloadPolicy`、`trustFlagPattern`；字段取值与约束见 `data-model.md` 的 `HostCapability.key`、`HostCapability.integrationKey`、`HostCapability.toolPrefix`、`HostCapability.skillsDir`、`HostCapability.guidanceChannel`、`HostCapability.guidanceConfig`、`HostCapability.reloadPolicy`、`HostCapability.trustFlagPattern`（`src/core/host-capabilities.mjs`）
-- [ ] T006 [P] 写失败测试 `test/host-capabilities.test.mjs`：四端齐全、`reloadPolicy` 三值合法、适配文件行数 ≤100、表内无重复 `skillsDir`（`test/host-capabilities.test.mjs`）
-- [ ] T007 [P] 写失败测试 `test/contract-parity.test.mjs`：同一动作经核心入口与 CLI 入口执行，输出 JSON 结构深度相等（键集合与类型，非仅快照）（`test/contract-parity.test.mjs`）
-- [ ] T008 实现 `bin/sdd-kit.mjs` 骨架：`node:util.parseArgs` 解析，子命令 `update|bridge|doctor|guard|guidance` 分发到 `src/core/`，未实现子命令返回 `{status:'error',code,message,fix}` 四字段并非零退出（`bin/sdd-kit.mjs`）
+- [x] T004 [P] 写失败测试 `test/contract-core-purity.test.mjs`：静态扫描 `src/core/*.mjs`，出现 `@deepseek-ai/`、`ctx.`、`require(`、宿主目录名任一即失败；并含一条「人为注入宿主引用 → 断言必须变红」的自证用例（`test/contract-core-purity.test.mjs`）
+- [x] T005 实现 `src/core/host-capabilities.mjs`：导出冻结常量 `HOST_CAPABILITIES`，四键 `dsh|claude|codex|cursor`，每键含 `key`、`integrationKey`、`toolPrefix`、`skillsDir`、`guidanceChannel`、`guidanceConfig`、`reloadPolicy`、`trustFlagPattern`；字段取值与约束见 `data-model.md` 的 `HostCapability.key`、`HostCapability.integrationKey`、`HostCapability.toolPrefix`、`HostCapability.skillsDir`、`HostCapability.guidanceChannel`、`HostCapability.guidanceConfig`、`HostCapability.reloadPolicy`、`HostCapability.trustFlagPattern`（`src/core/host-capabilities.mjs`）
+- [x] T006 [P] 写失败测试 `test/host-capabilities.test.mjs`：四端齐全、`reloadPolicy` 三值合法、适配文件行数 ≤100、表内无重复 `skillsDir`（`test/host-capabilities.test.mjs`）
+- [x] T007 [P] 写失败测试 `test/contract-parity.test.mjs`：同一动作经核心入口与 CLI 入口执行，输出 JSON 结构深度相等（键集合与类型，非仅快照）（`test/contract-parity.test.mjs`）
+- [x] T008 实现 `bin/sdd-kit.mjs` 骨架：`node:util.parseArgs` 解析，子命令 `update|bridge|doctor|guard|guidance` 分发到 `src/core/`，未实现子命令返回 `{status:'error',code,message,fix}` 四字段并非零退出（`bin/sdd-kit.mjs`）
 
 **Checkpoint**：能力表、纯度门禁、CLI 骨架、同构基座全部就位 → 用户故事可并行开始。
 
