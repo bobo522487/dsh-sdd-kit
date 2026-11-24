@@ -108,15 +108,15 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T024 [P] [US3] 写失败测试 `test/reload.test.mjs`：三态矩阵逐格断言、空改动集得 `none` 且不落盘、判定只有一处实现（对 `reload.mjs` 唯一导出断言）（`test/reload.test.mjs`）
-- [ ] T025 [P] [US3] 写失败测试 `test/marker.test.mjs`：写入含 `layer`/`timestamp`/`reason`/`host` 四字段、按 host 分条互不覆盖、清除只作用当前 host、按时间戳区分历史残留与本次改动（`test/marker.test.mjs`）
+- [x] T024 [P] [US3] 写失败测试 `test/reload.test.mjs`：三态矩阵逐格断言、空改动集得 `none` 且不落盘、判定只有一处实现（对 `reload.mjs` 唯一导出断言）（`test/reload.test.mjs`）
+- [x] T025 [P] [US3] 写失败测试 `test/marker.test.mjs`：写入含 `layer`/`timestamp`/`reason`/`host` 四字段、按 host 分条互不覆盖、清除只作用当前 host、按时间戳区分历史残留与本次改动（`test/marker.test.mjs`）
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] 实现 `src/core/reload.mjs` 的 `decideReload(changes, host)`，返回 `data-model.md` 的 `ReloadDecision.result`（`restart_host|new_session|none`）、`ReloadDecision.layers`（`tool_code|skill_data|extension_command`）、`ReloadDecision.reason`（人可读，含命中的改动层与宿主策略来源）、`ReloadDecision.host`（规范化宿主键）；查表来源为 `HOST_CAPABILITIES[*].reloadPolicy`（`src/core/reload.mjs`）
-- [ ] T027 [US3] 实现 `src/core/marker.mjs` 读写 `.specify/sdd-pending.json`，文件结构为 `{ [host]: MarkerEntry }`；条目字段对应 `data-model.md` 的 `MarkerEntry.layer`、`MarkerEntry.timestamp`、`MarkerEntry.reason`、`MarkerEntry.host`；写入前做原子写（临时文件 + rename）（`src/core/marker.mjs`）
-- [ ] T028 [US3] 在 DSH 适配器 `apply` 启动路径调用标记清除，仅删当前仓库当前 host 条目（`src/adapters/dsh/index.mjs`）
-- [ ] T029 [US3] `runAction('update')` 返回值增加增量字段 `reload`（结论 + 标记路径），既有字段保持不变（`src/core/action.mjs`）
+- [x] T026 [US3] 实现 `src/core/reload.mjs` 的 `decideReload(changes, host)`，返回 `data-model.md` 的 `ReloadDecision.result`（`restart_host|new_session|none`）、`ReloadDecision.layers`（`tool_code|skill_data|extension_command`）、`ReloadDecision.reason`（人可读，含命中的改动层与宿主策略来源）、`ReloadDecision.host`（规范化宿主键）；查表来源为 `HOST_CAPABILITIES[*].reloadPolicy`（`src/core/reload.mjs`）
+- [x] T027 [US3] 实现 `src/core/marker.mjs` 读写 `.specify/sdd-pending.json`，文件结构为 `{ [host]: MarkerEntry }`；条目字段对应 `data-model.md` 的 `MarkerEntry.layer`、`MarkerEntry.timestamp`、`MarkerEntry.reason`、`MarkerEntry.host`；写入前做原子写（临时文件 + rename）（`src/core/marker.mjs`）
+- [x] T028 [US3] 在 DSH 适配器 `apply` 启动路径调用标记清除，仅删当前仓库当前 host 条目（`src/adapters/dsh/index.mjs`）
+- [x] T029 [US3] `runAction('update')` 返回值增加增量字段 `reload`（结论 + 标记路径），既有字段保持不变（`src/core/action.mjs`）
 
 **Checkpoint**：改动后用户能明确知道下一步动作，历史残留不会被误报为本次。
 

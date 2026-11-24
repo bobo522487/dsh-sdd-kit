@@ -6,6 +6,7 @@
 
 import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
 import { assembleGuidance } from '../../core/guidance.mjs';
+import { clearMarker } from '../../core/marker.mjs';
 
 const CAP = HOST_CAPABILITIES.dsh;
 
@@ -30,6 +31,10 @@ export function renderGuidanceText(bundle) {
  * A missing service must never block plugin loading.
  */
 export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process.env, warnings = [] } = {}) {
+  // Startup is the completion point of a previous pending change: clear only
+  // this repository's entry for this host (REQ-18).
+  await clearMarker({ cwd, host: CAP.key }).catch(() => {});
+
   const service = typeof ctx?.get === 'function' ? ctx.get(CAP.guidanceConfig.service) : undefined;
   if (!service || typeof service.section !== 'function') {
     warnings.push('ctx.systemPrompt 服务缺失，会话引导静默缺席。');
