@@ -7,6 +7,14 @@ import { fileURLToPath } from 'node:url';
 
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
+import {
+  assertInside,
+  assertNoSymlinkComponent,
+  atomicWriteFile,
+  findSymlinkComponent,
+} from '../src/core/fsutil.mjs';
+import { bundledVersion, listArtifacts, readLedger, sha256File } from '../src/core/artifacts.mjs';
+import { captureSnapshot, readManifest } from '../src/core/snapshot.mjs';
 import { runUpdate } from '../src/core/update.mjs';
 import { runSetup } from '../src/core/setup.mjs';
 import { registerSddTools } from '../src/register.mjs';
@@ -1594,6 +1602,126 @@ test('ensure_integration_commands repairs a real project whose .dsh/skills was d
     const again = await runUpstream({ action: 'ensure_integration_commands', cwd });
     assert.equal(again.repaired, false, 'a healthy layout needs no repair');
     assert.deepEqual(again.commands, []);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 003-install-safety-hardening · 底座原语（原子写 / 守卫 / 产物清单 / 快照）
+// ---------------------------------------------------------------------------
+
+test('fsutil: atomicWriteFile swaps the inode and leaves no temp residue', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const target = path.join(cwd, 'a.md');
+    await fs.writeFile(target, 'v1', 'utf8');
+    const before = await fs.stat(target, { bigint: true });
+
+    await atomicWriteFile(target, Buffer.from('v2', 'utf8'));
+
+    assert.equal(await fs.readFile(target, 'utf8'), 'v2');
+    const after = await fs.stat(target, { bigint: true });
+    assert.notEqual(after.ino, before.ino, 'the swap must publish a new inode, not rewrite in place');
+    assert.deepEqual(await fs.readdir(cwd), ['a.md'], 'no temp file may survive a successful write');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('fsutil: atomicWriteFile keeps the target intact and cleans up when the publish step fails', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const target = path.join(cwd, 'a.md');
+    await fs.writeFile(target, 'v1', 'utf8');
+    // A non-empty directory at the target path makes rename() fail (ENOTEMPTY/EISDIR)
+    // after the temp file has been written and fsynced — a real failure, not a mock.
+    await fs.rm(target);
+    await fs.mkdir(target);
+    await fs.writeFile(path.join(target, 'keep'), 'x', 'utf8');
+
+    await assert.rejects(() => atomicWriteFile(target, Buffer.from('v2', 'utf8')));
+
+    assert.deepEqual(await fs.readdir(cwd), ['a.md'], 'the temp file must be removed on failure');
+    assert.equal((await fs.stat(target)).isDirectory(), true, 'the original entry must be untouched');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('fsutil: guards reject path escapes and symlinked components', async (t) => {
+  if (process.platform === 'win32') {
+    return t.skip('creating symlinks on Windows needs elevation; covered on POSIX only');
+  }
+  const cwd = await makeTempDir();
+  const outside = await makeTempDir();
+  try {
+    assert.throws(() => assertInside(cwd, path.join(cwd, '..', 'x.md')), /E_ESCAPE/);
+    assert.equal(assertInside(cwd, path.join(cwd, 'a', 'x.md')), path.join(cwd, 'a', 'x.md'));
+
+    const link = path.join(cwd, 'a-link');
+    await fs.symlink(outside, link);
+
+    assert.equal(await findSymlinkComponent(cwd, path.join(cwd, 'a', 'x.md')), null);
+    assert.equal(await findSymlinkComponent(cwd, path.join(cwd, 'a-link', 'x.md')), link);
+    await assert.rejects(() => assertNoSymlinkComponent(cwd, path.join(cwd, 'a-link', 'x.md')), /E_SYMLINK/);
+    assert.equal(await assertNoSymlinkComponent(cwd, path.join(cwd, 'a', 'x.md')), null);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('artifacts: the managed list and the fingerprint ledger agree with the bundled bytes', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const artifacts = await listArtifacts(cwd);
+    assert.equal(artifacts.length, 1);
+    const [artifact] = artifacts;
+    assert.equal(artifact.id, 'ears-spec-template');
+    assert.equal(artifact.owner, 'plugin');
+    assert.equal(artifact.path, path.join(cwd, '.specify', 'templates', 'overrides', 'spec-template.md'));
+    assert.equal(artifact.snapshotDir, path.join(cwd, '.specify', 'templates', 'overrides', '.backup'));
+    assert.equal(artifact.bundledSha256, await sha256File(artifact.bundledPath));
+
+    const ledger = await readLedger(artifact.ledgerPath);
+    assert.equal(ledger.artifact, 'spec-template.md');
+    assert.equal(ledger.versions.at(-1).sha256, artifact.bundledSha256, 'INV-2: the last ledger entry is the shipped fingerprint');
+    assert.equal(new Set(ledger.versions.map((v) => v.sha256)).size, ledger.versions.length, 'INV-8: no duplicate fingerprints');
+    assert.equal(await bundledVersion(artifact), ledger.versions.at(-1).sinceVersion);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('snapshot: capture self-ignores the backup directory and refreshes only on content change', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const [artifact] = await listArtifacts(cwd);
+    await writeSeed(cwd, '.specify/templates/overrides/spec-template.md', 'v1\n');
+
+    const first = await captureSnapshot(cwd, artifact, { clock: () => '2026-01-01T00:00:00.000Z' });
+    assert.equal(first.captured, true);
+    assert.equal(await fs.readFile(path.join(artifact.snapshotDir, '.gitignore'), 'utf8'), '*\n');
+    assert.equal(await fs.readFile(path.join(artifact.snapshotDir, 'ears-spec-template.bak'), 'utf8'), 'v1\n');
+
+    const manifest = await readManifest(artifact);
+    assert.equal(manifest.schema, 1);
+    const entry = manifest.snapshots['ears-spec-template'];
+    assert.equal(entry.relativePath, '.specify/templates/overrides/spec-template.md');
+    assert.equal(entry.sha256, await sha256File(artifact.path));
+    assert.equal(entry.sourceVersion, 'unknown', 'content that no ledger entry knows reports unknown');
+    assert.equal(entry.capturedAt, '2026-01-01T00:00:00.000Z');
+    assert.equal(Object.keys(manifest.snapshots).includes('.gitignore'), false, 'the ignore file is not a snapshot entry');
+
+    const second = await captureSnapshot(cwd, artifact, { clock: () => '2026-01-02T00:00:00.000Z' });
+    assert.equal(second.captured, false, 'INV-14: an up-to-date snapshot is not refreshed');
+    assert.equal((await readManifest(artifact)).snapshots['ears-spec-template'].capturedAt, '2026-01-01T00:00:00.000Z');
+
+    await writeSeed(cwd, '.specify/templates/overrides/spec-template.md', 'v2\n');
+    const third = await captureSnapshot(cwd, artifact, { clock: () => '2026-01-03T00:00:00.000Z' });
+    assert.equal(third.captured, true);
+    assert.equal(await fs.readFile(path.join(artifact.snapshotDir, 'ears-spec-template.bak'), 'utf8'), 'v2\n');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
