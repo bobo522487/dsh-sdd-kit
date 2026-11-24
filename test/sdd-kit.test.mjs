@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 import { runUpstream } from '../src/core/upstream.mjs';
 import { runBridge } from '../src/core/bridge.mjs';
@@ -2281,4 +2282,161 @@ test('candidates: selection never scans the filesystem for undeclared roots', as
   assert.equal(source.includes('readdir'), false, 'candidate discovery is declaration-driven, not a directory walk');
   assert.match(source, /DSH_SDD_KIT_SUPERPOWERS_DIR/);
   assert.match(source, /DSH_HOME/);
+});
+
+test('upstream: status and sync_superpowers report the selected directory (REQ-08)', async (t) => {
+  if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
+  const root = await makeTempDir();
+  try {
+    const [explicit] = await seedCandidateDirs(root, ['explicit'], Date.now());
+    const runner = async (command, args) => ({
+      ok: true,
+      stdout: `${command} ${(args ?? []).join(' ')}`,
+      stderr: '',
+    });
+    const status = await runUpstream({ action: 'status', cwd: root, superpowersDir: explicit }, runner);
+    assert.equal(status.superpowers.dir, explicit);
+    assert.equal(status.superpowers.selection.reason, 'explicit');
+    assert.equal(status.superpowers.selection.realPath, explicit);
+    assert.equal(status.superpowers.selection.fallback, false);
+
+    const synced = await runUpstream({ action: 'sync_superpowers', cwd: root, superpowersDir: explicit }, runner);
+    assert.equal(synced.dir, explicit);
+    assert.equal(synced.selection.reason, 'explicit');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('setup: sync_superpowers step reports dir and selection evidence', async () => {
+  const { deps } = setupFakes();
+  const calls = [];
+  const upstream = async (args) => {
+    calls.push(args);
+    if (args.action === 'sync_superpowers') {
+      return {
+        ok: true,
+        mode: 'pull',
+        skillCount: 15,
+        dir: '/mirror/superpowers',
+        selection: { reason: 'env', realPath: '/mirror/superpowers' },
+      };
+    }
+    return deps.runUpstream(args);
+  };
+  const cwd = await makeTempDir();
+  try {
+    const result = await runSetup({ cwd }, { runUpstream: upstream, runBridge: deps.runBridge });
+    const step = result.steps.find((entry) => entry.name === 'sync_superpowers');
+    assert.equal(step.detail.dir, '/mirror/superpowers');
+    assert.deepEqual(step.detail.selection, { reason: 'env', realPath: '/mirror/superpowers' });
+    assert.equal(calls.some((args) => args.action === 'sync_superpowers'), true);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('tools: sdd_upstream and sdd_bridge expose the new parameters', () => {
+  const defs = [];
+  const ctx = { tools: { register: (def) => { defs.push(def); return () => {}; } } };
+  registerSddTools(ctx, (def) => def);
+  const upstreamTool = defs.find((def) => def.name === 'sdd_upstream');
+  const bridgeTool = defs.find((def) => def.name === 'sdd_bridge');
+  assert.equal(upstreamTool.parameters.candidateDirs.type, 'array');
+  assert.equal(bridgeTool.parameters.artifact.type, 'string');
+  for (const action of ['inspect', 'install_overrides', 'restore_overrides', 'sync_index']) {
+    assert.match(bridgeTool.parameters.action.description, new RegExp(action));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// US5: real upstream verification script (REQ-17..REQ-19)
+// The script is spawned as a subprocess with a stubbed PATH so npm test never
+// touches the network or a real specify install.
+// ---------------------------------------------------------------------------
+
+const VERIFY_SCRIPT = path.join(PKG_ROOT, 'scripts', 'verify-upstream.mjs');
+
+function runNode(args, env) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, {
+      env,
+      encoding: 'utf8',
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+async function makeShimBin(root, shims) {
+  const binDir = path.join(root, 'bin');
+  await fs.mkdir(binDir, { recursive: true });
+  for (const [name, body] of Object.entries(shims)) {
+    const file = path.join(binDir, name);
+    await fs.writeFile(file, `#!/bin/sh\n${body}\n`, 'utf8');
+    await fs.chmod(file, 0o755);
+  }
+  return binDir;
+}
+
+test('verify-upstream: a missing toolchain reports not_executed with exit 0 (INV-23)', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX shell shims; covered on POSIX only');
+  const result = await runNode([VERIFY_SCRIPT, '--json'], {
+    PATH: '',
+    HOME: os.tmpdir(),
+  });
+  assert.equal(result.code, 0, 'INV-23: an unusable environment must not fail the run');
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.status, 'not_executed');
+  assert.equal(report.checks.length, 0);
+  assert.equal(typeof report.reason, 'string');
+  assert.ok(report.reason.length > 0, 'INV-23: not_executed must explain itself');
+});
+
+test('verify-upstream: a broken specify exits 1 and names the failing contract point (INV-24)', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX shell shims; covered on POSIX only');
+  const root = await makeTempDir();
+  try {
+    const binDir = await makeShimBin(root, {
+      specify: 'echo "boom: unknown option" >&2\nexit 2',
+      uv: 'echo "uv 0.13.9"',
+      git: 'echo "git version 2.43.0"',
+    });
+    const result = await runNode([VERIFY_SCRIPT, '--json'], {
+      PATH: binDir,
+      HOME: root,
+      TMPDIR: root,
+    });
+    assert.equal(result.code, 1, 'INV-24: a broken contract must fail the run');
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, 'failed');
+    const failed = report.checks.filter((check) => check.ok === false);
+    assert.ok(failed.length > 0);
+    assert.ok(failed.every((check) => typeof check.detail === 'string' && check.detail.length > 0));
+    assert.ok(failed.some((check) => check.id === 'init-args'));
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('verify-upstream: the daily workflow exists with schedule and manual dispatch (REQ-18)', async () => {
+  const workflow = await fs.readFile(path.join(PKG_ROOT, '.github', 'workflows', 'upstream-integration.yml'), 'utf8');
+  assert.match(workflow, /schedule:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /verify-upstream/);
+});
+
+test('verify-upstream: the unit suite never imports the real verification module (REQ-18)', async () => {
+  const source = await fs.readFile(new URL(import.meta.url), 'utf8');
+  assert.equal(/^import[^;]*verify-upstream\.mjs/m.test(source), false,
+    'REQ-18: the unit suite must not import the integration module; it may only spawn it with a stubbed PATH');
+  const gate = ['DSH', 'SDD', 'KIT', 'INTEGRATION'].join('_');
+  assert.equal(source.includes(gate), false,
+    'REQ-18: the unit suite must not switch the integration suite on');
+  const integrationSuite = await fs.readFile(path.join(PKG_ROOT, 'test', 'upstream-contract.test.mjs'), 'utf8');
+  assert.match(integrationSuite, new RegExp(gate));
+  assert.match(integrationSuite, /t\.skip/);
 });
