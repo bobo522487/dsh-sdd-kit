@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { listArtifacts } from './artifacts.mjs';
 import { assertInside, assertNoSymlinkComponent, atomicWriteFile } from './fsutil.mjs';
-import { captureSnapshot } from './snapshot.mjs';
+import { captureSnapshot, restoreSnapshots } from './snapshot.mjs';
 import { classifyArtifact, VERDICT } from './status.mjs';
 
 async function exists(p) {
@@ -231,6 +231,25 @@ async function installOverrides(cwd, overwrite = false, deps = {}) {
   };
 }
 
+async function restoreOverrides(cwd, artifactId, deps = {}) {
+  const root = path.resolve(cwd || process.cwd());
+  const artifacts = deps.artifacts ?? (await listArtifacts(root));
+
+  if (artifactId && !artifacts.some((artifact) => artifact.id === artifactId)) {
+    return {
+      action: 'restore_overrides',
+      ok: false,
+      error: {
+        code: 'E_ARGS',
+        message: `Unknown artifact "${artifactId}". Expected one of: ${artifacts.map((a) => a.id).join(', ')}.`,
+      },
+    };
+  }
+
+  const outcome = await restoreSnapshots(root, artifacts, { artifact: artifactId ?? null });
+  return { action: 'restore_overrides', ...outcome };
+}
+
 async function syncIndex(cwd) {
   const root = path.resolve(cwd || process.cwd());
   const info = await inspectRepo(root);
@@ -272,6 +291,8 @@ export async function runBridge(args = {}, deps = {}) {
       return inspectRepo(args.cwd, args.featureName, args.bugSlug);
     case 'install_overrides':
       return installOverrides(args.cwd, Boolean(args.overwrite), deps);
+    case 'restore_overrides':
+      return restoreOverrides(args.cwd, args.artifact, deps);
     case 'sync_index':
       return syncIndex(args.cwd);
     default:
@@ -280,7 +301,7 @@ export async function runBridge(args = {}, deps = {}) {
         action,
         error: {
           code: 'E_ARGS',
-          message: `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, sync_index.`,
+          message: `Unknown sdd_bridge action "${action}". Expected one of: inspect, install_overrides, restore_overrides, sync_index.`,
           hint: 'Task checkbox updates belong to upstream /speckit.implement, not to this bridge.',
         },
       };
