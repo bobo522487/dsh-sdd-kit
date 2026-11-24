@@ -2087,3 +2087,90 @@ test('sdd_bridge: an unknown action enumerates all four supported actions (REQ-1
     assert.match(result.error.message, new RegExp(name), `the hint must list ${name}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 003 US3 · 原子写入与符号链接防护（AC-08/AC-09）
+// ---------------------------------------------------------------------------
+
+test('install_overrides: a symlinked target is refused before any write (AC-08)', async (t) => {
+  if (process.platform === 'win32') return t.skip('creating symlinks on Windows needs elevation; covered on POSIX only');
+  const cwd = await makeTempDir();
+  const outside = await makeTempDir();
+  try {
+    await fs.mkdir(path.join(cwd, path.dirname(EARS_OVERRIDE)), { recursive: true });
+    const external = path.join(outside, 'spec-template.md');
+    await fs.writeFile(external, 'outside\n', 'utf8');
+    await fs.symlink(external, path.join(cwd, EARS_OVERRIDE));
+
+    const result = await runBridge({ action: 'install_overrides', cwd });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'failed');
+    assert.match(result.artifacts[0].reason, /^E_SYMLINK: /);
+    assert.equal(await fs.readFile(external, 'utf8'), 'outside\n');
+    assert.equal((await fs.lstat(path.join(cwd, EARS_OVERRIDE))).isSymbolicLink(), true);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: a symlinked parent directory is refused on first install (REQ-15)', async (t) => {
+  if (process.platform === 'win32') return t.skip('creating symlinks on Windows needs elevation; covered on POSIX only');
+  const cwd = await makeTempDir();
+  const outside = await makeTempDir();
+  try {
+    await fs.mkdir(path.join(cwd, '.specify', 'templates'), { recursive: true });
+    await fs.symlink(outside, path.join(cwd, '.specify', 'templates', 'overrides'));
+
+    const result = await runBridge({ action: 'install_overrides', cwd });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'failed');
+    assert.match(result.artifacts[0].reason, /^E_SYMLINK: /);
+    assert.deepEqual(await fs.readdir(outside), [], 'nothing may be created behind the link');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: a failed write leaves the target intact and no temp residue (AC-08)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const [base] = await listArtifacts(cwd);
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+    const artifacts = [{ ...base, bundledPath: path.join(cwd, 'not-a-file-directory') }];
+    await fs.mkdir(artifacts[0].bundledPath);
+
+    const result = await runBridge({ action: 'install_overrides', cwd, overwrite: true }, { artifacts });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'failed');
+    assert.match(result.artifacts[0].reason, /^EISDIR/);
+    assert.equal(await fs.readFile(path.join(cwd, EARS_OVERRIDE), 'utf8'), 'hand edited\n');
+    assert.equal(
+      (await fs.readdir(path.dirname(path.join(cwd, EARS_OVERRIDE)))).some((name) => name.endsWith('.tmp')),
+      false,
+      'no temp residue'
+    );
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: one failed artifact does not block the next one (AC-09)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const [base] = await listArtifacts(cwd);
+    const broken = { ...base, id: 'broken-artifact', path: path.join(cwd, '.specify', 'templates', 'overrides', 'broken.md'), bundledPath: path.join(cwd, 'missing-bundle-dir') };
+    const healthy = { ...base, id: 'healthy-artifact', path: path.join(cwd, '.specify', 'templates', 'overrides', 'healthy.md') };
+    await fs.mkdir(broken.bundledPath);
+
+    const result = await runBridge({ action: 'install_overrides', cwd }, { artifacts: [broken, healthy] });
+    assert.equal(result.artifacts.length, 2, 'INV-21: every artifact gets a report entry');
+    assert.equal(result.artifacts[0].status, 'failed');
+    assert.equal(result.artifacts[1].status, 'written');
+    assert.equal(result.ok, false, 'one failed artifact fails the whole report');
+    assert.equal(await fs.readFile(healthy.path, 'utf8'), await fs.readFile(healthy.bundledPath, 'utf8'));
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
