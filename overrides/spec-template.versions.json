@@ -1,0 +1,9 @@
+{
+  "artifact": "spec-template.md",
+  "versions": [
+    {
+      "sinceVersion": "0.2.0",
+      "sha256": "803203dce4e93f53d25cc3bf77774f91769a21cfac44be055015bfd6fe5458fb"
+    }
+  ]
+}
