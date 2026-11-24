@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { HOST_CAPABILITIES, HOST_KEYS } from '../../core/host-capabilities.mjs';
+import { resolveRunContext } from '../../core/action.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 
@@ -55,7 +56,8 @@ function withStatus(dispose, status) {
  * Read the optional systemPrompt service without requiring it in `inject`.
  * A missing service must never block plugin loading.
  */
-export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process.env, warnings = [] } = {}) {
+export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process.env, warnings = [], sessionStart, runId } = {}) {
+  const runContext = resolveRunContext({ params: { sessionStart, runId }, env });
   // Startup is the completion point of a previous pending change: clear only
   // this repository's entry for this host (REQ-18).
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
@@ -63,7 +65,7 @@ export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process
   const service = typeof ctx?.get === 'function' ? ctx.get(CAP.guidanceConfig.service) : undefined;
   if (!service || typeof service.section !== 'function') {
     warnings.push('ctx.systemPrompt 服务缺失，会话引导静默缺席。');
-    return withStatus(() => {}, { enabled: null, registered: false, reason: 'no-service', warnings });
+    return withStatus(() => {}, { enabled: null, registered: false, reason: 'no-service', warnings, runContext });
   }
 
   const bundle = await assembleGuidance({
@@ -77,10 +79,10 @@ export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process
   const enabled = bundle.enabled !== false;
   const hasText = Boolean(bundle.upstreamText?.trim?.());
   if (!enabled) {
-    return withStatus(() => {}, { enabled, registered: false, reason: 'disabled', warnings });
+    return withStatus(() => {}, { enabled, registered: false, reason: 'disabled', warnings, runContext });
   }
   if (!hasText) {
-    return withStatus(() => {}, { enabled, registered: false, reason: 'no-upstream', warnings });
+    return withStatus(() => {}, { enabled, registered: false, reason: 'no-upstream', warnings, runContext });
   }
 
   const anchorOrder = typeof service.getSectionOrder === 'function'
@@ -92,5 +94,5 @@ export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process
     order: anchorOrder + CAP.guidanceConfig.sectionOrderOffset,
     text,
   });
-  return withStatus(dispose, { enabled, registered: true, reason: 'registered', warnings });
+  return withStatus(dispose, { enabled, registered: true, reason: 'registered', warnings, runContext });
 }

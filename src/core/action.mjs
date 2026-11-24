@@ -36,6 +36,24 @@ export function unknownActionError(action) {
 }
 
 /**
+ * Resolve the shared run context once per call. Explicit parameters win over
+ * environment values; the environment keys let the CLI and startup adapters
+ * agree on one session/run without depending on host-private ctx APIs.
+ */
+export function resolveRunContext({ params = {}, env = process.env } = {}) {
+  const declared = params.sessionStart ?? env?.DSH_SDD_KIT_SESSION_START;
+  const numeric = typeof declared === 'string' && declared.trim() !== '' ? Number(declared) : Number.NaN;
+  const parsed = typeof declared === 'number'
+    ? declared
+    : (Number.isFinite(numeric) ? numeric : (typeof declared === 'string' ? Date.parse(declared) : Number.NaN));
+  const runId = params.runId ?? env?.DSH_SDD_KIT_RUN_ID ?? null;
+  return {
+    ...(Number.isFinite(parsed) ? { sessionStart: parsed } : {}),
+    ...(typeof runId === 'string' && runId !== '' ? { runId } : {}),
+  };
+}
+
+/**
  * Derive the changed layers of an update report. `spec-kit` refreshes the CLI
  * (tool code), `superpowers` refreshes the skill mirror (skill data), and an
  * extension/commands change touches the extension_command layer.
@@ -90,30 +108,31 @@ async function withReload(report, params) {
  * @param {object} params shared parameters (cwd, trigger, ...)
  */
 export async function runAction(action, params = {}, deps = {}) {
+  const withContext = { ...params, ...resolveRunContext({ params, env: params.env ?? process.env }) };
   switch (action) {
     case 'update':
-      return withReload(await (deps.runUpdate ?? runUpdate)(params), params);
+      return withReload(await (deps.runUpdate ?? runUpdate)(withContext), withContext);
     case 'setup':
-      return (deps.runSetup ?? runSetup)(params);
+      return (deps.runSetup ?? runSetup)(withContext);
     case 'bridge': {
       // I7: bridge reports failures as `{ok:false, error}` with no `status`, so a
       // CLI caller could not tell success from failure and exited 0. Tag the
       // failure here (bridge.mjs keeps its documented shape for tool callers);
       // the success payload is returned untouched.
-      const result = await (deps.runBridge ?? runBridge)(params);
+      const result = await (deps.runBridge ?? runBridge)(withContext);
       if (result && result.ok === false && result.status === undefined) {
         return { ...result, status: 'error' };
       }
       return result;
     }
     case 'upstream':
-      return (deps.runUpstream ?? runUpstream)(params);
+      return (deps.runUpstream ?? runUpstream)(withContext);
     case 'guidance':
-      return (deps.assembleGuidance ?? assembleGuidance)(params);
+      return (deps.assembleGuidance ?? assembleGuidance)(withContext);
     case 'guard':
-      return (deps.checkPlanningGuard ?? checkPlanningGuard)(params);
+      return (deps.checkPlanningGuard ?? checkPlanningGuard)(withContext);
     case 'doctor':
-      return (deps.runDoctor ?? runDoctor)(params);
+      return (deps.runDoctor ?? runDoctor)(withContext);
     default:
       return unknownActionError(action);
   }

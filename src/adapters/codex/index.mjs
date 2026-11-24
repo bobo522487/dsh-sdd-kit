@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
+import { resolveRunContext } from '../../core/action.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 import { removeManagedBlockFile } from '../../core/fsutil.mjs';
@@ -32,7 +33,10 @@ export async function applyCodexGuidance({
   env = process.env,
   skills,
   nativeEventsAvailable = false,
+  sessionStart,
+  runId,
 } = {}) {
+  const runContext = resolveRunContext({ params: { sessionStart, runId }, env });
   // Startup completes a previous pending change: drop only this repository's
   // entry for this host (REQ-18). A failed clear never blocks guidance.
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
@@ -60,5 +64,6 @@ export async function applyCodexGuidance({
     removed,
     warnings: bundle.warnings,
     bundle,
+    runContext,
   };
 }

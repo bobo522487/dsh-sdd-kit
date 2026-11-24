@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { HOST_CAPABILITIES, checkTrustFlags } from '../../core/host-capabilities.mjs';
+import { resolveRunContext } from '../../core/action.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 import { removeManagedBlockFile } from '../../core/fsutil.mjs';
@@ -31,7 +32,8 @@ export function cursorDefaultConfig() {
   return { guidanceChannel: CAP.guidanceChannel, skillsDir: CAP.skillsDir, toolPrefix: CAP.toolPrefix };
 }
 
-export async function applyCursorGuidance({ cwd = process.cwd(), env = process.env, skills } = {}) {
+export async function applyCursorGuidance({ cwd = process.cwd(), env = process.env, skills, sessionStart, runId } = {}) {
+  const runContext = resolveRunContext({ params: { sessionStart, runId }, env });
   // Startup completes a previous pending change: drop only this repository's
   // entry for this host (REQ-18). A failed clear never blocks guidance.
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
@@ -51,5 +53,5 @@ export async function applyCursorGuidance({ cwd = process.cwd(), env = process.e
     removed = await removeManagedBlockFile({ file: target, ...MARKERS });
   }
   const warnings = [...bundle.warnings];
-  return { channel: 'rule-dir', text, target, enabled, written, removed, warnings, bundle };
+  return { channel: 'rule-dir', text, target, enabled, written, removed, warnings, bundle, runContext };
 }
