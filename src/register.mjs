@@ -1,7 +1,4 @@
-import { runUpstream } from './core/upstream.mjs';
-import { runBridge } from './core/bridge.mjs';
-import { runUpdate } from './core/update.mjs';
-import { runSetup } from './core/setup.mjs';
+import { runAction } from './core/action.mjs';
 
 function renderJsonText(_args, value) {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
@@ -9,8 +6,6 @@ function renderJsonText(_args, value) {
 
 export function registerSddTools(ctx, defineTool, deps = {}) {
   const disposers = [];
-  const runUpdateImpl = deps.runUpdate ?? runUpdate;
-  const runSetupImpl = deps.runSetup ?? runSetup;
 
   disposers.push(
     ctx.tools.register(
@@ -75,9 +70,9 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
         },
         async execute(args) {
           const action = args?.action || '';
-          if (action === 'setup') return runSetupImpl(args);
-          if (action === 'update_all') return runUpdateImpl(args);
-          return runUpstream(args);
+          if (action === 'setup') return runAction('setup', args, deps);
+          if (action === 'update_all') return runAction('update', args, deps);
+          return runAction('upstream', args, deps);
         },
       })
     )
@@ -123,7 +118,7 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
         },
         isConcurrencySafe: (args) => (args?.action || 'inspect') === 'inspect',
         async execute(args) {
-          return runBridge(args);
+          return runAction('bridge', args, deps);
         },
       })
     )

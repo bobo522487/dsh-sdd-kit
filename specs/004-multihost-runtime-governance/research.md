@@ -79,6 +79,6 @@
 
 ## 未决事项（进入实现前须解决，非规划阻塞）
 
-1. **peer 版本实测下界**（R8）：需在有 DSH/Claude Code/Codex/Cursor 运行时的机器上分别安装并确定各 peer 的真实最低版本；纯 Node 探针只能确定 optional 化有效，不能定数值。由 M1 里程碑前置验证承担。
+1. **peer 版本实测下界**（R8）：需在有 DSH/Claude Code/Codex/Cursor 运行时的机器上分别安装并确定各 peer 的真实最低版本；纯 Node 探针只能确定 optional 化有效，不能定数值。由 M1 里程碑前置验证承担。**实现记录（2026-11-24，T015）**：当前执行环境仅具备 Node v26.13.1，未安装任何 `@deepseek-ai/*` 宿主运行时；`npm ls @deepseek-ai/cordis @deepseek-ai/dsh-skill-filesystem @deepseek-ai/dsh-tools` 均不可用。按 R8 保留版本串 `*`，仅以 `peerDependenciesMeta.<name>.optional=true` 消除纯 Node 环境的强制安装；具体下界数值维持未决，须在宿主环境补齐。
 2. **外部宿主引导面最小验证**（R4）：Claude 是否选用 events 需在实际 Claude Code 环境验证一次；不可用时按 spec REQ-44 降级为项目级托管块并记录。
 3. **回归矩阵 CI 凭据**（REQ-42）：公开网络与上游渠道在 CI 上是否可用由实现阶段配置；不可用时按「未执行」处理。

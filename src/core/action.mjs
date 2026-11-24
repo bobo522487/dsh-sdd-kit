@@ -6,6 +6,7 @@
 import { runUpstream } from './upstream.mjs';
 import { runBridge } from './bridge.mjs';
 import { runUpdate } from './update.mjs';
+import { runSetup } from './setup.mjs';
 
 export function actionError(code, message, fix) {
   return { status: 'error', code, message, fix };
@@ -23,14 +24,16 @@ export function unknownActionError(action) {
  * @param {string} action one of update|bridge|upstream|doctor|guard|guidance
  * @param {object} params shared parameters (cwd, trigger, ...)
  */
-export async function runAction(action, params = {}) {
+export async function runAction(action, params = {}, deps = {}) {
   switch (action) {
     case 'update':
-      return runUpdate(params);
+      return (deps.runUpdate ?? runUpdate)(params);
+    case 'setup':
+      return (deps.runSetup ?? runSetup)(params);
     case 'bridge':
-      return runBridge(params);
+      return (deps.runBridge ?? runBridge)(params);
     case 'upstream':
-      return runUpstream(params);
+      return (deps.runUpstream ?? runUpstream)(params);
     case 'doctor':
     case 'guard':
     case 'guidance':

@@ -61,17 +61,17 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 1 ⚠️（先写、先看失败）
 
-- [ ] T009 [P] [US1] 写失败测试 `test/regression-dsh.test.mjs`：锁定 `sdd_upstream` / `sdd_bridge` 既有输入字段、输出字段、成功/失败语义与既有版本逐项一致，新增字段须为增量（`test/regression-dsh.test.mjs`）
-- [ ] T010 [P] [US1] 写失败测试 `test/compat.test.mjs`：`package.json` 三个 peer 均存在 `peerDependenciesMeta.<name>.optional === true`，且无 `*` 之外的强制安装语义（`test/compat.test.mjs`）
+- [x] T009 [P] [US1] 写失败测试 `test/regression-dsh.test.mjs`：锁定 `sdd_upstream` / `sdd_bridge` 既有输入字段、输出字段、成功/失败语义与既有版本逐项一致，新增字段须为增量（`test/regression-dsh.test.mjs`）
+- [x] T010 [P] [US1] 写失败测试 `test/compat.test.mjs`：`package.json` 三个 peer 均存在 `peerDependenciesMeta.<name>.optional === true`，且无 `*` 之外的强制安装语义（`test/compat.test.mjs`）
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] 在 `src/core/action.mjs` 抽出统一动作入口 `runAction(action, params)`，内部委托既有 `upstream.mjs`/`update.mjs`/`bridge.mjs`，不重实现（`src/core/action.mjs`）
-- [ ] T012 [US1] 改造 `src/register.mjs` 的两个工具为委托 `runAction`，保持 `registerSddTools(ctx, defineTool, deps)` 签名与渲染契约不变（`src/register.mjs`）
-- [ ] T013 [P] [US1] `bin/sdd-kit.mjs` 实现 `update`、`bridge` 子命令，全部委托 `runAction`，禁止在 CLI 内复刻逻辑（`bin/sdd-kit.mjs`）
-- [ ] T014 [US1] `package.json` 为三个 peerDependencies 增加 `peerDependenciesMeta.<name>.optional = true`（`package.json`）
-- [ ] T015 [US1] 实测并收紧 peer 版本下界：在具备宿主运行时的机器上分别安装，记录真实最低版本并替换 `*`；纯 Node 环境不可定的结论写入 `research.md` 未决事项（`package.json`、`research.md`）
-- [ ] T016 [US1] 在 `src/index.mjs` 保持 `export const inject = ['tools']` 不变，仅接线适配器（若宿主服务缺失不得影响加载）（`src/index.mjs`）
+- [x] T011 [US1] 在 `src/core/action.mjs` 抽出统一动作入口 `runAction(action, params)`，内部委托既有 `upstream.mjs`/`update.mjs`/`bridge.mjs`，不重实现（`src/core/action.mjs`）
+- [x] T012 [US1] 改造 `src/register.mjs` 的两个工具为委托 `runAction`，保持 `registerSddTools(ctx, defineTool, deps)` 签名与渲染契约不变（`src/register.mjs`）
+- [x] T013 [P] [US1] `bin/sdd-kit.mjs` 实现 `update`、`bridge` 子命令，全部委托 `runAction`，禁止在 CLI 内复刻逻辑（`bin/sdd-kit.mjs`）
+- [x] T014 [US1] `package.json` 为三个 peerDependencies 增加 `peerDependenciesMeta.<name>.optional = true`（`package.json`）
+- [x] T015 [US1] 实测并收紧 peer 版本下界：在具备宿主运行时的机器上分别安装，记录真实最低版本并替换 `*`；纯 Node 环境不可定的结论写入 `research.md` 未决事项（`package.json`、`research.md`）
+- [x] T016 [US1] 在 `src/index.mjs` 保持 `export const inject = ['tools']` 不变，仅接线适配器（若宿主服务缺失不得影响加载）（`src/index.mjs`）
 
 **Checkpoint**：DSH 端可观察行为 100% 回归一致，CLI 独立可用，MVP 可交付。
 
