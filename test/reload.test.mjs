@@ -82,3 +82,68 @@ test('an unchanged update writes no marker (REQ-20)', async () => {
   assert.equal(result.reload.result, 'none');
   await assert.rejects(fs.readFile(path.join(repo, '.specify', 'sdd-pending.json'), 'utf8'));
 });
+
+test('a none decision with a non-empty layer set explains that no action is needed (AC-09)', () => {
+  const decision = decideReload({ layers: ['extension_command'] }, 'cursor');
+  assert.equal(decision.result, 'none');
+  assert.deepEqual(decision.layers, ['extension_command']);
+  assert.match(decision.reason, /无需/);
+  assert.doesNotMatch(decision.reason, /新开会话|重启宿主/);
+  assert.match(decision.reason, /extension_command/);
+});
+
+test('only new_session and restart_host decisions carry a reload instruction (AC-09)', () => {
+  const restart = decideReload({ layers: ['tool_code'] }, 'dsh');
+  assert.match(restart.reason, /重启宿主/);
+  const session = decideReload({ layers: ['skill_data'] }, 'claude');
+  assert.match(session.reason, /新开会话/);
+  assert.doesNotMatch(session.reason, /重启宿主/);
+});
+
+test('a failed update writes no pending marker (REQ-17/REQ-20)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-reload-failed-'));
+  await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+  const fakeUpdate = async () => ({
+    action: 'update',
+    ok: false,
+    components: [{ component: 'spec-kit', outcome: 'failed', error: 'boom' }],
+    requiresRestart: false,
+    errors: ['spec-kit: boom'],
+    cwd: repo,
+  });
+  const result = await runAction('update', { cwd: repo, host: 'dsh' }, { runUpdate: fakeUpdate });
+  assert.equal(result.ok, false);
+  assert.equal(result.reload.markerPath, path.join(repo, '.specify', 'sdd-pending.json'));
+  await assert.rejects(fs.readFile(path.join(repo, '.specify', 'sdd-pending.json'), 'utf8'));
+});
+
+test('a partially failed update never persists a reload marker (REQ-17/REQ-20)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-reload-partial-'));
+  await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+  const fakeUpdate = async () => ({
+    action: 'update',
+    ok: false,
+    components: [
+      { component: 'spec-kit', outcome: 'updated' },
+      { component: 'superpowers', outcome: 'failed', error: 'mirror offline' },
+    ],
+    requiresRestart: true,
+    errors: ['superpowers: mirror offline'],
+    cwd: repo,
+  });
+  const result = await runAction('update', { cwd: repo, host: 'dsh' }, { runUpdate: fakeUpdate });
+  assert.equal(typeof result.reload.reason, 'string');
+  await assert.rejects(fs.readFile(path.join(repo, '.specify', 'sdd-pending.json'), 'utf8'));
+});
+
+test('an update that reports error status keeps the marker untouched (REQ-20)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-reload-status-error-'));
+  await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+  const fakeUpdate = async () => ({
+    action: 'update', status: 'error', ok: false, code: 'E_UPDATE', message: 'nope', fix: 'retry',
+  });
+  const result = await runAction('update', { cwd: repo, host: 'dsh' }, { runUpdate: fakeUpdate });
+  assert.equal(result.status, 'error');
+  assert.equal(result.reload, undefined);
+  await assert.rejects(fs.readFile(path.join(repo, '.specify', 'sdd-pending.json'), 'utf8'));
+});

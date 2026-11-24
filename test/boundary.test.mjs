@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { runDoctor } from '../src/core/doctor.mjs';
 import { runAction } from '../src/core/action.mjs';
 
-const PKG_ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+const PKG_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 test('a user-authored skill stays byte-identical after setup and doctor (REQ-03/REQ-39)', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-boundary-'));
@@ -49,4 +50,15 @@ test('the doctor action remains read-only for arbitrary repository roots (REQ-39
   const report = await runAction('doctor', { cwd: repo });
   assert.deepEqual(Object.keys(report), ['environment', 'host', 'repository', 'runtime', 'triggerDryRun']);
   assert.deepEqual(await fs.readdir(repo), before);
+});
+
+test('the package root resolves through fileURLToPath, not the raw URL pathname (REQ-01)', async () => {
+  // A URL pathname keeps percent-encoding; on Windows it also keeps a leading
+  // slash before the drive letter. fileURLToPath is the only portable form.
+  const url = new URL('..', import.meta.url);
+  assert.equal(PKG_ROOT, path.resolve(fileURLToPath(url)));
+  assert.equal(PKG_ROOT, path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'));
+
+  const awkward = path.join(os.tmpdir(), 'dsh sdd kit %20 root');
+  assert.equal(fileURLToPath(pathToFileURL(awkward).href), awkward);
 });

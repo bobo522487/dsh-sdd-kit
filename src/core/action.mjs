@@ -39,6 +39,19 @@ function changedLayers(report) {
 }
 
 /**
+ * A reload marker is a promise that a *successful* change is waiting to be
+ * picked up. `runUpdate` reports failure as `{ok: false, errors}` without a
+ * `status` field, so success must be decided from both shapes — otherwise a
+ * failed update would leave a marker the user can never clear.
+ */
+function isSuccessfulUpdate(report) {
+  if (!report || report.action !== 'update') return false;
+  if (report.status === 'error') return false;
+  if (report.ok === false) return false;
+  return !(Array.isArray(report.errors) && report.errors.length > 0);
+}
+
+/**
  * Attach the reload conclusion to an update result and persist the pending
  * marker only when the user actually has to act (REQ-17/REQ-20).
  */
@@ -49,6 +62,7 @@ async function withReload(report, params) {
   const decision = decideReload({ layers }, host);
   const result = { ...report, reload: { ...decision, markerPath: markerPath(report.cwd ?? params.cwd ?? process.cwd()) } };
   if (decision.result === 'none') return result;
+  if (!isSuccessfulUpdate(report)) return result;
 
   await writeMarker({
     cwd: report.cwd ?? params.cwd ?? process.cwd(),

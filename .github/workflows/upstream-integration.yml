@@ -34,13 +34,66 @@ jobs:
       - name: Pin the discipline mirror (pinned-mirror only)
         if: matrix.upstream == 'pinned-mirror'
         run: git clone --depth 1 --branch "${SUPERPOWERS_REF}" https://github.com/obra/superpowers.git "$RUNNER_TEMP/superpowers-pinned"
-      - name: Install → init → doctor smoke (REQ-40)
+      - name: Install → init → extension → doctor smoke (REQ-40)
         run: |
           WORKDIR="$RUNNER_TEMP/sdd-${UPSTREAM_VARIANT}-${HOST_KEY}"
           mkdir -p "$WORKDIR"
           specify init "$WORKDIR" --integration "$HOST_KEY" --non-interactive --force --ignore-agent-tools
+          # The doctor only proves something when the sample project actually
+          # carries the extension under test: without it the repository and host
+          # zones degrade to warnings and the smoke test proves nothing.
+          (cd "$WORKDIR" && specify extension add --dev "$GITHUB_WORKSPACE/spec-kit-extension" --force)
           (cd "$WORKDIR" && node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" doctor --json > doctor.json)
-          node -e "const r = require(process.env.RUNNER_TEMP + '/sdd-' + process.env.UPSTREAM_VARIANT + '-' + process.env.HOST_KEY + '/doctor.json'); const zones = ['environment','host','repository','runtime','triggerDryRun']; for (const z of zones) if (!(z in r)) { console.error('missing zone ' + z); process.exit(1); }"
+          cat > "$RUNNER_TEMP/verify-doctor.mjs" <<'NODE'
+          import fs from 'node:fs';
+
+          // Zone presence alone is not evidence: a doctor where every zone is
+          // fail still emits all five keys. Assert the state of each zone and
+          // of each diagnostic item, and treat skipped/not_executed as a
+          // failure for the zones that must actually execute here.
+          const ZONES = ['environment', 'host', 'repository', 'runtime', 'triggerDryRun'];
+          const ALLOWED = ['pass', 'fail', 'skipped', 'not_executed'];
+          const MUST_PASS = ['environment', 'host', 'repository', 'runtime'];
+
+          const file = process.argv[2];
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          } catch (error) {
+            console.error(`doctor gate: cannot read ${file}: ${error.message}`);
+            process.exit(1);
+          }
+
+          const problems = [];
+          for (const zone of ZONES) {
+            const value = report[zone];
+            if (!value || typeof value !== 'object') {
+              problems.push(`missing zone ${zone}`);
+              continue;
+            }
+            const status = value.status;
+            if (!ALLOWED.includes(status)) {
+              problems.push(`${zone}: unknown status ${JSON.stringify(status)} (expected one of ${ALLOWED.join('|')})`);
+              continue;
+            }
+            if (MUST_PASS.includes(zone) && status !== 'pass') {
+              problems.push(`${zone}: status ${status}, but ${zone} must pass (skipped and not_executed are failures)`);
+            }
+            for (const item of value.items ?? []) {
+              if (item?.status === 'fail') {
+                problems.push(`${zone}: failing item ${item.code ?? '(unnamed)'} — ${item.message ?? ''}`);
+              }
+            }
+          }
+
+          if (problems.length > 0) {
+            console.error(`doctor gate failed for ${file}:`);
+            for (const problem of problems) console.error(`  - ${problem}`);
+            process.exit(1);
+          }
+          console.log(`doctor gate passed: ${ZONES.map((zone) => `${zone}=${report[zone].status}`).join(' ')}`);
+          NODE
+          node "$RUNNER_TEMP/verify-doctor.mjs" "$WORKDIR/doctor.json"
       - name: Verify the live upstream contract
         run: |
           node scripts/verify-upstream.mjs --json > /tmp/upstream-report.json

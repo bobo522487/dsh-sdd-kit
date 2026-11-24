@@ -20,16 +20,32 @@ const HOST_PATTERNS = [
   { code: 'HOST_ADAPTER_PATH', re: /\badapters\/(dsh|claude|codex|cursor)\b/ },
 ];
 
+/**
+ * Collect every `.mjs` file under `coreDir`, at any depth, as paths relative to
+ * `coreDir` with forward slashes. A top-level-only scan would let a host
+ * reference hide in `src/core/<sub>/x.mjs`.
+ */
+async function listCoreModules(coreDir, prefix = '') {
+  const entries = await fs.readdir(coreDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...await listCoreModules(path.join(coreDir, entry.name), relative));
+    } else if (entry.isFile() && entry.name.endsWith('.mjs')) {
+      files.push(relative);
+    }
+  }
+  return files;
+}
+
 async function scanCore(coreDir) {
   const violations = [];
-  const entries = (await fs.readdir(coreDir, { withFileTypes: true }))
-    .filter((e) => e.isFile() && e.name.endsWith('.mjs'))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const entry of entries) {
-    const text = await fs.readFile(path.join(coreDir, entry.name), 'utf8');
+  for (const relative of await listCoreModules(coreDir)) {
+    const text = await fs.readFile(path.join(coreDir, ...relative.split('/')), 'utf8');
     for (const pattern of HOST_PATTERNS) {
       if (pattern.re.test(text)) {
-        violations.push({ file: entry.name, code: pattern.code });
+        violations.push({ file: relative, code: pattern.code });
       }
     }
   }
@@ -53,6 +69,37 @@ test('purity scanner self-check: an injected host reference must turn the assert
     assert.ok(violations.length >= 2, 'injected host references must be detected');
     assert.ok(violations.some((v) => v.code === 'HOST_PACKAGE'));
     assert.ok(violations.some((v) => v.code === 'HOST_CTX'));
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('the purity scan also walks nested core subdirectories (REQ-01/AC-01)', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-sdd-kit-purity-nested-'));
+  try {
+    await fs.mkdir(path.join(tmp, 'nested', 'deeper'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmp, 'nested', 'deeper', 'host.mjs'),
+      "import { x } from '@deepseek-ai/dsh-tools';\nexport const y = x;\n",
+      'utf8'
+    );
+    const violations = await scanCore(tmp);
+    assert.ok(
+      violations.some((v) => v.code === 'HOST_PACKAGE' && v.file.endsWith(path.join('nested', 'deeper', 'host.mjs'))),
+      `nested violation must be detected, got ${JSON.stringify(violations)}`
+    );
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('the purity scan ignores non-.mjs files at any depth (REQ-01)', async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-sdd-kit-purity-filter-'));
+  try {
+    await fs.mkdir(path.join(tmp, 'nested'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'nested', 'notes.md'), "import '@deepseek-ai/dsh-tools';\n", 'utf8');
+    await fs.writeFile(path.join(tmp, 'nested', 'legacy.cjs'), "require('@deepseek-ai/dsh-tools');\n", 'utf8');
+    assert.deepEqual(await scanCore(tmp), []);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
