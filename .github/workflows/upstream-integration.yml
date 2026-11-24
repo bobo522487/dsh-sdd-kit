@@ -6,8 +6,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  verify:
+  matrix:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        upstream: [latest, pinned-spec-kit, pinned-mirror]
+        host: [dsh, claude]
+    env:
+      UPSTREAM_VARIANT: ${{ matrix.upstream }}
+      HOST_KEY: ${{ matrix.host }}
+      SPEC_KIT_REF: ${{ matrix.upstream == 'pinned-spec-kit' && 'v1.4.4' || '' }}
+      SUPERPOWERS_REF: ${{ matrix.upstream == 'pinned-mirror' && 'main' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,13 +25,23 @@ jobs:
           node-version: '20'
       - uses: astral-sh/setup-uv@v5
       - name: Install the CLI under test
-        # The runner does not ship `specify`; without this step the verifier
-        # would take its documented `not_executed` path and the nightly job
-        # would go green without testing anything.
         run: |
           uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
           echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+      - name: Install the pinned Spec Kit ref (pinned-spec-kit only)
+        if: matrix.upstream == 'pinned-spec-kit'
+        run: uv tool install specify-cli --force --from "git+https://github.com/github/spec-kit.git@${SPEC_KIT_REF}"
+      - name: Pin the discipline mirror (pinned-mirror only)
+        if: matrix.upstream == 'pinned-mirror'
+        run: git clone --depth 1 --branch "${SUPERPOWERS_REF}" https://github.com/obra/superpowers.git "$RUNNER_TEMP/superpowers-pinned"
+      - name: Install → init → doctor smoke (REQ-40)
+        run: |
+          WORKDIR="$RUNNER_TEMP/sdd-${UPSTREAM_VARIANT}-${HOST_KEY}"
+          mkdir -p "$WORKDIR"
+          specify init "$WORKDIR" --integration "$HOST_KEY" --non-interactive --force --ignore-agent-tools
+          (cd "$WORKDIR" && node "$GITHUB_WORKSPACE/bin/sdd-kit.mjs" doctor --json > doctor.json)
+          node -e "const r = require(process.env.RUNNER_TEMP + '/sdd-' + process.env.UPSTREAM_VARIANT + '-' + process.env.HOST_KEY + '/doctor.json'); const zones = ['environment','host','repository','runtime','triggerDryRun']; for (const z of zones) if (!(z in r)) { console.error('missing zone ' + z); process.exit(1); }"
       - name: Verify the live upstream contract
         run: |
           node scripts/verify-upstream.mjs --json > /tmp/upstream-report.json
-          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + (r.reason ? ' — ' + r.reason : '')); process.exit(1); }"
+          node -e "const r = require('/tmp/upstream-report.json'); if (r.status !== 'passed') { console.error('upstream contract: ' + r.status + ' (not_executed is a failure, never a pass)' + (r.reason ? ' — ' + r.reason : '')); process.exit(1); }"

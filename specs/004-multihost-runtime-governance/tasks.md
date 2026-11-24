@@ -194,20 +194,20 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 7 ⚠️
 
-- [ ] T046 [P] [US7] 写失败测试 `test/doctor.test.mjs`：五区键齐备、单区抛错不影响其余区、区级 `status` 只出现 `pass|fail|skipped|not_executed`、项级 `status` 只出现 `pass|fail|warn|skip`、每项含 `status`/`code`/`message`/`fix`、重复执行结果一致且仓库快照零变更；**性能边界断言**：不含网络探测的单次体检用 `process.hrtime.bigint()` 计时并断言 ≤5000ms（`REQ-33`/`AC-18`，平台受限环境按章程显式 skip 并注明原因）（`test/doctor.test.mjs`）
-- [ ] T047 [P] [US7] 写失败测试 `test/trigger.test.mjs`：返回按匹配度排序的候选、断言未执行任何技能、镜像缺失时仍返回结果且该区不判失败、范围仅当前可见技能、同分按 `name` 再按 `provider` 字典序稳定排序、`userInvocable=false` 者标 `excluded` 不进候选、`score=0` 仍列出；**性能边界断言**：构造 100 条技能输入，单次打分计时断言 ≤1000ms（`REQ-38`/`AC-19`）（`test/trigger.test.mjs`）
+- [x] T046 [P] [US7] 写失败测试 `test/doctor.test.mjs`：五区键齐备、单区抛错不影响其余区、区级 `status` 只出现 `pass|fail|skipped|not_executed`、项级 `status` 只出现 `pass|fail|warn|skip`、每项含 `status`/`code`/`message`/`fix`、重复执行结果一致且仓库快照零变更；**性能边界断言**：不含网络探测的单次体检用 `process.hrtime.bigint()` 计时并断言 ≤5000ms（`REQ-33`/`AC-18`，平台受限环境按章程显式 skip 并注明原因）（`test/doctor.test.mjs`）
+- [x] T047 [P] [US7] 写失败测试 `test/trigger.test.mjs`：返回按匹配度排序的候选、断言未执行任何技能、镜像缺失时仍返回结果且该区不判失败、范围仅当前可见技能、同分按 `name` 再按 `provider` 字典序稳定排序、`userInvocable=false` 者标 `excluded` 不进候选、`score=0` 仍列出；**性能边界断言**：构造 100 条技能输入，单次打分计时断言 ≤1000ms（`REQ-38`/`AC-19`）（`test/trigger.test.mjs`）
 
 ### Implementation for User Story 7
 
-- [ ] T048 [US7] 实现 `src/core/doctor.mjs` 的 `runDoctor({ trigger, host })`，返回 `data-model.md` 的 `DoctorReport.environment`、`DoctorReport.host`、`DoctorReport.repository`、`DoctorReport.runtime`、`DoctorReport.triggerDryRun` 五区；**区级状态**取 `DoctorReport` 每区 `status`（`pass|fail|skipped|not_executed`，由该区条目聚合得出），**项级状态**取 `DiagnosticItem.status`（`pass|fail|warn|skip`），两者枚举不同且不得互相赋值；每项另含 `DiagnosticItem.code`、`DiagnosticItem.message`、`DiagnosticItem.fix`（`src/core/doctor.mjs`）
-- [ ] T049 [US7] 实现环境区：一次性全量探测全部外部工具与平台前提，逐项给状态、失败原因与可直接执行的修复命令（`src/core/doctor.mjs`）
-- [ ] T050 [US7] 实现宿主区：当前宿主、集成键、扩展状态、纪律技能安装渠道与版本、trust 类参数安全告警（`src/core/doctor.mjs`）
-- [ ] T051 [US7] 实现仓库区：受管模板与随包版本的内容漂移、原生命令技能产物完整性（`src/core/doctor.mjs`）
-- [ ] T052 [US7] 实现运行时区：技能挂载情况、同名技能跨提供者优先级冲突、外部桥接插件来源、待生效标记状态（含历史残留按时间戳区分）（`src/core/doctor.mjs`）
-- [ ] T053 [US7] 实现 `src/core/trigger.mjs`：对当前可见技能（插件 + 用户级，不含仅存在于上游镜像未安装者）按匹配度打分排序，只读不执行；输入技能结构对应 `data-model.md` 的 `SkillSummary.name`、`SkillSummary.description`、`SkillSummary.whenToUse`、`SkillSummary.source`、`SkillSummary.invocation`、`SkillSummary.provider`、`SkillSummary.path`；输出条目字段对应 `data-model.md` 的 `TriggerScore.skill`、`TriggerScore.score`、`TriggerScore.matchedTerms`、`TriggerScore.excluded`；打分口径见 `data-model.md` 的 `TriggerScore` 与 `contracts/host-adapter.md` 的「触发试跑打分」小节，`SkillSummary.invocation.userInvocable=false` 的技能置 `TriggerScore.excluded` 不进候选但仍计入可见总数（`src/core/trigger.mjs`）
-- [ ] T054 [US7] `bin/sdd-kit.mjs` 增加 `doctor` 子命令与 `--trigger "<描述>"` 选项（`bin/sdd-kit.mjs`）
-- [ ] T055 [P] [US7] 扩展 `.github/workflows/upstream-integration.yml` 为矩阵：上游维度（最新主干 / 锁定 Spec Kit / 锁定纪律技能镜像）× 宿主维度（DSH + Claude Code，四端阶段扩至四端），每组合执行安装 → 初始化 → 体检冒烟（`.github/workflows/upstream-integration.yml`）
-- [ ] T056 [US7] 矩阵失败语义：破坏性变更时指出具体命令/参数/契约点与需调整的版本下界；环境不可用时报 `not_executed` 而非通过（`.github/workflows/upstream-integration.yml`、`scripts/verify-upstream.mjs`）
+- [x] T048 [US7] 实现 `src/core/doctor.mjs` 的 `runDoctor({ trigger, host })`，返回 `data-model.md` 的 `DoctorReport.environment`、`DoctorReport.host`、`DoctorReport.repository`、`DoctorReport.runtime`、`DoctorReport.triggerDryRun` 五区；**区级状态**取 `DoctorReport` 每区 `status`（`pass|fail|skipped|not_executed`，由该区条目聚合得出），**项级状态**取 `DiagnosticItem.status`（`pass|fail|warn|skip`），两者枚举不同且不得互相赋值；每项另含 `DiagnosticItem.code`、`DiagnosticItem.message`、`DiagnosticItem.fix`（`src/core/doctor.mjs`）
+- [x] T049 [US7] 实现环境区：一次性全量探测全部外部工具与平台前提，逐项给状态、失败原因与可直接执行的修复命令（`src/core/doctor.mjs`）
+- [x] T050 [US7] 实现宿主区：当前宿主、集成键、扩展状态、纪律技能安装渠道与版本、trust 类参数安全告警（`src/core/doctor.mjs`）
+- [x] T051 [US7] 实现仓库区：受管模板与随包版本的内容漂移、原生命令技能产物完整性（`src/core/doctor.mjs`）
+- [x] T052 [US7] 实现运行时区：技能挂载情况、同名技能跨提供者优先级冲突、外部桥接插件来源、待生效标记状态（含历史残留按时间戳区分）（`src/core/doctor.mjs`）
+- [x] T053 [US7] 实现 `src/core/trigger.mjs`：对当前可见技能（插件 + 用户级，不含仅存在于上游镜像未安装者）按匹配度打分排序，只读不执行；输入技能结构对应 `data-model.md` 的 `SkillSummary.name`、`SkillSummary.description`、`SkillSummary.whenToUse`、`SkillSummary.source`、`SkillSummary.invocation`、`SkillSummary.provider`、`SkillSummary.path`；输出条目字段对应 `data-model.md` 的 `TriggerScore.skill`、`TriggerScore.score`、`TriggerScore.matchedTerms`、`TriggerScore.excluded`；打分口径见 `data-model.md` 的 `TriggerScore` 与 `contracts/host-adapter.md` 的「触发试跑打分」小节，`SkillSummary.invocation.userInvocable=false` 的技能置 `TriggerScore.excluded` 不进候选但仍计入可见总数（`src/core/trigger.mjs`）
+- [x] T054 [US7] `bin/sdd-kit.mjs` 增加 `doctor` 子命令与 `--trigger "<描述>"` 选项（`bin/sdd-kit.mjs`）
+- [x] T055 [P] [US7] 扩展 `.github/workflows/upstream-integration.yml` 为矩阵：上游维度（最新主干 / 锁定 Spec Kit / 锁定纪律技能镜像）× 宿主维度（DSH + Claude Code，四端阶段扩至四端），每组合执行安装 → 初始化 → 体检冒烟（`.github/workflows/upstream-integration.yml`）
+- [x] T056 [US7] 矩阵失败语义：破坏性变更时指出具体命令/参数/契约点与需调整的版本下界；环境不可用时报 `not_executed` 而非通过（`.github/workflows/upstream-integration.yml`、`scripts/verify-upstream.mjs`）
 
 **Checkpoint**：体检成为唯一诊断入口，上游漂移在合并前被拦。
 

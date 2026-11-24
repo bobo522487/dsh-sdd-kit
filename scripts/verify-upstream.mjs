@@ -9,7 +9,10 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const EXTENSION_DIR = path.join(PKG_ROOT, 'spec-kit-extension');
-const HOOK_EVENTS = ['before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix'];
+const HOOK_EVENTS = [
+  'before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix',
+  'before_clarify', 'before_plan',
+];
 const NETWORK_PATTERN = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|Temporary failure in name resolution/i;
 
 async function run(cmd, args, cwd) {
@@ -129,7 +132,7 @@ export async function verifyUpstream(options = {}) {
           const entry = (Array.isArray(parsed) ? parsed : []).find((item) => item?.id === 'superpowers-hooks');
           const hooks = entry?.provides?.hooks;
           const hookCount = Array.isArray(hooks) ? hooks.length : (typeof hooks === 'number' ? hooks : null);
-          manifestOk = Boolean(entry) && typeof entry.version === 'string' && hookCount === 4 && entry.enabled === true;
+          manifestOk = Boolean(entry) && typeof entry.version === 'string' && hookCount === HOOK_EVENTS.length && entry.enabled === true;
           manifestDetail = `id=${entry?.id ?? 'missing'} version=${entry?.version ?? 'missing'} provides.hooks=${hookCount ?? 'missing'} enabled=${entry?.enabled ?? 'missing'}`;
         } catch (error) {
           manifestDetail = `extension list --json: unparsable output (${error.message})`;
@@ -138,14 +141,16 @@ export async function verifyUpstream(options = {}) {
       checks.push(check('manifest-contract', manifestOk, manifestDetail, list.stderr));
 
       const extensionsYml = await fs.readFile(path.join(tmpDir, '.specify', 'extensions.yml'), 'utf8').catch(() => '');
+      const manifestText = await fs.readFile(path.join(EXTENSION_DIR, 'extension.yml'), 'utf8');
+      const sessionEvent = /session_start:/.test(manifestText);
       const registered = HOOK_EVENTS.filter((event) => {
         const matches = extensionsYml.match(new RegExp(`^\\s*${event}:`, 'gm'));
         return (matches?.length ?? 0) === 1;
       });
       checks.push(check(
         'hooks-registered',
-        registered.length === HOOK_EVENTS.length,
-        `${registered.length}/${HOOK_EVENTS.length} events registered once${registered.length === HOOK_EVENTS.length ? '' : `; missing: ${HOOK_EVENTS.filter((e) => !registered.includes(e)).join(', ')}`}`
+        registered.length === HOOK_EVENTS.length && sessionEvent,
+        `${registered.length}/${HOOK_EVENTS.length} events registered once${sessionEvent ? ' + session_start' : ' (session_start MISSING)'}${registered.length === HOOK_EVENTS.length ? '' : `; missing: ${HOOK_EVENTS.filter((e) => !registered.includes(e)).join(', ')}`}`
       ));
     }
 
