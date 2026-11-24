@@ -221,6 +221,7 @@
 **不变量**
 
 - `INV-23`：`status === 'not_executed'` 时进程退出码 MUST 为 `0`，且 stdout MUST 明确含「未执行」字样；MUST NOT 输出 `passed`（REQ-19）。
+  > **已被 T099 取代**：当前实现中 `not_executed`（工具缺失/断网）、版本漂移（`versionDrift.needsAdjustment`）与契约失败一律退出 1；本条为历史规格原文，仅作留档。
 - `INV-24`：`status === 'failed'` 时退出码 MUST 为 `1`，且 `checks` 中至少一项 `ok === false` 且 `detail` 非空（REQ-18）。
 - `INV-25`：该脚本 MUST NOT 被 `npm test` 的默认入口（`test/sdd-kit.test.mjs`）引用（REQ-18 的「不阻塞日常测试」）。
 

@@ -1,4 +1,5 @@
 import { runAction } from './core/action.mjs';
+import { getRunContext } from './core/run-context.mjs';
 
 function renderJsonText(_args, value) {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
@@ -100,13 +101,17 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
           render: renderJsonText,
         },
         async execute(args) {
-          const action = args?.action || '';
-          if (action === 'setup') return runAction('setup', args, deps);
-          if (action === 'update_all') return runAction('update', args, deps);
+          const withContext = {
+            ...args,
+            runContext: args?.runContext ?? getRunContext({ cwd: args?.cwd }),
+          };
+          const action = withContext.action || '';
+          if (action === 'setup') return runAction('setup', withContext, deps);
+          if (action === 'update_all') return runAction('update', withContext, deps);
           if (action === 'doctor' || action === 'guard' || action === 'guidance') {
-            return runAction(action, args, deps);
+            return runAction(action, withContext, deps);
           }
-          return runAction('upstream', args, deps);
+          return runAction('upstream', withContext, deps);
         },
       })
     )
@@ -152,7 +157,11 @@ export function registerSddTools(ctx, defineTool, deps = {}) {
         },
         isConcurrencySafe: (args) => (args?.action || 'inspect') === 'inspect',
         async execute(args) {
-          return runAction('bridge', args, deps);
+          const withContext = {
+            ...args,
+            runContext: args?.runContext ?? getRunContext({ cwd: args?.cwd }),
+          };
+          return runAction('bridge', withContext, deps);
         },
       })
     )

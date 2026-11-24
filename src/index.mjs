@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { registerSddTools } from './register.mjs';
 import { resolveRunContext } from './core/action.mjs';
+import { getRunContext } from './core/run-context.mjs';
 import { applyDshGuidance, resolveGuidanceHost } from './adapters/dsh/index.mjs';
 import { applyClaudeGuidance } from './adapters/claude/index.mjs';
 import { applyCodexGuidance } from './adapters/codex/index.mjs';
@@ -32,7 +33,11 @@ export function apply(ctx) {
   // defaults to dsh; an unknown value must never break startup (T086).
   const host = resolveGuidanceHost({ ctx, env: process.env });
   const applyGuidance = GUIDANCE_APPLIERS[host] ?? GUIDANCE_APPLIERS.dsh;
-  const runContext = resolveRunContext({ env: process.env });
+  const generated = getRunContext({ cwd: process.cwd() });
+  const runContext = resolveRunContext({
+    params: { runContext: generated },
+    env: process.env,
+  });
 
   // Cordis collects the returned (possibly async) disposer for this plugin.
   // Guidance failures are contained here: a missing or broken guidance channel

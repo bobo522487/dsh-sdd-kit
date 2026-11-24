@@ -13,6 +13,7 @@ import path from 'node:path';
 
 import { HOST_CAPABILITIES, HOST_KEYS } from '../../core/host-capabilities.mjs';
 import { resolveRunContext } from '../../core/action.mjs';
+import { getRunContext } from '../../core/run-context.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 
@@ -56,8 +57,8 @@ function withStatus(dispose, status) {
  * Read the optional systemPrompt service without requiring it in `inject`.
  * A missing service must never block plugin loading.
  */
-export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process.env, warnings = [], sessionStart, runId } = {}) {
-  const runContext = resolveRunContext({ params: { sessionStart, runId }, env });
+export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process.env, warnings = [], sessionStart, runId, runContext: supplied } = {}) {
+  const runContext = resolveRunContext({ params: { sessionStart, runId, runContext: supplied ?? getRunContext({ cwd }) }, env });
   // Startup is the completion point of a previous pending change: clear only
   // this repository's entry for this host (REQ-18).
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});

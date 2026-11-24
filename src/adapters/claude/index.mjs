@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { HOST_CAPABILITIES, EXTENSION_ID, hasDisciplineSkills, isDisciplineSkill } from '../../core/host-capabilities.mjs';
 import { resolveRunContext } from '../../core/action.mjs';
+import { getRunContext } from '../../core/run-context.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 import { removeManagedBlockFile } from '../../core/fsutil.mjs';
@@ -61,9 +62,9 @@ export function claudeManagedBlock(text, markers = MARKERS) {
 }
 
 export async function applyClaudeGuidance({
-  cwd = process.cwd(), env = process.env, skills, nativeEventsAvailable, sessionStart, runId,
+  cwd = process.cwd(), env = process.env, skills, nativeEventsAvailable, sessionStart, runId, runContext: supplied,
 } = {}) {
-  const runContext = resolveRunContext({ params: { sessionStart, runId }, env });
+  const runContext = resolveRunContext({ params: { sessionStart, runId, runContext: supplied ?? getRunContext({ cwd }) }, env });
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
   const explicit = typeof nativeEventsAvailable === 'boolean';
   const nativeChannel = explicit ? nativeEventsAvailable : await detectNativeEvents({ cwd });

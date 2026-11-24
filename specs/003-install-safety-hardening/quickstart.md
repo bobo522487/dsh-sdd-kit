@@ -163,6 +163,8 @@ Status: not_executed
 
 退出码仍为 0。**看到 `not_executed` 不等于通过**，只是「没跑成」。
 
+> **已被 T099 取代**：当前 `not_executed`（含无网络）退出码为 1；版本漂移（`versionDrift.needsAdjustment`）与契约失败同样退出 1。上文「退出码仍为 0」为历史规格，仅作留档。
+
 ## 8. 排错表
 
 | 现象 | 原因 | 处理 |

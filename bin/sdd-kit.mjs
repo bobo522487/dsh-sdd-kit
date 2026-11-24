@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { runAction, unknownActionError } from '../src/core/action.mjs';
+import { getRunContext } from '../src/core/run-context.mjs';
 import { HOST_CAPABILITIES } from '../src/core/host-capabilities.mjs';
 import { formatGuidanceText } from '../src/core/guidance.mjs';
 import { clearHostMarker as clearHostMarkerCore, markerPath } from '../src/core/marker.mjs';
@@ -374,6 +375,9 @@ async function main() {
   const asText = argv.includes('--text');
   const { command, params } = parse(argv);
   rejectUnreachableOptions(command, argv);
+  // One neutral run context per CLI invocation, carried explicitly into the
+  // action chain so marker writes and later doctor runs agree on the same run.
+  const runContext = getRunContext({ cwd: params.cwd });
   let result;
   if (params.clearMarker && SUBCOMMANDS.includes(command) && command !== 'doctor') {
     result = await clearHostMarker({ cwd: params.cwd, host: params.host });
@@ -381,8 +385,8 @@ async function main() {
     // `doctor --json` always inventories the currently visible skills; the
     // trigger flag only decides whether the dry-run zone executes (T105).
     const actionParams = command === 'doctor'
-      ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }).catch(() => []) }
-      : params;
+      ? { ...params, runContext, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }).catch(() => []) }
+      : { ...params, runContext };
     result = await runAction(command, actionParams);
     // A doctor exam must never swallow `--clear-marker`; the clearing outcome
     // is attached to the full five-zone report (final review I3).

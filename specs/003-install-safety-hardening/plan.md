@@ -114,6 +114,8 @@ README.md                            # 改：安装安全性小节（状态分�
 package.json                         # 改：scripts 增加 verify:upstream（files 无需改，"overrides/" 已含）
 ```
 
+> **已被 T099 取代**：上树中 `verify-upstream.mjs` 注释的「`not_executed` 退出码 0」为历史设计；当前 `not_executed`、版本漂移与契约失败一律退出 1。
+
 **Structure Decision**: 沿用现有扁平单项目结构（`src/core/*.mjs` 平铺，不新增子目录）。新增的四个职责模块与既有 `bridge/upstream/setup/update` 平级，理由是它们各自对应 data-model 的一个实体簇（E1/E2、E5、E4），且彼此无循环依赖：`fsutil` ← `snapshot` ← `bridge`，`artifacts` ← `status` ← `bridge`，`candidates` ← `upstream`。不把逻辑塞进 `bridge.mjs`（它会从 209 行涨到 400+ 行，违反「薄胶水」的可读性），也不新建 `src/core/install/` 子目录（4 个文件不足以支撑一层目录，且会打断既有 import 路径的平铺惯例）。`scripts/` 与 `.github/` 是仓库级新目录：前者是**不随包发布的开发工具**（`package.json` 的 `files` 不含它），后者是 CI 配置。
 
 ## Phase 0 决策摘要
@@ -128,6 +130,7 @@ package.json                         # 改：scripts 增加 verify:upstream（fi
 6. **原子写用同目录临时文件 + `wx` + fsync + rename，父目录 fsync 尽力而为**（R5）。实测 `rename` 覆盖符号链接会**替换链接本身**（把软链变普通文件），因此必须在 `open` 之前用 `lstat` 逐段拒绝符号链接；拒绝顺序 `E_ESCAPE` → `E_SYMLINK` → 任何 `open`。
 7. **回滚是独立动作 `restore_overrides`，不是 `install_overrides` 的参数**（R6 与 [restore 契约](./contracts/sdd-bridge-restore-overrides.md) §2 末段）。理由：两者内容来源互斥（随包 vs 快照），叠加 `overwrite` 会产生无法自洽的组合；报告形状也不同（`restored[]` vs `artifacts[].verdict`）。
 8. **真实上游验证独立成文件 + 独立脚本 + 独立 CI**（R8）。理由：`npm test` 只跑 `test/sdd-kit.test.mjs`，文件隔离比运行时 `t.skip` 更能保证「上游抖动不影响日常结论」；`not_executed` 退出码 0 但输出必须含「未执行」，杜绝把「没跑」当「通过」。
+   > **已被 T099 取代**：当前 `not_executed`（及版本漂移、契约失败）一律退出 1，仍要求输出含「未执行」；本条为历史决策记录。
 
 ## Phase 1 设计摘要
 
@@ -141,6 +144,7 @@ package.json                         # 改：scripts 增加 verify:upstream（fi
 - **`restore_overrides`**：无快照 ⇒ `ok:false, status:'no_snapshot'`；`.bak` 指纹与清单不符 ⇒ `E_SNAPSHOT_CHECKSUM_MISMATCH` 且不写；只写清单列出的 `relativePath`（清单是数据，必须重新做越界与 symlink 校验）；还原后保留快照以支持重复回滚。
 - **候选选择**：`candidateDirs` 是新增入参（声明序号 1）；`process.env` 只读两个具名变量；永不抛异常，只在返回里标 `eligible`/`fallback`；`candidates.filter(c => c.selected).length === 1` 恒成立。
 - **`verify-upstream.mjs`**：四个契约点（`init-args`、`extension-add-args`、`manifest-contract`、`hooks-registered`）；环境不可用 ⇒ `not_executed` + 退出码 0；契约失败 ⇒ 退出码 1 + 指明命令/参数/字段；MUST NOT 被 `test/sdd-kit.test.mjs` 引用。
+  > **已被 T099 取代**：当前环境不可用（`not_executed`）退出码为 1；版本漂移与契约失败同样退出 1。
 
 ## Post-Design Constitution Re-Check
 

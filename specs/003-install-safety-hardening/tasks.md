@@ -159,16 +159,19 @@ description: "Task list for feature implementation"
 **Goal**: 用真实 `specify` CLI 验证四个契约点，环境不可用时报「未执行」而非「通过」，且永不进入 `npm test` 的默认入口。
 
 **Independent Test**: `node scripts/verify-upstream.mjs --json` 输出可解析 JSON 且 `status !== 'failed'`；`PATH=` 空环境 ⇒ 退出码 0 且 stdout 含「未执行」；假 `specify` shim ⇒ 退出码 1 且 `checks` 有 `ok:false`（AC-10）。
+  > **已被 T099 取代**：当前 `PATH=` 空环境（及版本漂移、契约失败）⇒ 退出码 1；本行为历史规格原文，仅作留档。
 
 ### 测试（先写，必须失败）
 
 - [x] T043 [P] [US5] 新增 `test/upstream-contract.test.mjs`（REQ-17/REQ-19）：顶层 `if (process.env.DSH_SDD_KIT_INTEGRATION !== '1') t.skip(...)` 整文件跳过；`=1` 时 `import { verifyUpstream }` 并断言 `status !== 'failed'`（INV-25：该文件 MUST NOT 被 `test/sdd-kit.test.mjs` 引用）
 - [x] T044 [P] [US5] 在 `test/sdd-kit.test.mjs` 新增脚本契约用例（REQ-18/REQ-19）：空 `PATH` 跑脚本 ⇒ 退出码 0、`--json` 的 `checks.length === 0` 且 `reason` 非空（INV-23）；假 `specify` shim（exit 2）⇒ 退出码 1 且至少一项 `ok === false` 且 `detail` 非空（INV-24）；`passed` 时 `checks.map(c=>c.id).sort()` 等于四个 id（`data-model.md` E7.`checks[].id`）
+  > **已被 T099 取代**：当前空 `PATH` 用例断言退出码为 1（非 0）；其余断言仍有效。
 - [x] T045 [P] [US5] 新增结构断言（REQ-18）：`test/sdd-kit.test.mjs` 源码不含 `verify-upstream` 字样（REQ-18「不阻塞日常」）；`.github/workflows/upstream-integration.yml` 含 `schedule` 与 `workflow_dispatch`
 
 ### 实现
 
 - [x] T046 [US5] 实现 `scripts/verify-upstream.mjs`：导出 `verifyUpstream({json, keep})` 并支持 `node scripts/verify-upstream.mjs [--json] [--keep]`；按 `contracts/verify-upstream-script.md` §2 第 1–10 行执行四个契约点（`init-args` / `extension-add-args` / `manifest-contract` / `hooks-registered`）；网络类错误 ⇒ `not_executed` + 退出码 0，契约失败 ⇒ `failed` + 退出码 1；`finally` 清理 `mkdtemp` 目录（`--keep` 除外）；单命令超时 120 s
+  > **已被 T099 取代**：当前网络类错误（`not_executed`）退出码为 1，契约失败与版本漂移同样退出 1；上文「退出码 0」为历史规格。
 - [x] T047 [US5] 新增 `.github/workflows/upstream-integration.yml`：`on: schedule`（`cron: '0 3 * * *'`）+ `workflow_dispatch`；`ubuntu-latest`，`astral-sh/setup-uv` 后跑 `node scripts/verify-upstream.mjs`
 
 **Checkpoint**: AC-10 全绿；上游契约漂移可在一次手动/夜间验证内被发现，且不影响 `npm test` 结论。

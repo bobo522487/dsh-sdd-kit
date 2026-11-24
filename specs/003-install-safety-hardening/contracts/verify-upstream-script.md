@@ -42,12 +42,15 @@
     在本脚本里是合法退出码 0，但在夜班里绝不能静默绿灯。）
 ```
 
+> **已被 T099 取代**：上述 `not_executed` 退出码 0 的行为描述为历史规格留档；当前 `not_executed`、版本漂移（`versionDrift.needsAdjustment`）与契约失败一律退出 1（见 `README.md` 与实现）。
+
 **关键约束**：
 
 - **真实执行**（REQ-17）：MUST NOT 用 mock、MUST NOT 复用单测的 fake runner。所有断言基于真实子进程的 stdout/exit code 与真实生成的文件。
 - **契约点可定位**（REQ-18）：每个 `check.id` 对应一个具体的上游交互；`detail` 必须包含命令字符串或字段名，例如 `"extension list --json: provides.hooks = 3, expected 4"`。
 - **不阻塞日常**（REQ-18）：本脚本 MUST NOT 被 `test/sdd-kit.test.mjs` 引用；`npm test` 的入口只有那一个文件，故默认永不执行本脚本。
 - **未执行 ≠ 通过**（REQ-19）：`not_executed` 时退出码为 0（不让 CI 因环境缺失变红），但 stdout 必须明确含「未执行」与原因，MUST NOT 输出 `passed`；`--json` 模式下 `status` 字段为 `"not_executed"`。
+  > **已被 T099 取代**：当前 `not_executed` 一律退出 1；版本漂移与契约失败同样退出 1。本条为原规格，仅作留档。
 - **不写仓库**：所有写入都在 `mkdtemp` 目录内；`--keep` 只影响是否删除。
 - **超时**：每条子进程命令 120 s（复用 `defaultRunner` 的量级），总时长上限 10 分钟。
 - **零依赖**：只用 `node:` 内置模块与既有 `defaultRunner`。
@@ -86,9 +89,9 @@ Status: passed
 
 | 场景 | `status` | 退出码 | 输出要求 |
 |---|---|---|---|
-| `specify` 不在 PATH | `not_executed` | `0` | 「未执行（环境不可用）：specify not found on PATH」 |
-| `uv` 不在 PATH | `not_executed` | `0` | 同上 |
-| 无网络（`init` 需下载模板） | `not_executed` | `0` | 含原始 stderr 片段与「未执行（环境不可用）：network」 |
+| `specify` 不在 PATH | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 「未执行（环境不可用）：specify not found on PATH」 |
+| `uv` 不在 PATH | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 同上 |
+| 无网络（`init` 需下载模板） | `not_executed` | `0`（已被 T099 取代：当前为 `1`） | 含原始 stderr 片段与「未执行（环境不可用）：network」 |
 | `init` 参数被上游改名 | `failed` | `1` | `checks[init-args].detail` 含完整命令与 exit code；附 stderr 前 2000 字符 |
 | `extension add --dev` 被移除 | `failed` | `1` | 同上，指明 `--dev` 参数 |
 | `provides.hooks` 数量变化 | `failed` | `1` | `manifest-contract` 的 detail 写明实际值 vs 期望值 |
@@ -114,3 +117,5 @@ Status: passed
 | `passed` 时 `checks` 恰含四个契约点 | 真实运行后断言 `checks.map(c=>c.id).sort()` 等于四个 id |
 | 不写仓库 | 运行前后对 `git status --porcelain` 比对为空 |
 | CI 工作流存在且触发条件正确 | 读 `.github/workflows/upstream-integration.yml`，断言含 `schedule` 与 `workflow_dispatch` |
+
+> **已被 T099 取代**：上表「环境缺失 ⇒ `not_executed` 且退出码 0」为历史断言；当前 `not_executed` 要求非零退出，相应测试应断言进程级退出码为 1。

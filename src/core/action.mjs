@@ -13,6 +13,7 @@ import { markerPath, writeMarker } from './marker.mjs';
 import { checkPlanningGuard } from './guard.mjs';
 import { runDoctor } from './doctor.mjs';
 import { HOST_KEYS } from './host-capabilities.mjs';
+import { getRunContext } from './run-context.mjs';
 
 const DEFAULT_HOST = HOST_KEYS[0];
 
@@ -37,16 +38,21 @@ export function unknownActionError(action) {
 
 /**
  * Resolve the shared run context once per call. Explicit parameters win over
- * environment values; the environment keys let the CLI and startup adapters
- * agree on one session/run without depending on host-private ctx APIs.
+ * environment values; a generated neutral context is the production fallback
+ * for a CLI/tool/startup that did not supply either. Passing the generated
+ * context in `params.runContext` keeps every branch of one call identical.
  */
 export function resolveRunContext({ params = {}, env = process.env } = {}) {
-  const declared = params.sessionStart ?? env?.DSH_SDD_KIT_SESSION_START;
+  const supplied = params.runContext && typeof params.runContext === 'object'
+    ? params.runContext
+    : null;
+  const generated = supplied ?? getRunContext({ cwd: params.cwd ?? process.cwd() });
+  const declared = params.sessionStart ?? env?.DSH_SDD_KIT_SESSION_START ?? generated?.sessionStart;
   const numeric = typeof declared === 'string' && declared.trim() !== '' ? Number(declared) : Number.NaN;
   const parsed = typeof declared === 'number'
     ? declared
     : (Number.isFinite(numeric) ? numeric : (typeof declared === 'string' ? Date.parse(declared) : Number.NaN));
-  const runId = params.runId ?? env?.DSH_SDD_KIT_RUN_ID ?? null;
+  const runId = params.runId ?? env?.DSH_SDD_KIT_RUN_ID ?? generated?.runId ?? null;
   return {
     ...(Number.isFinite(parsed) ? { sessionStart: parsed } : {}),
     ...(typeof runId === 'string' && runId !== '' ? { runId } : {}),

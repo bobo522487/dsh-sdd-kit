@@ -249,6 +249,7 @@
   | 钩子注册 | `.specify/extensions.yml` 四个事件各 1 条（文本断言，不锚定换行） |
 
 - 环境不可用（`uv` 缺失 / `specify` 缺失 / 网络失败）⇒ 结果 `{ status: 'not_executed', reason }`，退出码 **0** 但在报告里明确写「未执行（环境不可用）」，**MUST NOT** 写「通过」（REQ-19）。契约断言失败 ⇒ 退出码 **1** 并打印失败的契约点与原始 stdout/stderr 片段（REQ-18）。
+  > **已被 T099 取代**：当前环境不可用（`not_executed`）与版本漂移同样退出 1；上文「退出码 **0**」为历史研究记录，仅作留档。
 - 新增 `.github/workflows/upstream-integration.yml`：`schedule`（每日 03:00 UTC）+ `workflow_dispatch`，`ubuntu-latest`，装 `uv` 后跑 `node scripts/verify-upstream.mjs`。CI 缺失不影响本地可用性。
 
 **替代方案被否**：
