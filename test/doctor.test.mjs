@@ -53,6 +53,47 @@ function findItem(zoneReport, code) {
   return zoneReport.items.find((entry) => entry.code === code);
 }
 
+async function writeIntegrationManifest(repo, { installed, active, file = 'integration.json' }) {
+  const target = path.join(repo, '.specify', file);
+  if (file.endsWith('.json')) {
+    await fs.writeFile(target, JSON.stringify({
+      version: '1.4.4.dev0',
+      installed_integrations: installed,
+      integration: active,
+      default_integration: active,
+    }), 'utf8');
+  } else {
+    await fs.writeFile(target, [
+      'installed_integrations:',
+      ...installed.map((key) => `  - ${key}`),
+      `integration: ${active}`,
+      '',
+    ].join('\n'), 'utf8');
+  }
+}
+
+async function installRenderedSkills(repo, host, names) {
+  const dir = path.join(repo, host, 'skills');
+  for (const name of names) {
+    const skillDir = path.join(dir, name);
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.join(skillDir, 'SKILL.md'), `---\nname: ${name}\n---\n`, 'utf8');
+  }
+}
+
+async function makeMirrorFixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-doctor-mirror-'));
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'superpowers', version: '7.0.2' }), 'utf8');
+  const skills = path.join(root, 'skills');
+  await fs.mkdir(skills, { recursive: true });
+  for (const name of ['test-driven-development', 'systematic-debugging']) {
+    const dir = path.join(skills, name);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'SKILL.md'), `---\nname: ${name}\n---\n`, 'utf8');
+  }
+  return root;
+}
+
 async function snapshot(root) {
   const out = {};
   async function walk(dir) {
@@ -214,27 +255,31 @@ test('the host zone reports the guidance channel version and the rendered hook s
   assert.equal(rendering.status, 'pass', 'a non-active host legitimately renders zero hook skills');
 });
 
-test('pending markers distinguish recent entries from history (REQ-33)', async () => {
+test('pending markers are classified relative to the run/session, not a fixed 24h', async () => {
   const repo = await makeRepo();
   const now = Date.now();
   const markerFile = path.join(repo, '.specify', 'sdd-pending.json');
+  const stale = new Date(now - 48 * 3600 * 1000).toISOString();
+  const fresh = new Date(now - 60 * 1000).toISOString();
   await fs.writeFile(markerFile, JSON.stringify({
-    dsh: { host: 'dsh', layer: 'tool_code', timestamp: new Date(now - 48 * 3600 * 1000).toISOString(), reason: 'old' },
-    claude: { host: 'claude', layer: 'skill_data', timestamp: new Date(now - 60 * 1000).toISOString(), reason: 'fresh' },
+    dsh: { host: 'dsh', layer: 'tool_code', timestamp: stale, reason: 'old', runId: 'run-A' },
+    claude: { host: 'claude', layer: 'skill_data', timestamp: fresh, reason: 'fresh' },
   }), 'utf8');
 
-  const mixed = findItem((await runDoctor({ cwd: repo, host: 'dsh' })).runtime, 'PENDING_MARKERS');
-  assert.equal(mixed.status, 'warn');
-  assert.deepEqual(mixed.pending, ['claude']);
-  assert.deepEqual(mixed.history, ['dsh']);
+  const sameRun = findItem((await runDoctor({
+    cwd: repo, host: 'dsh', now, sessionStart: new Date(now - 30 * 60 * 1000).toISOString(), runId: 'run-A',
+  })).runtime, 'PENDING_MARKERS');
+  assert.deepEqual(sameRun.pending, ['claude', 'dsh']);
+  assert.deepEqual(sameRun.history, []);
+  assert.match(sameRun.fix, /bin\/sdd-kit\.mjs/);
+  assert.match(sameRun.fix, /--cwd/);
 
-  await fs.writeFile(markerFile, JSON.stringify({
-    dsh: { host: 'dsh', layer: 'tool_code', timestamp: new Date(now - 48 * 3600 * 1000).toISOString(), reason: 'old' },
-  }), 'utf8');
-  const historyOnly = findItem((await runDoctor({ cwd: repo, host: 'dsh' })).runtime, 'PENDING_MARKERS');
-  assert.deepEqual(historyOnly.pending, []);
-  assert.deepEqual(historyOnly.history, ['dsh']);
-  assert.match(historyOnly.message, /history/i, historyOnly.message);
+  const baseline = findItem((await runDoctor({
+    cwd: repo, host: 'dsh', now, sessionStart: new Date(now - 30 * 60 * 1000).toISOString(), runId: 'run-B',
+  })).runtime, 'PENDING_MARKERS');
+  assert.deepEqual(baseline.pending, ['claude']);
+  assert.deepEqual(baseline.history, ['dsh']);
+  assert.match(baseline.fix, /bin\/sdd-kit\.mjs/);
 });
 
 test('the bridge source probe is read-only and honestly skipped when nothing is discoverable (REQ-33)', async () => {
@@ -292,4 +337,173 @@ test('CLI doctor exposes the five zones as JSON (T054)', async () => {
   });
   assert.equal(result.status, 0, result.stderr);
   assertShape(JSON.parse(result.stdout));
+});
+
+// Phase 12 fixtures: every path below lives in a temp dir, never the real HOME.
+const HOOK_COMMAND_SKILLS = [
+  'speckit-superpowers-hooks-before-implement',
+  'speckit-superpowers-hooks-after-implement',
+  'speckit-superpowers-hooks-before-bug-fix',
+  'speckit-superpowers-hooks-after-bug-fix',
+  'speckit-superpowers-hooks-guard',
+  'speckit-superpowers-hooks-guidance',
+];
+
+test('T072: installed integrations are listed and an inactive unrendered end is warned', async () => {
+  const repo = await makeRepo();
+  await writeIntegrationManifest(repo, { installed: ['dsh', 'claude'], active: 'dsh' });
+  await installRenderedSkills(repo, '.dsh', HOOK_COMMAND_SKILLS);
+
+  const report = await runDoctor({ cwd: repo, host: 'dsh' });
+  const state = findItem(report.host, 'INTEGRATION_STATE');
+  assert.ok(state, 'INTEGRATION_STATE must be reported');
+  assert.equal(state.status, 'pass');
+  assert.deepEqual(state.installed, ['claude', 'dsh']);
+  assert.equal(state.active, 'dsh');
+
+  const rendering = findItem(report.host, 'HOOK_RENDERING');
+  assert.notEqual(rendering.status, 'pass', 'unrendered integration must not be claimed as healthy');
+  assert.equal(rendering.status, 'warn');
+  const claude = rendering.integrations.find((entry) => entry.integration === 'claude');
+  assert.equal(claude.active, false);
+  assert.equal(claude.renderedCount, 0);
+  assert.deepEqual(claude.missingCommands, [...HOOK_COMMAND_SKILLS].sort());
+  assert.equal(claude.missingHooks.length, 4);
+  assert.match(claude.fix, /specify integration switch claude/);
+  assert.match(claude.fix, /specify extension add/);
+});
+
+test('T072: a single fully rendered integration is pass, integrations.yml is readable', async () => {
+  const repo = await makeRepo();
+  await writeIntegrationManifest(repo, { installed: ['dsh', 'cursor-agent'], active: 'dsh', file: 'integrations.yml' });
+  await installRenderedSkills(repo, '.dsh', HOOK_COMMAND_SKILLS);
+
+  const report = await runDoctor({ cwd: repo, host: 'dsh' });
+  const state = findItem(report.host, 'INTEGRATION_STATE');
+  assert.equal(state.status, 'pass');
+  assert.deepEqual(state.installed, ['cursor-agent', 'dsh']);
+  assert.match(state.source, /integrations\.yml$/);
+  const rendering = findItem(report.host, 'HOOK_RENDERING');
+  assert.equal(rendering.status, 'warn');
+  assert.match(rendering.message, /rendered=6 of 6/);
+  const cursor = rendering.integrations.find((entry) => entry.integration === 'cursor-agent');
+  assert.equal(cursor.skillsDir, '.cursor/skills');
+  assert.equal(cursor.status, 'warn');
+});
+
+test('T073: Cursor trust warnings use the capability pattern, not flag count', async () => {
+  const repo = await makeRepo();
+  const harmless = findItem((await runDoctor({ cwd: repo, host: 'cursor', trustFlags: ['--harmless', '--verbose'] })).host, 'CURSOR_TRUST');
+  assert.equal(harmless.status, 'pass', harmless.message);
+  assert.doesNotMatch(harmless.message, /--harmless/);
+
+  const unsafe = await runDoctor({ cwd: repo, host: 'cursor', trustFlags: ['--harmless', '--trust', '--force'] });
+  const trust = findItem(unsafe.host, 'CURSOR_TRUST');
+  assert.equal(trust.status, 'warn', trust.message);
+  assert.match(trust.message, /--trust/);
+  assert.match(trust.message, /--force/);
+  assert.doesNotMatch(trust.message, /--harmless/);
+});
+
+test('T074: environment probes the upstream mirror and discipline skills read-only', async () => {
+  const repo = await makeRepo();
+  const bin = await makeBinDir(['node', 'npm', 'uv', 'specify', 'git']);
+  const mirror = await makeMirrorFixture();
+  const env = { PATH: bin, DSH_SDD_KIT_SUPERPOWERS_DIR: mirror };
+
+  const ok = await runDoctor({ cwd: repo, host: 'dsh', env });
+  const upstream = findItem(ok.environment, 'UPSTREAM_MIRROR');
+  assert.equal(upstream.status, 'pass', upstream.message);
+  const skills = findItem(ok.environment, 'DISCIPLINE_SKILLS');
+  assert.equal(skills.status, 'pass', skills.message);
+  assert.equal(skills.count, 2);
+  assert.equal(findItem(ok.environment, 'NETWORK_PROBE').status, 'skip');
+
+  // A file at the declared mirror path is unreadable as a directory; because
+  // it resolves, the candidate selector does not fall back to the real HOME.
+  const emptyRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-doctor-empty-mirror-'));
+  const empty = path.join(emptyRoot, 'not-a-mirror');
+  await fs.writeFile(empty, 'not a directory\n', 'utf8');
+  const missing = await runDoctor({ cwd: repo, host: 'dsh', env: { PATH: bin, DSH_SDD_KIT_SUPERPOWERS_DIR: empty } });
+  const noMirror = findItem(missing.environment, 'DISCIPLINE_SKILLS');
+  assert.equal(noMirror.status, 'warn', noMirror.message);
+  assert.match(noMirror.fix, /specify self upgrade/);
+  assert.match(findItem(missing.environment, 'UPSTREAM_MIRROR').fix, /git clone/);
+});
+
+test('T075: guidance channel reports the real discipline skill version, not the kit version', async () => {
+  const repo = await makeRepo();
+  const pkg = JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-doctor-skill-'));
+  const skillPath = path.join(root, 'SKILL.md');
+  await fs.writeFile(skillPath, '---\nname: test-driven-development\nversion: 9.9.9\nmetadata:\n  author: obra\n---\n', 'utf8');
+
+  const report = await runDoctor({
+    cwd: repo,
+    host: 'dsh',
+    skills: [{
+      name: 'test-driven-development',
+      description: 'TDD',
+      whenToUse: '',
+      source: 'plugin:superpowers',
+      provider: 'plugin',
+      path: skillPath,
+    }],
+  });
+  const channel = findItem(report.host, 'GUIDANCE_CHANNEL');
+  assert.match(channel.message, /version=9\.9\.9/);
+  assert.notEqual(channel.version, pkg.version);
+  assert.equal(channel.versionSource, 'skill-metadata');
+  assert.match(channel.message, /channel=/);
+  assert.match(channel.source, /plugin/);
+
+  const fallback = findItem((await runDoctor({ cwd: repo, host: 'dsh' })).host, 'GUIDANCE_CHANNEL');
+  assert.equal(fallback.version, pkg.version);
+  assert.match(fallback.message, /kit-package-fallback/);
+});
+
+test('T076: runtime reports every skill and a conflict winner with provider order', async () => {
+  const repo = await makeRepo();
+  const skills = [
+    { name: 'speckit-implement', description: '', whenToUse: '', source: 'bundled', provider: 'dsh', path: '/fake/bundled/speckit-implement/SKILL.md' },
+    { name: 'speckit-implement', description: '', whenToUse: '', source: 'user-dsh', provider: 'user', path: '/fake/user/speckit-implement/SKILL.md' },
+    { name: 'debugging', description: '', whenToUse: '', source: 'plugin:superpowers', provider: 'plugin', path: '/fake/plugin/debugging/SKILL.md' },
+  ];
+  const report = await runDoctor({ cwd: repo, host: 'dsh', skills });
+  const inventory = findItem(report.runtime, 'SKILL_INVENTORY');
+  assert.equal(inventory.skills.length, 3);
+  for (const skill of inventory.skills) {
+    for (const key of ['name', 'provider', 'path', 'source']) assert.ok(skill[key], `${key} must be reported`);
+  }
+
+  const conflict = findItem(report.runtime, 'SKILL_CONFLICT');
+  assert.equal(conflict.conflicts.length, 1);
+  assert.equal(conflict.conflicts[0].name, 'speckit-implement');
+  assert.equal(conflict.conflicts[0].winner.provider, 'user');
+  assert.deepEqual(conflict.conflicts[0].order, ['user', 'dsh']);
+  assert.match(conflict.message, /user/);
+  assert.match(conflict.message, /bundled|dsh/);
+});
+
+test('T078: user-authored skills are labeled non-kit artifacts, never drift', async () => {
+  const repo = await makeRepo();
+  const report = await runDoctor({
+    cwd: repo,
+    host: 'claude',
+    skills: [{
+      name: 'my-private-skill',
+      description: 'private',
+      whenToUse: '',
+      source: 'user-dsh',
+      provider: 'user',
+      path: '/fake/home/.dsh/skills/my-private-skill',
+    }],
+  });
+  const provenance = findItem(report.runtime, 'SKILL_PROVENANCE');
+  assert.equal(provenance.status, 'pass');
+  assert.equal(provenance.userSkills.length, 1);
+  assert.equal(provenance.userSkills[0].name, 'my-private-skill');
+  assert.match(provenance.message, /非本套件产物/);
+  assert.ok(report.runtime.items.some((entry) => entry.code === 'SKILL_CONFLICT'));
+  assert.ok(report.runtime.items.every((entry) => !entry.code.includes('DRIFT')));
 });

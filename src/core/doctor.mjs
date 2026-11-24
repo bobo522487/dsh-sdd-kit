@@ -16,14 +16,13 @@ import { fileURLToPath } from 'node:url';
 
 import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
 import { resolveGuidanceSwitch } from './guidance.mjs';
-import { readMarkers } from './marker.mjs';
+import { readMarkers, classifyMarkers } from './marker.mjs';
 import { scoreSkills } from './trigger.mjs';
+import { selectSuperpowersDir } from './candidates.mjs';
+import { DEFAULT_SUPERPOWERS_REPO } from './upstream.mjs';
 
 /** Package root: src/core/doctor.mjs -> src/core -> src -> package root. */
 const PKG_ROOT = fileURLToPath(new URL('../../', import.meta.url));
-
-/** A pending marker older than this is history, not a pending change. */
-const PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Toolchain the kit shells out to, probed on PATH only. */
 const REQUIRED_TOOLS = ['node', 'npm'];
@@ -31,6 +30,53 @@ const OPTIONAL_TOOLS = ['uv', 'specify', 'git'];
 
 /** Skill file naming used by the packaged extension commands. */
 const HOOK_SKILL_RE = /^speckit-superpowers-hooks-[A-Za-z0-9-]+(?:\.md)?$/;
+
+/** Integration keys are what `.specify/integration*.yml|json` records; hosts are their DSH keys. */
+const INTEGRATION_KEY_TO_HOST = Object.freeze(Object.fromEntries(
+  HOST_KEYS.map((host) => [HOST_CAPABILITIES[host].integrationKey, host])
+));
+
+/** The four hook skills that actually render as host skills (guard/guidance are event-only). */
+const EXECUTION_HOOK_COMMANDS = Object.freeze([
+  'speckit-superpowers-hooks-before-implement',
+  'speckit-superpowers-hooks-after-implement',
+  'speckit-superpowers-hooks-before-bug-fix',
+  'speckit-superpowers-hooks-after-bug-fix',
+]);
+
+/** Six contract hook events defined by spec-kit-extension/extension.yml. */
+const HOOK_EVENTS = Object.freeze([
+  'before_clarify', 'before_plan', 'before_implement', 'after_implement', 'before_bug_fix', 'after_bug_fix',
+]);
+
+/** Concrete commands (REQ-34): every failed probe carries an actionable fix. */
+const TOOL_FIX_COMMANDS = Object.freeze({
+  node: 'nvm install --lts && nvm use --lts',
+  npm: 'npm install -g npm',
+  uv: 'curl -LsSf https://astral.sh/uv/install.sh | sh',
+  specify: 'uv tool install specify-cli --from git+https://github.com/github/spec-kit.git',
+  git: 'apt-get install -y git (or: brew install git)',
+});
+
+/** Loaded lazily so core keeps no static host-adapter path (REQ-01). */
+const CURSOR_ADAPTER_SPECIFIER = ['..', 'adapters', 'cursor', 'index.mjs'].join('/');
+
+async function matchedCursorTrustFlags(flags) {
+  const { checkTrustFlags } = await import(CURSOR_ADAPTER_SPECIFIER);
+  return checkTrustFlags({ args: flags ?? [] });
+}
+
+/** Discipline skill names shipped by the upstream Superpowers mirror. */
+const DISCIPLINE_SKILL_NAMES = new Set([
+  'brainstorming', 'diagnosing-superpowers', 'dispatching-parallel-agents', 'executing-plans',
+  'finishing-a-development-branch', 'receiving-code-review', 'requesting-code-review',
+  'subagent-driven-development', 'systematic-debugging', 'test-driven-development',
+  'using-git-worktrees', 'using-superpowers', 'verification-before-completion',
+  'writing-plans', 'writing-skills',
+]);
+
+/** User-authored skills win same-name conflicts: the kit must never shadow them (REQ-46). */
+const SKILL_PROVIDER_ORDER = ['user', 'host', 'project', 'plugin', 'bundled'];
 
 function item(status, code, message, fix, extra) {
   return { status, code, message, fix, ...(extra ? { ...extra } : {}) };
@@ -59,22 +105,58 @@ function findOnPath(binary, env) {
   });
 }
 
-function environmentZone({ env }) {
+async function readableDir(dir) {
+  if (!dir) return false;
+  try {
+    await fsp.access(dir, fs.constants.R_OK);
+    return (await fsp.stat(dir)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function environmentZone({ env }) {
   const items = [];
   const major = Number(process.versions.node.split('.')[0]);
   items.push(major >= 18
     ? item('pass', 'NODE_VERSION', `Node ${process.versions.node} satisfies >=18`, 'No action needed.')
-    : item('fail', 'NODE_VERSION', `Node ${process.versions.node} is older than 18`, 'Install Node >=18.'));
+    : item('fail', 'NODE_VERSION', `Node ${process.versions.node} is older than 18`, TOOL_FIX_COMMANDS.node));
   for (const binary of REQUIRED_TOOLS) {
     items.push(findOnPath(binary, env)
       ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} is on PATH`, 'No action needed.')
-      : item('fail', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, `Install ${binary} and add it to PATH.`));
+      : item('fail', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, TOOL_FIX_COMMANDS[binary]));
   }
   for (const binary of OPTIONAL_TOOLS) {
     items.push(findOnPath(binary, env)
       ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} is on PATH`, 'No action needed.')
-      : item('warn', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, `Install ${binary} and add it to PATH (for example ~/.local/bin).`));
+      : item('warn', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, TOOL_FIX_COMMANDS[binary]));
   }
+
+  // Read-only mirror probe: declared sources only, never a network fetch.
+  const selection = await selectSuperpowersDir({}, env ?? {});
+  const mirrorDir = selection.realPath;
+  const mirrorReadable = await readableDir(mirrorDir);
+  items.push(mirrorReadable
+    ? item('pass', 'UPSTREAM_MIRROR', `upstream mirror readable at ${mirrorDir} (via ${selection.reason})`, 'No action needed.', { path: mirrorDir, via: selection.reason })
+    : item('warn', 'UPSTREAM_MIRROR', `upstream mirror not readable at ${selection.dir} (via ${selection.reason})`, `git clone --depth 1 ${DEFAULT_SUPERPOWERS_REPO} ${selection.dir}`, { path: selection.dir, via: selection.reason }));
+
+  const skillsRoot = mirrorReadable ? path.join(mirrorDir, 'skills') : null;
+  let skillCount = 0;
+  if (skillsRoot) {
+    try {
+      for (const entry of await fsp.readdir(skillsRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        try {
+          await fsp.access(path.join(skillsRoot, entry.name, 'SKILL.md'));
+          skillCount += 1;
+        } catch { /* an incomplete skill directory is not a usable discipline skill */ }
+      }
+    } catch { /* unreadable skills root is diagnosed below */ }
+  }
+  items.push(skillCount > 0
+    ? item('pass', 'DISCIPLINE_SKILLS', `${skillCount} discipline skills readable in ${skillsRoot}`, 'No action needed.', { count: skillCount, path: skillsRoot })
+    : item('warn', 'DISCIPLINE_SKILLS', `discipline skills directory missing or unreadable at ${skillsRoot ?? path.join(selection.dir, 'skills')}`, `specify self upgrade && git -C ${mirrorDir ?? selection.dir} pull --ff-only`, { count: 0, path: skillsRoot ?? path.join(selection.dir, 'skills') }));
+
   items.push(item(
     'skip', 'NETWORK_PROBE',
     'Network probes are intentionally omitted to keep the doctor read-only and bounded',
@@ -139,6 +221,94 @@ function skillsDirFor(cwd, host) {
   return cap ? path.join(cwd, cap.skillsDir) : null;
 }
 
+/**
+ * Read-only view of the installed integrations recorded by the specify CLI.
+ * Both on-disk spellings are supported; no other file is consulted.
+ */
+async function readIntegrationState({ cwd }) {
+  const jsonFile = path.join(cwd, '.specify', 'integration.json');
+  const jsonText = await readText(jsonFile);
+  if (jsonText !== null) {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const listed = Array.isArray(parsed.installed_integrations)
+        ? parsed.installed_integrations.filter((key) => typeof key === 'string' && key.length > 0)
+        : [];
+      const active = typeof (parsed.integration ?? parsed.default_integration) === 'string'
+        ? (parsed.integration ?? parsed.default_integration)
+        : null;
+      if (listed.length > 0 || active) {
+        const installed = [...new Set([...listed, ...(active ? [active] : [])])].sort((a, b) => a.localeCompare(b));
+        return { source: jsonFile, installed, active };
+      }
+    } catch { /* malformed state is reported by other zones; try the YAML spelling */ }
+  }
+
+  const ymlFile = path.join(cwd, '.specify', 'integrations.yml');
+  const ymlText = await readText(ymlFile);
+  if (ymlText !== null) {
+    const listed = [];
+    let active = null;
+    let inInstalled = false;
+    for (const line of ymlText.split(/\r?\n/)) {
+      const top = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+      if (top) {
+        inInstalled = /^(installed_integrations|installed)$/.test(top[1]);
+        if (/^(integration|active_integration|default_integration)$/.test(top[1]) && top[2].trim()) {
+          active = top[2].trim().replace(/^['"]|['"]$/g, '');
+        }
+        continue;
+      }
+      const entry = line.match(/^\s+-\s+([\w.-]+)\s*$/);
+      if (inInstalled && entry) listed.push(entry[1]);
+    }
+    if (listed.length > 0 || active) {
+      const installed = [...new Set([...listed, ...(active ? [active] : [])])].sort((a, b) => a.localeCompare(b));
+      return { source: ymlFile, installed, active };
+    }
+  }
+  return { source: null, installed: [], active: null };
+}
+
+function isDisciplineSkill(skill) {
+  if (DISCIPLINE_SKILL_NAMES.has(skill?.name)) return true;
+  const text = `${skill?.provider ?? ''} ${skill?.source ?? ''} ${skill?.path ?? ''}`.toLowerCase();
+  return /superpowers|upstream-mirror|plugin:/.test(text);
+}
+
+function guidanceChannelFor(skill, cap) {
+  const text = `${skill?.provider ?? ''} ${skill?.source ?? ''} ${skill?.path ?? ''}`.toLowerCase();
+  if (/superpowers|mirror/.test(text)) return 'upstream-mirror';
+  if (/plugin/.test(text)) return 'plugin';
+  if (/user/.test(text)) return 'user-skills';
+  return cap?.guidanceChannel ?? 'unknown';
+}
+
+async function skillVersionFromPath(skill) {
+  if (typeof skill?.path !== 'string' || skill.path.length === 0) return null;
+  const candidates = skill.path.endsWith('.md') ? [skill.path] : [path.join(skill.path, 'SKILL.md')];
+  for (const file of candidates) {
+    const text = await readText(file);
+    if (!text) continue;
+    const version = text.match(/^(?:version|\s{2}version):\s*['"]?([^\s'"]+)/m)?.[1];
+    if (version) return version;
+  }
+  return null;
+}
+
+function isUserSkill(skill) {
+  const source = String(skill?.source ?? '').toLowerCase();
+  const provider = String(skill?.provider ?? '').toLowerCase();
+  const pathText = String(skill?.path ?? '').replace(/\\/g, '/').toLowerCase();
+  return provider === 'user' || /^user\b|^user[-_:]/.test(source)
+    || /\/(?:\.dsh|\.claude|\.codex|\.cursor)\/skills\//.test(pathText);
+}
+
+function providerRank(provider) {
+  const index = SKILL_PROVIDER_ORDER.indexOf(String(provider ?? '').toLowerCase());
+  return index === -1 ? SKILL_PROVIDER_ORDER.length : index;
+}
+
 async function hostZone({ host, cwd, env, skills, trustFlags }) {
   const items = [];
   const cap = HOST_CAPABILITIES[host];
@@ -146,10 +316,12 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     ? item('pass', 'HOST_CAPABILITY', `host=${host} integration=${cap.integrationKey}`, 'No action needed.')
     : item('fail', 'HOST_CAPABILITY', `unknown host: ${host}`, `Use one of: ${HOST_KEYS.join(', ')}.`));
   if (cap?.guidanceChannel === 'rule-dir') {
-    const flags = trustFlags ?? [];
-    items.push(flags.length === 0
-      ? item('pass', 'CURSOR_TRUST', 'no auto-trust dispatch flags configured', 'No action needed.')
-      : item('warn', 'CURSOR_TRUST', `auto-trust flags detected: ${flags.join(' ')}; use only in controlled projects`, 'Remove the flags from the dispatch configuration.'));
+    // The adapter's capability pattern is the single source of truth: an unknown
+    // flag is harmless, a configured trust/force flag is an explicit warning.
+    const matched = await matchedCursorTrustFlags(trustFlags);
+    items.push(matched.length === 0
+      ? item('pass', 'CURSOR_TRUST', 'no auto-trust dispatch flags configured', 'No action needed.', { matched })
+      : item('warn', 'CURSOR_TRUST', `auto-trust flags detected: ${matched.join(' ')}; use only in controlled projects`, 'Remove the flags from the dispatch configuration.', { matched }));
   }
   const visible = (skills ?? []).length;
   items.push(item('pass', 'VISIBLE_SKILLS', `${visible} visible skills provided`, 'No action needed.'));
@@ -170,33 +342,114 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
     ? item('pass', 'EXTENSION_STATE', 'project extension manifest found', 'No action needed.')
     : item('warn', 'EXTENSION_STATE', 'project extension manifest not found', 'Run specify extension add --dev spec-kit-extension.'));
 
-  // Discipline guidance channel: which channel this host uses and which kit version feeds it.
+  const integrationState = await readIntegrationState({ cwd });
+  items.push(integrationState.source
+    ? item(
+      'pass', 'INTEGRATION_STATE',
+      `installed integrations: ${integrationState.installed.join(', ')}; active=${integrationState.active ?? 'none'} source=${path.basename(integrationState.source)}`,
+      'No action needed.',
+      { installed: integrationState.installed, active: integrationState.active, source: integrationState.source }
+    )
+    : item(
+      'skip', 'INTEGRATION_STATE',
+      'no installed-integration manifest found; per-host rendering cannot be verified',
+      'Run specify init --integration <host> to record integration state.',
+      { installed: [], active: null, source: null }
+    ));
+
+  // Discipline guidance channel: report the real source/version carried by the
+  // visible skill entries. The kit package version is only a labelled fallback
+  // when no discipline skill is visible at all.
   if (cap) {
-    const pkg = await readJson(path.join(PKG_ROOT, 'package.json'));
-    const version = pkg?.version ?? 'unknown';
+    const evidence = (skills ?? []).find(isDisciplineSkill) ?? null;
+    let channel;
+    let version;
+    let source;
+    let versionSource;
+    if (evidence) {
+      channel = guidanceChannelFor(evidence, cap);
+      version = (await skillVersionFromPath(evidence)) ?? 'unknown';
+      versionSource = version === 'unknown' ? 'skill-version-unavailable' : 'skill-metadata';
+      source = String(evidence.source ?? evidence.provider ?? evidence.path ?? 'skill-entry');
+    } else {
+      const pkg = await readJson(path.join(PKG_ROOT, 'package.json'));
+      channel = cap.guidanceChannel;
+      version = pkg?.version ?? 'unknown';
+      versionSource = 'kit-package-fallback';
+      source = 'kit-package-fallback';
+    }
     items.push(item(
       'pass', 'GUIDANCE_CHANNEL',
-      `host=${host} channel=${cap.guidanceChannel} version=${version}`,
-      'No action needed.',
-      { host, channel: cap.guidanceChannel, version }
+      `host=${host} channel=${channel} version=${version} source=${source} versionSource=${versionSource}`,
+      evidence ? 'No action needed.' : 'Install the discipline skills to report their real channel and version.',
+      {
+        host, channel, version, source, versionSource,
+        provider: evidence?.provider ?? null,
+        path: evidence?.path ?? null,
+      }
     ));
   } else {
     items.push(item('skip', 'GUIDANCE_CHANNEL', `guidance channel unknown for host=${host}`, 'Pick a supported host.'));
   }
 
-  // Hook command rendering: how many of the packaged hook skills this host renders.
+  // Hook command rendering: verify every installed integration end, not just
+  // the current host. An uninstalled/inactive end must never be claimed healthy.
   const skillsDir = skillsDirFor(cwd, host);
   const rendered = skillsDir ? await installedSkillNames(skillsDir) : [];
-  const expected = (await packagedCommandSkills()).length;
   const renderedHooks = rendered.filter((name) => name.includes('hooks-'));
-  items.push(item(
-    'pass', 'HOOK_RENDERING',
-    `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills`,
-    renderedHooks.length === 0
-      ? 'No hook command skills rendered for this host; that is expected when the host is not active here.'
-      : 'No action needed.',
-    { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected }
-  ));
+  const expectedNames = await packagedCommandSkills();
+  const expected = expectedNames.length;
+  if (!integrationState.source) {
+    items.push(item(
+      'pass', 'HOOK_RENDERING',
+      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills`,
+      renderedHooks.length === 0
+        ? 'No hook command skills rendered for this host; install the extension when the host becomes active.'
+        : 'No action needed.',
+      { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected, integrations: [] }
+    ));
+  } else {
+    const checks = [];
+    for (const key of integrationState.installed) {
+      const endHost = INTEGRATION_KEY_TO_HOST[key] ?? null;
+      const endCap = endHost ? HOST_CAPABILITIES[endHost] : null;
+      const endDir = endCap ? path.join(cwd, endCap.skillsDir) : null;
+      const names = endDir ? await installedSkillNames(endDir) : [];
+      const hookNames = names.filter((name) => name.includes('hooks-'));
+      const missingCommands = expectedNames.filter((name) => !names.includes(name));
+      const missingHooks = EXECUTION_HOOK_COMMANDS.filter((name) => !names.includes(name));
+      const active = key === integrationState.active;
+      const fullyRendered = missingCommands.length === 0 && missingHooks.length === 0;
+      const status = fullyRendered ? 'pass' : (hookNames.length === 0 && active ? 'fail' : 'warn');
+      checks.push({
+        integration: key,
+        host: endHost,
+        active,
+        skillsDir: endCap?.skillsDir ?? null,
+        rendered: names,
+        renderedCount: names.length,
+        expected,
+        hookCount: hookNames.length,
+        expectedHookEvents: [...HOOK_EVENTS],
+        missingCommands,
+        missingHooks,
+        status,
+        fix: status === 'pass'
+          ? 'No action needed.'
+          : `specify integration switch ${key} && specify extension add --dev spec-kit-extension --force && restart ${endHost ?? key}`,
+      });
+    }
+    checks.sort((a, b) => a.integration.localeCompare(b.integration));
+    const worst = checks.some((entry) => entry.status === 'fail') ? 'fail'
+      : checks.some((entry) => entry.status === 'warn') ? 'warn' : 'pass';
+    const detail = checks.map((entry) => `${entry.integration}${entry.active ? '(active)' : ''}:${entry.renderedCount}/${entry.expected}`).join(', ');
+    items.push(item(
+      worst, 'HOOK_RENDERING',
+      `host=${host} rendered=${renderedHooks.length} of ${expected} hook command skills; integrations=${detail}`,
+      worst === 'pass' ? 'No action needed.' : 'Re-render missing host artifacts: specify integration switch <key> && specify extension add --dev spec-kit-extension --force.',
+      { host, rendered: renderedHooks, renderedCount: renderedHooks.length, expected, integrations: checks }
+    ));
+  }
   return zone(items);
 }
 
@@ -290,49 +543,108 @@ async function probeBridgeSource({ cwd, env }) {
   );
 }
 
-async function runtimeZone({ cwd, env, skills }) {
+async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
   const items = [];
   const markers = await readMarkers({ cwd });
-  const entries = Object.entries(markers)
-    .filter(([, value]) => value && typeof value === 'object')
-    .sort(([a], [b]) => a.localeCompare(b));
-  const now = Date.now();
-  const pending = [];
-  const history = [];
-  for (const [host, marker] of entries) {
-    const stamped = Date.parse(String(marker.timestamp ?? ''));
-    const age = Number.isFinite(stamped) ? now - stamped : Number.POSITIVE_INFINITY;
-    if (age > PENDING_MAX_AGE_MS) history.push(host);
-    else pending.push(host);
-  }
+  const classified = classifyMarkers(markers, { now, sessionStart, runId });
+  const pending = [...classified.pending].sort();
+  const history = [...classified.history].sort();
+  const markerFix = pending.length > 0
+    ? `Open each affected host or run node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> to clear the pending marker.`
+    : 'Clear stale markers with node bin/sdd-kit.mjs guidance --host <host> --cwd <repo> if the reload already happened.';
   if (pending.length > 0) {
     items.push(item(
       'warn', 'PENDING_MARKERS',
-      `pending markers: ${pending.join(', ')}${history.length ? `; history (older than 24h, not pending for this run): ${history.join(', ')}` : ''}`,
-      `Restart ${pending.join(', ')} to apply pending changes.`,
+      `pending markers: ${pending.join(', ')}${history.length ? `; history from earlier runs: ${history.join(', ')}` : ''}`,
+      markerFix,
       { pending, history }
     ));
   } else if (history.length > 0) {
     items.push(item(
       'warn', 'PENDING_MARKERS',
-      `no pending markers; only history older than 24h: ${history.join(', ')} (not pending for this run)`,
-      'Clear stale markers with the kit CLI if the reload already happened.',
+      `no pending markers; only history from earlier runs: ${history.join(', ')}`,
+      markerFix,
       { pending, history }
     ));
   } else {
     items.push(item('pass', 'PENDING_MARKERS', 'no pending reload markers', 'No action needed.', { pending, history }));
   }
 
-  const seen = new Map();
-  for (const skill of skills ?? []) {
-    if (!skill?.name) continue;
-    if (!seen.has(skill.name)) seen.set(skill.name, new Set());
-    seen.get(skill.name).add(skill.provider ?? 'unknown');
+  const visibleSkills = (skills ?? []).filter((skill) => skill?.name);
+  const inventory = visibleSkills.map((skill) => ({
+    name: skill.name,
+    provider: skill.provider ?? 'unknown',
+    path: skill.path ?? null,
+    source: skill.source ?? 'unknown',
+  }));
+  items.push(inventory.length > 0
+    ? item(
+      'pass', 'SKILL_INVENTORY',
+      `visible skills: ${inventory.map((entry) => `${entry.name}(${entry.provider})`).join(', ')}`,
+      'No action needed.',
+      { skills: inventory }
+    )
+    : item('skip', 'SKILL_INVENTORY', 'no visible skills to inventory', 'Load a skill provider before running the doctor.', { skills: [] }));
+
+  // Same-name conflicts report the winner and its deterministic provider order.
+  const byName = new Map();
+  visibleSkills.forEach((skill, index) => {
+    const provider = skill.provider ?? 'unknown';
+    if (!byName.has(skill.name)) byName.set(skill.name, []);
+    byName.get(skill.name).push({ skill, provider, index, source: skill.source ?? 'unknown' });
+  });
+  const sortByPriority = (a, b) => providerRank(a.provider) - providerRank(b.provider) || a.index - b.index;
+  const conflicts = [];
+  for (const [name, entries] of [...byName.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const providers = [...new Set(entries.map((entry) => entry.provider))].sort((a, b) => a.localeCompare(b));
+    if (providers.length < 2) continue;
+    const ordered = [...entries].sort(sortByPriority);
+    const winner = ordered[0];
+    conflicts.push({
+      name,
+      providers,
+      order: ordered.map((entry) => entry.provider),
+      origins: entries.map((entry) => `${entry.provider}:${entry.source}`),
+      winner: {
+        name,
+        provider: winner.provider,
+        source: winner.source,
+        path: winner.skill.path ?? null,
+        origin: isUserSkill(winner.skill) ? 'user' : 'bundled',
+      },
+    });
   }
-  const conflicts = [...seen.entries()].filter(([, providers]) => providers.size > 1).map(([name]) => name).sort();
   items.push(conflicts.length === 0
-    ? item('pass', 'SKILL_CONFLICT', 'no cross-provider skill name conflicts', 'No action needed.')
-    : item('warn', 'SKILL_CONFLICT', `conflicting skill names: ${conflicts.join(', ')}`, 'Disable one of the conflicting providers.'));
+    ? item('pass', 'SKILL_CONFLICT', 'no cross-provider skill name conflicts', 'No action needed.', { conflicts: [] })
+    : item(
+      'warn', 'SKILL_CONFLICT',
+      `conflicting skill names: ${conflicts.map((entry) => `${entry.name} (${entry.origins.join(' vs ')}; winner=${entry.winner.provider})`).join(', ')}`,
+      'Disable one of the conflicting providers; user-authored skills keep precedence.',
+      { conflicts }
+    ));
+
+  // User-authored skills are explicitly labelled as non-kit artifacts so they
+  // are never mistaken for kit drift or silently managed by the kit.
+  const userSkills = visibleSkills.filter(isUserSkill).map((skill) => ({
+    name: skill.name,
+    provider: skill.provider ?? 'unknown',
+    source: skill.source ?? 'unknown',
+    path: skill.path ?? null,
+  }));
+  const kitSkills = visibleSkills.filter((skill) => !isUserSkill(skill)).map((skill) => ({
+    name: skill.name,
+    provider: skill.provider ?? 'unknown',
+    source: skill.source ?? 'unknown',
+    path: skill.path ?? null,
+  }));
+  items.push(item(
+    'pass', 'SKILL_PROVENANCE',
+    userSkills.length > 0
+      ? `${userSkills.length} user-authored skill(s) marked 非本套件产物: ${userSkills.map((entry) => entry.name).join(', ')}`
+      : 'no user-authored skills observed',
+    userSkills.length > 0 ? 'Leave user-authored skills untouched; the kit only manages its own artifacts.' : 'No action needed.',
+    { userSkills, bundled: kitSkills }
+  ));
 
   items.push(await probeBridgeSource({ cwd, env }));
   return zone(items);
@@ -383,6 +695,9 @@ export async function runDoctor({
   env = process.env,
   skills = [],
   trustFlags = [],
+  now,
+  sessionStart,
+  runId,
   deps = {},
 } = {}) {
   const failZone = (error) => zone([item('fail', 'ZONE_PROBE_ERROR', error?.message ?? String(error), 'Fix the probe error and rerun the doctor.')]);
@@ -390,7 +705,7 @@ export async function runDoctor({
     safe('environment', () => deps.environment ? deps.environment() : environmentZone({ env }), failZone),
     safe('host', () => deps.host ? deps.host() : hostZone({ host, cwd, env, skills, trustFlags }), failZone),
     safe('repository', () => deps.repository ? deps.repository() : repositoryZone({ cwd, host }), failZone),
-    safe('runtime', () => deps.runtime ? deps.runtime() : runtimeZone({ cwd, env, skills }), failZone),
+    safe('runtime', () => deps.runtime ? deps.runtime() : runtimeZone({ cwd, env, skills, now, sessionStart, runId }), failZone),
     safe('triggerDryRun', () => deps.triggerDryRun ? deps.triggerDryRun() : triggerZone({ trigger, skills }), failZone),
   ]);
   return { environment, host: hostReport, repository, runtime, triggerDryRun };
