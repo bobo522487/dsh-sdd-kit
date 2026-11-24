@@ -349,7 +349,7 @@ async function clearHostMarker({ cwd = process.cwd(), host = 'dsh' } = {}) {
     throw cliError(
       'E_UNKNOWN_HOST',
       error?.message ?? `未知 host '${host}'。`,
-      `可用 host：${Object.keys(HOST_CAPABILITIES).join(', ')}。`
+      `可用宿主（host）：${Object.keys(HOST_CAPABILITIES).join(', ')}。`
     );
   }
   return { status: 'ok', action: 'clear_marker', host, cleared, path: markerPath(cwd) };

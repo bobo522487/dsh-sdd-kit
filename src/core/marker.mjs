@@ -81,8 +81,8 @@ export async function clearMarker({ cwd = process.cwd(), host = DEFAULT_HOST } =
  * @returns {Promise<boolean>} whether an entry was removed
  */
 export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
-  if (!host) throw new Error('clearHostMarker requires an explicit host');
-  if (!Object.hasOwn(HOST_CAPABILITIES, host)) throw new Error(`unknown host: ${host}`);
+  if (!host) throw new Error('clearHostMarker 需要显式提供 host');
+  if (!Object.hasOwn(HOST_CAPABILITIES, host)) throw new Error(`未知的宿主：${host}`);
   return clearMarker({ cwd, host });
 }
 

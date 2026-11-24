@@ -138,7 +138,7 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, and syncs sp
     const idx = await runBridge({ action: 'sync_index', cwd });
     assert.equal(idx.featureCount, 1);
     const indexMd = await fs.readFile(idx.indexPath, 'utf8');
-    assert.match(indexMd, /`001-user-auth` \| In Progress \(1\/2\)/);
+    assert.match(indexMd, /`001-user-auth` \| 进行中（1\/2）/);
 
     // The parallel checkbox writer is retired: upstream /speckit.implement owns tasks.md
     const retired = await runBridge({ action: 'check_task', cwd, featureName: '001-user-auth', taskMatch: 'T002' });
@@ -260,7 +260,7 @@ test('runUpdate AC-01: all-behind components produce two updated records with be
     assert.equal(report.components[0].after, 'specify 1.4.0');
     assert.equal(report.components[1].before, 'aaaaaaa');
     assert.equal(report.components[1].after, 'bbbbbbb');
-    assert.match(report.components[1].followUp, /Restart DSH/, 'a skill-count change must ask for a restart');
+    assert.match(report.components[1].followUp, /重启 DSH/, 'a skill-count change must ask for a restart');
     assert.deepEqual(report.errors, []);
     for (const record of report.components) assert.equal(record.error, null);
   } finally {
@@ -734,7 +734,7 @@ test('install_hooks_ext refuses a missing extension source without calling speci
     const report = await runUpstream({ action: 'install_hooks_ext', cwd, extensionDir: missing }, mockRunner);
     assert.equal(calls.length, 0, 'must not shell out when the source directory is missing');
     assert.equal(report.ok, false);
-    assert.match(report.error, /extension source not found at /);
+    assert.match(report.error, /扩展源目录不存在：/);
     assert.equal(report.extensionDir, missing);
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });

@@ -26,7 +26,7 @@ function reasonFor({ host, parts, result }) {
  */
 export function decideReload(changes = {}, host = DEFAULT_HOST) {
   const cap = HOST_CAPABILITIES[host];
-  if (!cap) throw new Error(`unknown host: ${host}`);
+  if (!cap) throw new Error(`未知的宿主：${host}`);
 
   const layers = Array.isArray(changes.layers) ? changes.layers.filter(Boolean) : [];
   if (layers.length === 0) {
@@ -42,7 +42,7 @@ export function decideReload(changes = {}, host = DEFAULT_HOST) {
   const parts = [];
   for (const layer of layers) {
     const policy = cap.reloadPolicy[layer];
-    if (!policy) throw new Error(`unknown change layer: ${layer}`);
+    if (!policy) throw new Error(`未知的改动层：${layer}`);
     parts.push(`${layer}=${policy}`);
     if (SEVERITY[policy] > SEVERITY[result]) result = policy;
   }

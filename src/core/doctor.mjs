@@ -330,7 +330,7 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
   const cap = HOST_CAPABILITIES[host];
   items.push(cap
     ? item('pass', 'HOST_CAPABILITY', `host=${host} integration=${cap.integrationKey}`, '无需处理。')
-    : item('fail', 'HOST_CAPABILITY', `未知 host：${host}`, `可用 host：${HOST_KEYS.join(', ')}。`));
+    : item('fail', 'HOST_CAPABILITY', `未知宿主（host）：\`${host}\``, `可用宿主（host）：${HOST_KEYS.join(', ')}。`));
   if (cap?.guidanceChannel === 'rule-dir') {
     // The capability pattern is the single source of truth: an unknown flag is
     // harmless, a configured trust/force flag is an explicit warning. The matcher

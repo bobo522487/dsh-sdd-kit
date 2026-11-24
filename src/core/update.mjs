@@ -20,8 +20,8 @@ export function reloadFollowUp({ host = DEFAULT_HOST, layer = 'tool_code' } = {}
   const cap = HOST_CAPABILITIES[host] ?? HOST_CAPABILITIES[DEFAULT_HOST];
   const policy = cap.reloadPolicy[layer] ?? cap.reloadPolicy.tool_code;
   const label = String(cap.key ?? host).toUpperCase();
-  if (policy === 'restart_host') return `Restart ${label} to load updated tools/skills`;
-  if (policy === 'new_session') return `Open a new ${label} session to load updated tools/skills`;
+  if (policy === 'restart_host') return `重启 ${label} 后加载更新的工具与技能`;
+  if (policy === 'new_session') return `新开一个 ${label} 会话后加载更新的工具与技能`;
   return null;
 }
 

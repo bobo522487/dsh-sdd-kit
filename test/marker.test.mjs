@@ -93,8 +93,8 @@ test('clearHostMarker removes only the explicitly requested host (T081)', async 
 
 test('clearHostMarker requires a known explicit host (T081)', async () => {
   const repo = await makeRepo();
-  await assert.rejects(clearHostMarker({ cwd: repo }), /requires an explicit host/);
-  await assert.rejects(clearHostMarker({ cwd: repo, host: 'unknown-host' }), /unknown host/);
+  await assert.rejects(clearHostMarker({ cwd: repo }), /需要显式提供 host/);
+  await assert.rejects(clearHostMarker({ cwd: repo, host: 'unknown-host' }), /未知的宿主/);
 });
 
 test('classifyMarkers keeps this run pending even across a day boundary (T084)', async () => {

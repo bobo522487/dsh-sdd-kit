@@ -48,7 +48,7 @@ test('reload policy has exactly one implementation (REQ-17/T026)', () => {
 });
 
 test('unknown host keys are rejected instead of silently defaulting (AC-09)', () => {
-  assert.throws(() => decideReload({ layers: ['tool_code'] }, 'unknown-host'), /unknown host/i);
+  assert.throws(() => decideReload({ layers: ['tool_code'] }, 'unknown-host'), /未知的宿主/);
 });
 
 test('runAction update reports reload decision and writes the pending marker (REQ-17/T029)', async () => {
@@ -153,12 +153,12 @@ test('an update that reports error status keeps the marker untouched (REQ-20)', 
 });
 
 test('follow-up text comes from the host reload policy, not a hard-coded sentence (T082)', async () => {
-  assert.match(reloadFollowUp({ host: 'dsh' }), /^Restart DSH to load updated tools\/skills$/);
+  assert.match(reloadFollowUp({ host: 'dsh' }), /^重启 DSH 后加载更新的工具与技能$/);
   for (const host of ['claude', 'codex', 'cursor']) {
     const text = reloadFollowUp({ host });
     assert.match(text, new RegExp(host.toUpperCase(), 'i'));
-    assert.match(text, /^Open a new .+ session to load updated tools\/skills$/);
-    assert.doesNotMatch(text, /Restart DSH/);
+    assert.match(text, /^新开一个 .+ 会话后加载更新的工具与技能$/);
+    assert.doesNotMatch(text, /重启 DSH/);
   }
   const source = await fs.readFile(path.join(ROOT, 'src', 'core', 'update.mjs'), 'utf8');
   assert.doesNotMatch(source, /Restart DSH/);

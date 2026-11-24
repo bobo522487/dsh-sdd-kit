@@ -37,8 +37,8 @@ async function run(cmd, args, cwd) {
 
 async function probe(cmd, args) {
   const result = await run(cmd, args, PKG_ROOT);
-  // Only a genuinely absent executable counts as "environment unavailable".
-  // A tool that exists but rejects --version is a contract failure we must report.
+  // 只有确实缺失的可执行文件才算“环境不可用”。
+  // 工具存在但拒绝 --version 属于必须报告的契约失败。
   if (!result.ok && result.code === 'ENOENT') return null;
   if (!result.ok) return 'unknown';
   const firstLine = result.stdout.split('\n')[0] ?? '';
@@ -111,7 +111,7 @@ export function compareBound(declared, observed) {
       observed: observed ?? null,
       needsAdjustment: false,
       suggestedBound: declared,
-      reason: observed === null ? 'specify is not installed, nothing to compare' : 'unparsable version, nothing to compare',
+      reason: observed === null ? '未安装 specify，无可比较版本' : '版本字符串无法解析，无可比较版本',
     };
   }
   const order = compareTriples(actual, floor);
@@ -141,8 +141,8 @@ export function compareBound(declared, observed) {
       needsAdjustment: true,
       suggestedBound: prereleaseFloorBound,
       reason: declaredPre
-        ? `the installed ${observed} is below the prerelease floor (${declared}); pin a newer release or declare ${prereleaseFloorBound}`
-        : `the installed specify (${observed}) is a prerelease of ${actual.join('.')}, which does not satisfy the final-release floor (${declared}); pin a released version or declare ${suggestedBound}`,
+        ? `已安装的 ${observed} 低于预发布下界（${declared}）；请固定更新的版本或声明 ${prereleaseFloorBound}`
+        : `已安装的 specify（${observed}）是 ${actual.join('.')} 的预发布版，不满足正式版下界（${declared}）；请固定正式版本或声明 ${suggestedBound}`,
     };
   }
   return {
@@ -150,7 +150,7 @@ export function compareBound(declared, observed) {
     observed,
     needsAdjustment: true,
     suggestedBound,
-    reason: `the installed specify (${observed}) is below the declared floor (${declared}); either raise the floor to ${suggestedBound} or pin a newer toolchain`,
+    reason: `已安装的 specify（${observed}）低于声明下界（${declared}）；请把下界提升到 ${suggestedBound}，或固定更新的工具链`,
   };
 }
 
@@ -175,19 +175,19 @@ function emit(report, { json, keep }) {
   if (report.status === 'not_executed') {
     lines.push(`未执行（环境不可用）：${report.reason}`);
   } else {
-    lines.push(`Upstream contract verification (${Object.entries(report.versions).map(([k, v]) => `${k} ${v ?? 'unknown'}`).join(', ')})`);
+    lines.push(`上游契约验证（${Object.entries(report.versions).map(([k, v]) => `${k} ${v ?? '未知'}`).join('，')}）`);
     for (const entry of report.checks) {
       lines.push(`  ${entry.ok ? '✔' : '✖'} ${entry.id.padEnd(20)} ${entry.detail}`);
-      if (entry.stderr) lines.push(`      stderr: ${entry.stderr.split('\n')[0]}`);
+      if (entry.stderr) lines.push(`      标准错误：${entry.stderr.split('\n')[0]}`);
     }
-    lines.push(`Status: ${report.status}`);
+    lines.push(`状态：${report.status}`);
   }
   if (report.versionDrift) {
     const drift = report.versionDrift;
-    lines.push(`Version bound: declared ${drift.declared ?? 'unknown'} observed ${drift.observed ?? 'unknown'}${drift.needsAdjustment ? ` → DRIFT, consider ${drift.suggestedBound}` : ''}`);
+    lines.push(`版本下界：声明 ${drift.declared ?? '未知'}，实测 ${drift.observed ?? '未知'}${drift.needsAdjustment ? ` → 漂移，建议 ${drift.suggestedBound}` : ''}`);
     if (drift.needsAdjustment && drift.reason) lines.push(`  ${drift.reason}`);
   }
-  if (keep && report.tmpDir) lines.push(`Kept: ${report.tmpDir}`);
+  if (keep && report.tmpDir) lines.push(`已保留临时目录：${report.tmpDir}`);
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 
@@ -210,7 +210,7 @@ export async function verifyUpstream(options = {}) {
   if (missing.length > 0) {
     const report = {
       status: 'not_executed',
-      reason: `${missing.join(', ')} not found on PATH`,
+      reason: `${missing.join('、')} 不在 PATH 中`,
       versions,
       versionDrift,
       checks: [],
@@ -226,12 +226,12 @@ export async function verifyUpstream(options = {}) {
   try {
     const init = await run('specify', ['init', '--here', '--integration', 'dsh', '--non-interactive', '--force', '--ignore-agent-tools'], tmpDir);
     if (!init.ok && NETWORK_PATTERN.test(`${init.stderr}\n${init.stdout}`)) network = init.stderr || init.stdout;
-    let initDetail = `${init.command} → exit ${init.code}`;
+    let initDetail = `${init.command} → 退出码 ${init.code}`;
     if (init.ok) {
       const templates = await fs.readdir(path.join(tmpDir, '.specify', 'templates')).catch(() => []);
       const templateCount = templates.filter((name) => name.endsWith('-template.md')).length;
       const skillsPresent = await fs.access(path.join(tmpDir, '.dsh', 'skills')).then(() => true).catch(() => false);
-      initDetail += `; ${templateCount} templates; .dsh/skills ${skillsPresent ? 'present' : 'missing'}`;
+      initDetail += `；${templateCount} 个模板；.dsh/skills ${skillsPresent ? '存在' : '缺失'}`;
       checks.push(check('init-args', templateCount === 5 && skillsPresent, initDetail, init.stderr));
     } else {
       checks.push(check('init-args', false, initDetail, init.stderr));
@@ -240,11 +240,11 @@ export async function verifyUpstream(options = {}) {
     if (init.ok) {
       const add = await run('specify', ['extension', 'add', '--dev', EXTENSION_DIR, '--force'], tmpDir);
       if (!add.ok && NETWORK_PATTERN.test(`${add.stderr}\n${add.stdout}`)) network = add.stderr || add.stdout;
-      checks.push(check('extension-add-args', add.ok, `${add.command} → exit ${add.code}`, add.stderr));
+      checks.push(check('extension-add-args', add.ok, `${add.command} → 退出码 ${add.code}`, add.stderr));
 
       const list = await run('specify', ['extension', 'list', '--json'], tmpDir);
       let manifestOk = false;
-      let manifestDetail = `${list.command} → exit ${list.code}`;
+      let manifestDetail = `${list.command} → 退出码 ${list.code}`;
       if (list.ok) {
         try {
           const parsed = JSON.parse(list.stdout);
@@ -252,9 +252,9 @@ export async function verifyUpstream(options = {}) {
           const hooks = entry?.provides?.hooks;
           const hookCount = Array.isArray(hooks) ? hooks.length : (typeof hooks === 'number' ? hooks : null);
           manifestOk = Boolean(entry) && typeof entry.version === 'string' && hookCount === HOOK_EVENTS.length && entry.enabled === true;
-          manifestDetail = `id=${entry?.id ?? 'missing'} version=${entry?.version ?? 'missing'} provides.hooks=${hookCount ?? 'missing'} enabled=${entry?.enabled ?? 'missing'}`;
+          manifestDetail = `id=${entry?.id ?? '缺失'} version=${entry?.version ?? '缺失'} provides.hooks=${hookCount ?? '缺失'} enabled=${entry?.enabled ?? '缺失'}`;
         } catch (error) {
-          manifestDetail = `extension list --json: unparsable output (${error.message})`;
+          manifestDetail = `extension list --json：无法解析输出（${error.message}）`;
         }
       }
       checks.push(check('manifest-contract', manifestOk, manifestDetail, list.stderr));
@@ -269,7 +269,7 @@ export async function verifyUpstream(options = {}) {
       checks.push(check(
         'hooks-registered',
         registered.length === HOOK_EVENTS.length && sessionEvent,
-        `${registered.length}/${HOOK_EVENTS.length} events registered once${sessionEvent ? ' + session_start' : ' (session_start MISSING)'}${registered.length === HOOK_EVENTS.length ? '' : `; missing: ${HOOK_EVENTS.filter((e) => !registered.includes(e)).join(', ')}`}`
+        `${registered.length}/${HOOK_EVENTS.length} 个事件各注册一次${sessionEvent ? '，含 session_start' : '，缺少 session_start'}${registered.length === HOOK_EVENTS.length ? '' : `；缺失：${HOOK_EVENTS.filter((e) => !registered.includes(e)).join('、')}`}`
       ));
     }
 
@@ -278,8 +278,8 @@ export async function verifyUpstream(options = {}) {
     const report = {
       status,
       reason: status === 'not_executed'
-        ? `network: ${snippet(network).split('\n')[0]}`
-        : (failed.length > 0 ? `${failed.length} contract check(s) failed` : null),
+        ? `网络不可用：${snippet(network).split('\n')[0]}`
+        : (failed.length > 0 ? `${failed.length} 项契约检查失败` : null),
       versions,
       versionDrift,
       checks,

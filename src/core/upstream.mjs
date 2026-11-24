@@ -213,7 +213,7 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
         cwd,
         extensionDir,
         ok: false,
-        error: `extension source not found at ${extensionDir}`,
+        error: `扩展源目录不存在：${extensionDir}`,
       };
     }
 
@@ -229,7 +229,7 @@ export async function runUpstream(args = {}, runner = defaultRunner) {
         cwd,
         extensionDir,
         ok: false,
-        error: `cannot read extension manifest at ${path.join(extensionDir, 'extension.yml')}`,
+        error: `无法读取扩展清单：${path.join(extensionDir, 'extension.yml')}`,
       };
     }
     const integration = await readIntegration(cwd);

@@ -46,10 +46,10 @@ function freezeCapabilities(entries) {
     Object.freeze(cap.guidanceConfig);
     Object.freeze(cap.toolNames);
     Object.freeze(cap);
-    if (cap.key !== key) throw new Error(`HOST_CAPABILITIES key mismatch: ${key}`);
+    if (cap.key !== key) throw new Error(`HOST_CAPABILITIES 键不匹配：${key}`);
     for (const layer of RELOAD_KEYS) {
       if (!['restart_host', 'new_session', 'none'].includes(cap.reloadPolicy[layer])) {
-        throw new Error(`invalid reloadPolicy for ${key}.${layer}`);
+        throw new Error(`无效的 reloadPolicy：${key}.${layer}`);
       }
     }
   }
