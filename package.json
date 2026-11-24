@@ -46,6 +46,8 @@
   },
   "scripts": {
     "test": "node --test test/sdd-kit.test.mjs",
+    "test:contract": "node --test test/contract-*.test.mjs",
+    "test:adapters": "node --test test/adapters*.test.mjs",
     "verify:upstream": "node scripts/verify-upstream.mjs"
   },
   "engines": {
