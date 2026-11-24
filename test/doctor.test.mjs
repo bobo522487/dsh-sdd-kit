@@ -252,6 +252,32 @@ test('T096: user-facing error text in core uses Chinese prose (review I2)', () =
   assert.ok(checked > 10, `expected to check user-facing fields, got ${checked}`);
 });
 
+test('T102: constructor arguments and dynamic core errors use Chinese prose', () => {
+  const files = [
+    path.join(PKG_ROOT, 'src', 'core', 'action.mjs'),
+    path.join(PKG_ROOT, 'src', 'core', 'update.mjs'),
+  ];
+  const sinks = [
+    /\bactionError\(\s*['"`][^'"`]*['"`]\s*,\s*([`'"][^`'"]*[`'"])/g,
+    /\bactionError\(\s*['"`][^'"`]*['"`]\s*,\s*[^,]+,\s*([`'"][^`'"]*[`'"])/g,
+    /\bnew Error\(\s*([`'"][^`'"]*[`'"])/g,
+    /\bfailure\(\s*([`'"][^`'"]*[`'"])/g,
+  ];
+  let checked = 0;
+  for (const file of files) {
+    const source = fsSync.readFileSync(file, 'utf8');
+    for (const pattern of sinks) {
+      for (const match of source.matchAll(pattern)) {
+        const value = match[1].replace(/^['"`]|['"`]$/g, '');
+        checked += 1;
+        if (isTechnicalLiteral(value)) continue;
+        assertChineseProse(value, `${path.relative(PKG_ROOT, file)} user-facing sink`);
+      }
+    }
+  }
+  assert.ok(checked >= 8, `expected constructor/dynamic prose sinks, got ${checked}`);
+});
+
 test('T098: POSIX PATH probes exact executable names only', async () => {
   const root = await makeRepo();
   const bin = path.join(root, 'posix-bin');

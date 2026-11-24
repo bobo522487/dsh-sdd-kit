@@ -30,8 +30,8 @@ export function actionError(code, message, fix) {
 export function unknownActionError(action) {
   return actionError(
     'E_UNKNOWN_ACTION',
-    `Unknown action: ${action || '(empty)'}`,
-    'Use one of: update, bridge, doctor, guard, guidance.'
+    `未知的 action：${action || '（空）'}`,
+    '可用 action：update、bridge、doctor、guard、guidance。'
   );
 }
 

@@ -80,7 +80,7 @@ async function reinstallExtension(upstream, args) {
     ? `${result.extension.id}${result.extension.version ? `@${result.extension.version}` : ''}`
     : 'extension';
   if (result && result.ok === false) {
-    throw failure(`Extension reinstall failed: ${failureDetail(result)}`);
+    throw failure(`扩展重装失败：${failureDetail(result)}`);
   }
   return {
     before: null,
@@ -95,7 +95,7 @@ function failureDetail(result) {
   const parts = [];
   if (result?.stderr && String(result.stderr).trim()) parts.push(String(result.stderr).trim());
   if (result?.stdout && String(result.stdout).trim()) parts.push(String(result.stdout).trim());
-  if (parts.length === 0 && result?.code !== undefined) parts.push(`exit code ${result.code}`);
+  if (parts.length === 0 && result?.code !== undefined) parts.push(`退出码 ${result.code}`);
   return parts.join(' ');
 }
 
@@ -136,12 +136,12 @@ async function updateSpecKit(upstream, args) {
     const status = await readStatus(upstream, args);
     before = status?.specifyCli?.version ?? null;
   } catch (error) {
-    throw new Error(`Unable to read Spec Kit version: ${toError(error).message}`);
+    throw new Error(`读取 Spec Kit 版本失败：${toError(error).message}`);
   }
 
   const result = await upstream({ action: 'specify_upgrade', cwd: args.cwd, python: args.python });
   if (result && result.ok === false) {
-    throw failure(`Spec Kit update failed: ${failureDetail(result)}`, before);
+    throw failure(`更新 Spec Kit 失败：${failureDetail(result)}`, before);
   }
 
   let after;
@@ -149,7 +149,7 @@ async function updateSpecKit(upstream, args) {
     const status = await readStatus(upstream, args);
     after = status?.specifyCli?.version ?? null;
   } catch (error) {
-    throw failure(`Unable to read Spec Kit version after update: ${toError(error).message}`, before);
+    throw failure(`更新后读取 Spec Kit 版本失败：${toError(error).message}`, before);
   }
 
   return {
@@ -169,7 +169,7 @@ async function updateSuperpowers(upstream, args) {
     before = status?.superpowers?.head ?? null;
     beforeSkillCount = status?.superpowers?.skillCount ?? null;
   } catch (error) {
-    throw new Error(`Unable to read Superpowers revision: ${toError(error).message}`);
+    throw new Error(`读取 Superpowers 修订号失败：${toError(error).message}`);
   }
 
   const result = await upstream({
@@ -179,7 +179,7 @@ async function updateSuperpowers(upstream, args) {
     repoUrl: args.repoUrl,
   });
   if (result && result.ok === false) {
-    throw failure(`Superpowers update failed: ${failureDetail(result)}`, before);
+    throw failure(`更新 Superpowers 失败：${failureDetail(result)}`, before);
   }
 
   let after;
@@ -189,7 +189,7 @@ async function updateSuperpowers(upstream, args) {
     after = status?.superpowers?.head ?? null;
     afterSkillCount = status?.superpowers?.skillCount ?? null;
   } catch (error) {
-    throw failure(`Unable to read Superpowers revision after update: ${toError(error).message}`, before);
+    throw failure(`更新后读取 Superpowers 修订号失败：${toError(error).message}`, before);
   }
 
   const cloned = result?.mode === 'clone';

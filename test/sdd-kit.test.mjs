@@ -349,7 +349,7 @@ test('runUpdate AC-03: a Superpowers failure is isolated and still reports other
       ['updated', 'failed']
     );
     assert.equal(report.components[1].error !== null, true);
-    assert.match(report.components[1].error.message, /Superpowers update failed:/);
+    assert.match(report.components[1].error.message, /更新 Superpowers 失败：/);
     assert.match(report.components[1].error.message, /could not read from remote repository/);
     assert.equal(report.components[0].after, 'specify 1.4.0');
     assert.deepEqual(
@@ -433,10 +433,10 @@ test('runUpdate keeps the readable before identifier on a failed component', asy
     assert.equal(report.ok, false);
     assert.equal(report.components[0].before, 'specify 1.3.1');
     assert.equal(report.components[0].after, null);
-    assert.match(report.components[0].error.message, /Spec Kit update failed:/);
+    assert.match(report.components[0].error.message, /更新 Spec Kit 失败：/);
     assert.equal(report.components[1].before, 'aaaaaaa');
     assert.equal(report.components[1].after, null);
-    assert.match(report.components[1].error.message, /Superpowers update failed:/);
+    assert.match(report.components[1].error.message, /更新 Superpowers 失败：/);
     assert.deepEqual(
       report.errors.map((entry) => entry.component),
       ['spec-kit', 'superpowers']

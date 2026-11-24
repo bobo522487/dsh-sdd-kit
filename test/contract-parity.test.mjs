@@ -253,6 +253,27 @@ test('T096: CLI four-field errors explain the problem in Chinese without changin
   }
 });
 
+test('T102: CLI unknown-action and update failures expose Chinese user prose', async () => {
+  const unknown = invokeCli(['definitely-not-an-action', '--json']);
+  assert.equal(unknown.status, 1, JSON.stringify(unknown.stdout));
+  assert.equal(unknown.stdout.code, 'E_UNKNOWN_ACTION');
+  assert.match(unknown.stdout.message, /未知的 action/);
+  assert.match(unknown.stdout.fix, /可用 action/);
+  assert.doesNotMatch(unknown.stdout.message, /Unknown action/);
+  assert.doesNotMatch(unknown.stdout.fix, /Use one of/);
+
+  const update = invokeCli(['update', '--cwd', '/nonexistent-xyz', '--json']);
+  assert.equal(update.status, 1, JSON.stringify(update.stdout));
+  const messages = [
+    ...(update.stdout.errors ?? []).map((entry) => entry.message),
+    ...(update.stdout.components ?? []).map((entry) => entry.error?.message).filter(Boolean),
+  ];
+  assert.ok(messages.length > 0, 'the update failure must expose component errors');
+  for (const message of messages) {
+    assert.doesNotMatch(message, /^(?:Unable to read|Spec Kit update failed|Superpowers update failed|Extension reinstall failed|exit code)/, message);
+  }
+});
+
 test('update --extension-changes reaches changedLayers as extension_command (I6)', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-extension-changes-'));
   const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-extension-empty-bin-'));
