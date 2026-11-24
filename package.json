@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "main": "./src/index.mjs",
+  "bin": {
+    "sdd-kit": "./bin/sdd-kit.mjs"
+  },
   "exports": {
     ".": "./src/index.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -12,9 +15,11 @@
   },
   "files": [
     "src/",
+    "bin/",
     "skills/",
     "overrides/",
     "spec-kit-extension/",
+    "docs/",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
