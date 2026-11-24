@@ -242,7 +242,7 @@ description: "004-multihost-runtime-governance 任务清单"
 - [x] T063 [P] 编写 `docs/adapters/README.md`：三面契约的实现索引与新增宿主操作手册（`docs/adapters/README.md`）
 - [x] T064 全量验证：`npm test` 全绿 + 覆盖差集脚本（spec 46 条 REQ / 23 条 AC 全部有实现或验证任务）零缺口（`test/`）
 - [x] T065 [P] 按 `quickstart.md` 11 组场景逐条执行并记录结果（含显式 skip 的平台受限项与原因）（`quickstart.md`）
-- [ ] T066 逐任务原子提交（当前分支 `main`，不建分支/worktree），完成后同步 `specs/INDEX.md`（仓库根）
+- [x] T066 逐任务原子提交（当前分支 `main`，不建分支/worktree），完成后同步 `specs/INDEX.md`（仓库根）
 
 ---
 

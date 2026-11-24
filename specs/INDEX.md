@@ -6,3 +6,5 @@
 | :--- | :--- | :--- | :--- |
 | `001-sdd-update-command` | Done | [spec.md](./001-sdd-update-command/spec.md) | [plan.md](./001-sdd-update-command/plan.md) |
 | `002-spec-kit-extension-hooks` | Done | [spec.md](./002-spec-kit-extension-hooks/spec.md) | [plan.md](./002-spec-kit-extension-hooks/plan.md) |
+| `003-install-safety-hardening` | Done | [spec.md](./003-install-safety-hardening/spec.md) | [plan.md](./003-install-safety-hardening/plan.md) |
+| `004-multihost-runtime-governance` | Done | [spec.md](./004-multihost-runtime-governance/spec.md) | [plan.md](./004-multihost-runtime-governance/plan.md) |
