@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { sha256File, versionForSha } from './artifacts.mjs';
+import { sha256Bytes, sha256File, versionForSha } from './artifacts.mjs';
+import { assertInside, assertNoSymlinkComponent, atomicWriteFile } from './fsutil.mjs';
 
 const SCHEMA = 1;
 const BACKUP_IGNORE = '*\n';
@@ -68,4 +69,68 @@ export async function captureSnapshot(cwd, artifact, deps = {}) {
   await writeManifest(artifact, manifest);
 
   return { captured: true, entry };
+}
+
+function restoredEntry(id, status, extra = {}) {
+  return { id, status, reason: null, path: null, sourceVersion: null, snapshotCapturedAt: null, ...extra };
+}
+
+/**
+ * Restore every snapshot the manifest knows about (optionally a single artifact).
+ * Nothing outside the manifest is ever touched, and an empty set is never a success.
+ */
+export async function restoreSnapshots(cwd, artifacts, options = {}) {
+  const root = path.resolve(cwd || process.cwd());
+  const wanted = options.artifact ?? null;
+  const restored = [];
+
+  const snapshotDir = artifacts[0]?.snapshotDir ?? null;
+  const manifest = artifacts.length > 0 ? await readManifest(artifacts[0]) : null;
+  const snapshots = manifest?.snapshots ?? {};
+
+  for (const artifact of artifacts) {
+    if (wanted && artifact.id !== wanted) continue;
+    const entry = snapshots[artifact.id];
+    if (!entry) continue;
+
+    const backupPath = path.join(artifact.snapshotDir, `${artifact.id}.bak`);
+    let bytes;
+    try {
+      bytes = await fs.readFile(backupPath);
+    } catch {
+      restored.push(restoredEntry(artifact.id, 'failed', { reason: 'E_SNAPSHOT_MISSING' }));
+      continue;
+    }
+    if (sha256Bytes(bytes) !== entry.sha256) {
+      restored.push(restoredEntry(artifact.id, 'failed', { reason: 'E_SNAPSHOT_CHECKSUM_MISMATCH' }));
+      continue;
+    }
+
+    const target = path.resolve(root, entry.relativePath);
+    try {
+      assertInside(root, target);
+      await assertNoSymlinkComponent(root, target);
+    } catch (error) {
+      restored.push(restoredEntry(artifact.id, 'failed', { reason: error.message }));
+      continue;
+    }
+
+    try {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await atomicWriteFile(target, bytes);
+      restored.push(restoredEntry(artifact.id, 'restored', {
+        path: target,
+        sourceVersion: entry.sourceVersion,
+        snapshotCapturedAt: entry.capturedAt,
+      }));
+    } catch (error) {
+      restored.push(restoredEntry(artifact.id, 'failed', { reason: error?.message ?? String(error) }));
+    }
+  }
+
+  const ok = restored.length > 0 && restored.every((entry) => entry.status === 'restored');
+  if (restored.length === 0) {
+    return { ok: false, status: 'no_snapshot', restored: [], reason: 'E_NO_SNAPSHOT', snapshotDir };
+  }
+  return { ok, status: ok ? 'restored' : 'partial', restored, snapshotDir };
 }
