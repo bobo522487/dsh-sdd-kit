@@ -52,12 +52,12 @@ hooks:
     command: speckit.superpowers-hooks.guard
     optional: false
     priority: 5
-    description: 只读检查 tasks.md 勾选状态，实现阶段不得回到定义阶段
+    description: 只读检查 tasks.md 勾选状态，已实现则提示先回到定义阶段
   before_plan:
     command: speckit.superpowers-hooks.guard
     optional: false
     priority: 5
-    description: 只读检查 tasks.md 勾选状态，实现阶段不得回到定义阶段
+    description: 只读检查 tasks.md 勾选状态，已实现则提示先回到定义阶段
 
 events:
   session_start:

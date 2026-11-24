@@ -16,7 +16,7 @@ description: 实现阶段开始后拒绝回到澄清/规划阶段（只读护栏
 sh .specify/extensions/superpowers-hooks/scripts/bash/guard.sh --json
 ```
 
-- 退出码非 0 且输出 `status=error`、`code=E_PLANNING_GUARD` 时，停止当前命令，提示用户先新建特性目录再规划。
+- 退出码非 0 且输出 `status=error`、`code=E_PLANNING_GUARD` 时，停止当前命令，按输出的 `message`/`fix` 提示用户先回到定义阶段再规划。
 - 退出码 0（`blocked=false`）时继续原命令。
 - 输出「dsh-sdd-kit 未安装」时同样继续，不得凭猜测拦截。
 

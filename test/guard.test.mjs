@@ -51,6 +51,19 @@ test('a started implementation phase blocks planning commands (REQ-23/AC-13)', a
   assert.deepEqual(await snapshot(repo), before, 'the guard must not write anything');
 });
 
+test('the blocked response explicitly tells the user to return to the definition phase first (REQ-23/T101)', async () => {
+  const { repo } = await makeFeature('- [x] T001 done\n- [ ] T002 pending\n');
+  const before = await snapshot(repo);
+  const result = await checkPlanningGuard({ cwd: repo });
+  assert.equal(result.blocked, true);
+  assert.equal(result.phase, 'implement');
+  assert.ok(
+    result.message.includes('先回到定义阶段'),
+    `blocked message must explicitly include "先回到定义阶段", got: ${result.message}`
+  );
+  assert.deepEqual(await snapshot(repo), before, 'the guard must not write anything');
+});
+
 test('an unchecked tasks.md alone does not block (REQ-23/AC-13)', async () => {
   const { repo } = await makeFeature('- [ ] T001 pending\n');
   const result = await checkPlanningGuard({ cwd: repo });

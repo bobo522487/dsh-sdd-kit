@@ -18,8 +18,8 @@ export async function checkPlanningGuard({ cwd = process.cwd() } = {}) {
       phase,
       feature,
       featureDir,
-      message: `${feature || '当前特性'} 已进入实现阶段（tasks.md 存在已勾选任务），不得回到定义阶段。`,
-      fix: '若要重新规划，先新建一个特性目录；不要复用已开工的 tasks.md。',
+      message: `${feature || '当前特性'} 已进入实现阶段（tasks.md 存在已勾选任务），请先回到定义阶段再规划。`,
+      fix: '请先回到定义阶段检查当前特性的 tasks.md；不要复用已开工的 tasks.md 直接重新规划。',
     };
   }
   return {
