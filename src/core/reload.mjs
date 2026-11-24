@@ -3,9 +3,10 @@
  * Pure table lookup over HOST_CAPABILITIES[*].reloadPolicy; no filesystem, no host APIs.
  */
 
-import { HOST_CAPABILITIES } from './host-capabilities.mjs';
+import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
 
 const SEVERITY = Object.freeze({ none: 0, new_session: 1, restart_host: 2 });
+const DEFAULT_HOST = HOST_KEYS[0];
 
 /**
  * Only an actionable conclusion may tell the user to reload. A layer that
@@ -23,7 +24,7 @@ function reasonFor({ host, parts, result }) {
  * @param {string} host normalized host key
  * @returns {{result: 'restart_host'|'new_session'|'none', layers: string[], reason: string, host: string}}
  */
-export function decideReload(changes = {}, host = 'dsh') {
+export function decideReload(changes = {}, host = DEFAULT_HOST) {
   const cap = HOST_CAPABILITIES[host];
   if (!cap) throw new Error(`unknown host: ${host}`);
 

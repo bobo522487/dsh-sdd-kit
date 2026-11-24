@@ -5,6 +5,9 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
+
+const DEFAULT_HOST = HOST_KEYS[0];
 
 export function markerPath(cwd) {
   return path.join(cwd, '.specify', 'sdd-pending.json');
@@ -30,16 +33,29 @@ async function writeAll(cwd, data) {
 }
 
 /**
- * @returns {Promise<{host: string, layer: string, timestamp: string, reason: string}>}
+ * Every affected layer is recorded. `layer` remains the first layer so older
+ * consumers (host startup cleanup, doctor) keep working unchanged.
+ *
+ * @returns {Promise<{host: string, layer: string, layers: string[], timestamp: string, reason: string, runId: string|null}>}
  */
 export async function writeMarker({
   cwd = process.cwd(),
-  host = 'dsh',
-  layer = 'tool_code',
+  host = DEFAULT_HOST,
+  layer,
+  layers,
   reason = '',
+  runId = null,
   now = new Date().toISOString(),
 } = {}) {
-  const entry = { host, layer, timestamp: now, reason };
+  const allLayers = [...new Set(layers ?? [layer ?? 'tool_code'])];
+  const entry = {
+    host,
+    layer: allLayers[0],
+    layers: allLayers,
+    timestamp: now,
+    reason,
+    runId,
+  };
   const all = await readMarkers({ cwd });
   all[host] = entry;
   await writeAll(cwd, all);
@@ -50,10 +66,44 @@ export async function writeMarker({
  * Remove only the current host's entry; other hosts and repositories stay untouched.
  * @returns {Promise<boolean>} whether an entry was removed
  */
-export async function clearMarker({ cwd = process.cwd(), host = 'dsh' } = {}) {
+export async function clearMarker({ cwd = process.cwd(), host = DEFAULT_HOST } = {}) {
   const all = await readMarkers({ cwd });
   if (!(host in all)) return false;
   delete all[host];
   await writeAll(cwd, all);
   return true;
+}
+
+/**
+ * Explicit-host cleanup entry point for a host startup path or CLI `--host`
+ * handler. Unlike `clearMarker`, it refuses an implicit or unknown host so a
+ * startup path cannot accidentally clear somebody else's marker.
+ * @returns {Promise<boolean>} whether an entry was removed
+ */
+export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
+  if (!host) throw new Error('clearHostMarker requires an explicit host');
+  if (!Object.hasOwn(HOST_CAPABILITIES, host)) throw new Error(`unknown host: ${host}`);
+  return clearMarker({ cwd, host });
+}
+
+/**
+ * Pure pending/history partition relative to the current run or session.
+ * A marker carrying this run's id is pending even across a wall-clock day
+ * boundary; otherwise a timestamp at/after the session baseline is pending.
+ * Everything else is history (bad timestamps included).
+ */
+export function classifyMarkers(markers = {}, { now = Date.now(), sessionStart, runId } = {}) {
+  const baseline = typeof sessionStart === 'number'
+    ? sessionStart
+    : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : now);
+  const pending = [];
+  const history = [];
+  for (const [host, marker] of Object.entries(markers ?? {})) {
+    if (!marker || typeof marker !== 'object') continue;
+    const sameRun = runId != null && marker.runId === runId;
+    const stamped = Date.parse(String(marker.timestamp ?? ''));
+    const withinSession = Number.isFinite(stamped) && stamped >= baseline;
+    (sameRun || withinSession ? pending : history).push(host);
+  }
+  return { pending, history };
 }

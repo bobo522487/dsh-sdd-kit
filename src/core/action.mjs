@@ -12,6 +12,16 @@ import { decideReload } from './reload.mjs';
 import { markerPath, writeMarker } from './marker.mjs';
 import { checkPlanningGuard } from './guard.mjs';
 import { runDoctor } from './doctor.mjs';
+import { HOST_KEYS } from './host-capabilities.mjs';
+
+const DEFAULT_HOST = HOST_KEYS[0];
+
+const COMPONENT_LAYERS = Object.freeze({
+  superpowers: 'skill_data',
+  extension: 'extension_command',
+  extension_command: 'extension_command',
+  commands: 'extension_command',
+});
 
 export function actionError(code, message, fix) {
   return { status: 'error', code, message, fix };
@@ -27,13 +37,14 @@ export function unknownActionError(action) {
 
 /**
  * Derive the changed layers of an update report. `spec-kit` refreshes the CLI
- * (tool code), `superpowers` refreshes the skill mirror (skill data).
+ * (tool code), `superpowers` refreshes the skill mirror (skill data), and an
+ * extension/commands change touches the extension_command layer.
  */
 function changedLayers(report) {
   const layers = new Set();
   for (const record of report?.components ?? []) {
     if (record?.outcome !== 'updated') continue;
-    layers.add(record.component === 'superpowers' ? 'skill_data' : 'tool_code');
+    layers.add(COMPONENT_LAYERS[record.component] ?? 'tool_code');
   }
   return [...layers];
 }
@@ -57,7 +68,7 @@ function isSuccessfulUpdate(report) {
  */
 async function withReload(report, params) {
   if (!report || report.status === 'error' || report.action !== 'update') return report;
-  const host = params.host || 'dsh';
+  const host = params.host ?? DEFAULT_HOST;
   const layers = changedLayers(report);
   const decision = decideReload({ layers }, host);
   const result = { ...report, reload: { ...decision, markerPath: markerPath(report.cwd ?? params.cwd ?? process.cwd()) } };
@@ -67,8 +78,9 @@ async function withReload(report, params) {
   await writeMarker({
     cwd: report.cwd ?? params.cwd ?? process.cwd(),
     host,
-    layer: layers[0],
+    layers,
     reason: decision.reason,
+    runId: params.runId ?? report.runId ?? null,
   });
   return result;
 }

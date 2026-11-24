@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import * as reloadModule from '../src/core/reload.mjs';
 import { decideReload } from '../src/core/reload.mjs';
 import { runAction } from '../src/core/action.mjs';
+import { runUpdate, reloadFollowUp } from '../src/core/update.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('reload decision matrix: DSH restarts the host, external hosts open a new session (REQ-15/AC-09)', () => {
   const dsh = decideReload({ layers: ['tool_code'] }, 'dsh');
@@ -146,4 +150,73 @@ test('an update that reports error status keeps the marker untouched (REQ-20)', 
   assert.equal(result.status, 'error');
   assert.equal(result.reload, undefined);
   await assert.rejects(fs.readFile(path.join(repo, '.specify', 'sdd-pending.json'), 'utf8'));
+});
+
+test('follow-up text comes from the host reload policy, not a hard-coded sentence (T082)', async () => {
+  assert.match(reloadFollowUp({ host: 'dsh' }), /^Restart DSH to load updated tools\/skills$/);
+  for (const host of ['claude', 'codex', 'cursor']) {
+    const text = reloadFollowUp({ host });
+    assert.match(text, new RegExp(host.toUpperCase(), 'i'));
+    assert.match(text, /^Open a new .+ session to load updated tools\/skills$/);
+    assert.doesNotMatch(text, /Restart DSH/);
+  }
+  const source = await fs.readFile(path.join(ROOT, 'src', 'core', 'update.mjs'), 'utf8');
+  assert.doesNotMatch(source, /Restart DSH/);
+});
+
+test('extension command changes reach decideReload through the production chain (T083)', async () => {
+  for (const [host, expected] of [['dsh', 'new_session'], ['claude', 'new_session'], ['cursor', 'none']]) {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), `dsh-extension-${host}-`));
+    await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+    const fakeUpdate = async () => ({
+      action: 'update',
+      ok: true,
+      components: [{ component: 'extension_command', outcome: 'updated' }],
+      errors: [],
+      cwd: repo,
+    });
+    const result = await runAction('update', { cwd: repo, host }, { runUpdate: fakeUpdate });
+    assert.equal(result.reload.result, expected);
+    assert.deepEqual(result.reload.layers, ['extension_command']);
+  }
+});
+
+test('a multi-component update records every changed layer in the marker (T080/T083)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-reload-layers-'));
+  await fs.mkdir(path.join(repo, '.specify'), { recursive: true });
+  const fakeUpdate = async () => ({
+    action: 'update',
+    ok: true,
+    components: [
+      { component: 'spec-kit', outcome: 'updated' },
+      { component: 'superpowers', outcome: 'updated' },
+      { component: 'extension_command', outcome: 'updated' },
+      { component: 'ignored', outcome: 'failed' },
+    ],
+    errors: [],
+    cwd: repo,
+  });
+  const result = await runAction('update', { cwd: repo, host: 'dsh' }, { runUpdate: fakeUpdate });
+  assert.equal(result.reload.result, 'restart_host');
+  assert.deepEqual(result.reload.layers, ['tool_code', 'skill_data', 'extension_command']);
+  const stored = JSON.parse(await fs.readFile(result.reload.markerPath, 'utf8'));
+  assert.deepEqual(stored.dsh.layers, ['tool_code', 'skill_data', 'extension_command']);
+});
+
+test('runUpdate surfaces injected extension changes as an extension_command component (T083)', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-extension-components-'));
+  const fakeUpstream = async (args) => {
+    if (args.action === 'status') {
+      return { specifyCli: { version: '1.4.0' }, superpowers: { head: 'deadbeef', skillCount: 3 } };
+    }
+    if (args.action === 'specify_upgrade' || args.action === 'sync_superpowers') return { ok: true };
+    throw new Error(`unexpected upstream action: ${args.action}`);
+  };
+  const report = await runUpdate(
+    { cwd: repo, extensionChanges: [{ component: 'extension_command', outcome: 'updated' }] },
+    { runUpstream: fakeUpstream },
+  );
+  assert.ok(
+    report.components.some((component) => component.component === 'extension_command' && component.outcome === 'updated'),
+  );
 });

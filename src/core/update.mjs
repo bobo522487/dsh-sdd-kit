@@ -1,13 +1,53 @@
 import path from 'node:path';
 
 import { runUpstream } from './upstream.mjs';
+import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
 
 // 插件自身的安装与升级归 DSH 包管理器（dsh plugin add/update --latest），
 // 本模块只刷新两层上游：specify CLI 与 obra/superpowers 镜像。
 export const COMPONENT_NAMES = ['spec-kit', 'superpowers'];
 export const OUTCOMES = ['unchanged', 'updated', 'failed'];
 
-const RESTART_FOLLOW_UP = 'Restart DSH to load updated tools/skills';
+const DEFAULT_HOST = HOST_KEYS[0];
+
+/**
+ * Build the reload follow-up from the host capability table. The update action
+ * refreshes tool code, so its guidance follows the `tool_code` policy: a host
+ * that restarts asks for a restart, every other host asks for a new session.
+ * No whole sentence is hard-coded for a particular host.
+ */
+export function reloadFollowUp({ host = DEFAULT_HOST, layer = 'tool_code' } = {}) {
+  const cap = HOST_CAPABILITIES[host] ?? HOST_CAPABILITIES[DEFAULT_HOST];
+  const policy = cap.reloadPolicy[layer] ?? cap.reloadPolicy.tool_code;
+  const label = String(cap.key ?? host).toUpperCase();
+  if (policy === 'restart_host') return `Restart ${label} to load updated tools/skills`;
+  if (policy === 'new_session') return `Open a new ${label} session to load updated tools/skills`;
+  return null;
+}
+
+/**
+ * Extension/command changes are part of the update report even though their
+ * upstream action is owned by the host integration. They only appear when the
+ * caller reports a change, so an ordinary two-component update is unchanged.
+ */
+function extensionRecords(args) {
+  const records = Array.isArray(args.extensionChanges) ? [...args.extensionChanges] : [];
+  for (const key of ['extension', 'commands', 'extensionCommands']) {
+    const value = args[key];
+    if (!value) continue;
+    const changed = value === true || value.changed === true
+      || (typeof value.outcome === 'string' && value.outcome !== 'unchanged');
+    if (changed) records.push(typeof value === 'object' ? value : {});
+  }
+  return records.map((record) => ({
+    component: 'extension_command',
+    before: record.before ?? null,
+    after: record.after ?? null,
+    outcome: record.outcome ?? 'updated',
+    followUp: record.followUp ?? null,
+    error: record.error ?? null,
+  }));
+}
 
 function failureDetail(result) {
   const parts = [];
@@ -121,7 +161,7 @@ async function updateSuperpowers(upstream, args) {
     before,
     after,
     outcome: before === after ? 'unchanged' : 'updated',
-    followUp: restartRequired ? RESTART_FOLLOW_UP : null,
+    followUp: restartRequired ? reloadFollowUp({ host: args.host }) : null,
     error: null,
   };
 }
@@ -132,6 +172,7 @@ export async function runUpdate(args = {}, deps = {}) {
 
   const resolvedArgs = {
     cwd,
+    host: args.host ?? DEFAULT_HOST,
     superpowersDir: args.superpowersDir,
     repoUrl: args.repoUrl,
     python: args.python,
@@ -156,6 +197,8 @@ export async function runUpdate(args = {}, deps = {}) {
       error: { message: error.message },
     });
   });
+
+  components.push(...extensionRecords(args));
 
   const errors = components
     .filter((record) => record.outcome === 'failed')

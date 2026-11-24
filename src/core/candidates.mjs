@@ -10,10 +10,16 @@ import path from 'node:path';
  * lightweight host tool. We deliberately do NOT scan any directory, and we
  * read no other variable (no prefix scan, no writes).
  *
- * @param {{superpowersDir?: string, candidateDirs?: string[]}} args
+ * @param {{superpowersDir?: string, candidateDirs?: string[], envKeys?: {mirror?: string, home?: string}, defaultDir?: string}} args
  * @param {NodeJS.ProcessEnv} env injectable for tests; defaults to process.env
  */
 export async function selectSuperpowersDir(args = {}, env = process.env) {
+  // A host adapter can inject its own variable names / default path. The
+  // literals below are compatibility defaults only; new hosts need no core edit.
+  const envKeys = {
+    mirror: args.envKeys?.mirror ?? 'DSH_SDD_KIT_SUPERPOWERS_DIR',
+    home: args.envKeys?.home ?? 'DSH_HOME',
+  };
   const declarations = [];
   const push = (declaredIndex, reason, input) => {
     if (typeof input !== 'string' || input.length === 0) return;
@@ -22,10 +28,11 @@ export async function selectSuperpowersDir(args = {}, env = process.env) {
 
   push(0, 'explicit', args.superpowersDir);
   for (const dir of args.candidateDirs ?? []) push(1, 'candidateDirs', dir);
-  push(2, 'env', env.DSH_SDD_KIT_SUPERPOWERS_DIR);
-  if (env.DSH_HOME) push(3, 'dsh_home', path.join(env.DSH_HOME, 'upstream', 'superpowers'));
+  push(2, 'env', env?.[envKeys.mirror]);
+  const injectedHome = env?.[envKeys.home];
+  if (injectedHome) push(3, 'dsh_home', path.join(injectedHome, 'upstream', 'superpowers'));
   // os.homedir() follows HOME on POSIX / USERPROFILE on Windows; no third env var is read here.
-  push(4, 'default', path.join(os.homedir(), '.dsh', 'upstream', 'superpowers'));
+  push(4, 'default', args.defaultDir ?? path.join(os.homedir(), '.dsh', 'upstream', 'superpowers'));
 
   const seenRealPaths = new Set();
   const candidates = [];

@@ -18,7 +18,40 @@ const HOST_PATTERNS = [
   { code: 'HOST_CTX', re: /\bctx\./ },
   { code: 'COMMONJS_REQUIRE', re: /\brequire\s*\(/ },
   { code: 'HOST_ADAPTER_PATH', re: /\badapters\/(dsh|claude|codex|cursor)\b/ },
+  { code: 'HOST_ENV_DSH', re: /\bDSH_[A-Z0-9_]+/ },
+  { code: 'HOST_DEFAULT_DSH', re: /\bhost\s*(?:=|\|\|)\s*['"]dsh['"]/ },
 ];
+
+/**
+ * T079: a host-owned legacy reference is tolerated only when the file, the
+ * pattern code and the reason are all recorded here. New core code must take
+ * injected values (envKeys / defaultDir / HOST_KEYS[0]) instead.
+ */
+const LEGACY_HOST_REFERENCES = Object.freeze({
+  'candidates.mjs': {
+    codes: ['HOST_ENV_DSH'],
+    reason: 'Legacy DSH_* environment names are kept as compatibility defaults; injected envKeys/defaultDir are the supported path.',
+  },
+  'doctor.mjs': {
+    codes: ['HOST_ENV_DSH', 'HOST_DEFAULT_DSH'],
+    reason: 'Doctor belongs to the host-integration owner; the lead wires classifyMarkers and the real CLI fix text there.',
+  },
+  'guidance.mjs': {
+    codes: ['HOST_DEFAULT_DSH'],
+    reason: 'Guidance belongs to the host-integration owner and still carries its legacy default host.',
+  },
+  'host-capabilities.mjs': {
+    codes: ['HOST_ENV_DSH'],
+    reason: 'The capability table intentionally names the host-owned DSH_TOOL_NAMES map; another agent owns this file.',
+  },
+});
+
+const VALID_PATTERN_CODES = new Set(HOST_PATTERNS.map((pattern) => pattern.code));
+
+function isAllowlisted(violation) {
+  const entry = LEGACY_HOST_REFERENCES[violation.file];
+  return Boolean(entry && entry.codes.includes(violation.code));
+}
 
 /**
  * Collect every `.mjs` file under `coreDir`, at any depth, as paths relative to
@@ -53,8 +86,21 @@ async function scanCore(coreDir) {
 }
 
 test('core directory stays free of host-specific references (REQ-01/REQ-02/AC-01)', async () => {
-  const violations = await scanCore(CORE_DIR);
+  const violations = (await scanCore(CORE_DIR)).filter((violation) => !isAllowlisted(violation));
   assert.deepEqual(violations, [], `core purity violations: ${JSON.stringify(violations)}`);
+});
+
+test('legacy host references are confined to an explicit, documented allowlist (T079)', async () => {
+  for (const [file, entry] of Object.entries(LEGACY_HOST_REFERENCES)) {
+    assert.ok((await fs.stat(path.join(CORE_DIR, file))).isFile(), `allowlisted file must exist: ${file}`);
+    assert.ok(entry.reason.length > 20, `allowlisted file must carry a reason: ${file}`);
+    for (const code of entry.codes) {
+      assert.ok(VALID_PATTERN_CODES.has(code), `unknown allowlist code ${code} for ${file}`);
+    }
+  }
+  const violations = await scanCore(CORE_DIR);
+  const stray = violations.filter((violation) => !isAllowlisted(violation));
+  assert.deepEqual(stray, [], `unallowlisted host references: ${JSON.stringify(stray)}`);
 });
 
 test('purity scanner self-check: an injected host reference must turn the assertion red (AC-01)', async () => {
@@ -62,13 +108,15 @@ test('purity scanner self-check: an injected host reference must turn the assert
   try {
     await fs.writeFile(
       path.join(tmp, 'injected.mjs'),
-      "import { defineTool } from '@deepseek-ai/dsh-tools';\nexport const x = ctx.tools;\n",
+      "import { defineTool } from '@deepseek-ai/dsh-tools';\nexport const x = ctx.tools;\nconst envName = 'DSH_HOME';\nconst defaultHost = host = 'dsh';\n",
       'utf8'
     );
     const violations = await scanCore(tmp);
-    assert.ok(violations.length >= 2, 'injected host references must be detected');
+    assert.ok(violations.length >= 4, 'injected host references must be detected');
     assert.ok(violations.some((v) => v.code === 'HOST_PACKAGE'));
     assert.ok(violations.some((v) => v.code === 'HOST_CTX'));
+    assert.ok(violations.some((v) => v.code === 'HOST_ENV_DSH'));
+    assert.ok(violations.some((v) => v.code === 'HOST_DEFAULT_DSH'));
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
