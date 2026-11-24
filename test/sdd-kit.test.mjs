@@ -13,7 +13,7 @@ import {
   atomicWriteFile,
   findSymlinkComponent,
 } from '../src/core/fsutil.mjs';
-import { bundledVersion, listArtifacts, readLedger, sha256File } from '../src/core/artifacts.mjs';
+import { bundledVersion, listArtifacts, readLedger, sha256Bytes, sha256File } from '../src/core/artifacts.mjs';
 import { captureSnapshot, readManifest } from '../src/core/snapshot.mjs';
 import { runUpdate } from '../src/core/update.mjs';
 import { runSetup } from '../src/core/setup.mjs';
@@ -118,8 +118,10 @@ test('sdd_bridge inspects features & bugs, installs EARS overrides, and syncs sp
     // Install EARS + Non-Goals override
     const ov1 = await runBridge({ action: 'install_overrides', cwd });
     assert.equal(ov1.status, 'written');
+    assert.equal(ov1.artifacts[0].verdict, 'not_installed');
     const ov2 = await runBridge({ action: 'install_overrides', cwd });
-    assert.equal(ov2.status, 'skipped_existing');
+    assert.equal(ov2.status, 'unchanged');
+    assert.equal(ov2.artifacts[0].verdict, 'installed_consistent');
 
     // Inspect (read-only view of upstream-owned task state)
     const info = await runBridge({ action: 'inspect', cwd });
@@ -1471,7 +1473,20 @@ function setupFakes({ hasSpecifyDir = true, uvInstalled = true, specifyInstalled
   const bridge = async (args) =>
     args.action === 'inspect'
       ? { hasSpecifyDir, hasConstitution: true, hasEarsOverride: false, features: [], bugs: [] }
-      : { action: 'install_overrides', status: 'written' };
+      : {
+          action: 'install_overrides',
+          ok: true,
+          status: 'written',
+          path: '/tmp/project/.specify/templates/overrides/spec-template.md',
+          artifacts: [{
+            id: 'ears-spec-template',
+            status: 'written',
+            verdict: 'not_installed',
+            reason: null,
+            nextAction: null,
+            snapshot: null,
+          }],
+        };
   return { calls, deps: { runUpstream: upstream, runBridge: bridge } };
 }
 
@@ -1479,6 +1494,44 @@ const SETUP_STEP_ORDER = [
   'inspect', 'sync_superpowers', 'specify_cli', 'specify_init', 'integration_commands',
   'install_bug_ext', 'install_hooks_ext', 'install_overrides',
 ];
+
+test('runSetup: the install_overrides step reports the classification detail (REQ-05)', async () => {
+  const { deps } = setupFakes({ hasSpecifyDir: true });
+  const report = await runSetup({ cwd: process.cwd() }, deps);
+  const step = report.steps.find((s) => s.name === 'install_overrides');
+  assert.equal(step.status, 'performed');
+  assert.equal(step.detail.status, 'written');
+  assert.equal(step.detail.verdict, 'not_installed');
+  assert.equal(step.detail.nextAction, null);
+  assert.equal(step.detail.artifacts.length, 1);
+});
+
+test('runSetup: a failed override install fails the whole run without hiding other steps (REQ-16)', async () => {
+  const { deps } = setupFakes({ hasSpecifyDir: true });
+  const failing = async (args) =>
+    args.action === 'inspect'
+      ? { hasSpecifyDir: true, hasConstitution: true, hasEarsOverride: false, features: [], bugs: [] }
+      : {
+          action: 'install_overrides',
+          ok: false,
+          status: 'failed',
+          path: '/tmp/x/.specify/templates/overrides/spec-template.md',
+          artifacts: [{
+            id: 'ears-spec-template',
+            status: 'failed',
+            verdict: 'unknown',
+            reason: 'EACCES',
+            nextAction: null,
+            snapshot: null,
+          }],
+        };
+  const report = await runSetup({ cwd: process.cwd() }, { ...deps, runBridge: failing });
+  const step = report.steps.find((s) => s.name === 'install_overrides');
+  assert.equal(step.status, 'failed');
+  assert.equal(step.detail.reason, 'EACCES');
+  assert.equal(report.ok, false);
+  assert.equal(report.steps.some((s) => s.name === 'install_hooks_ext'), true);
+});
 
 test('runSetup: fresh project runs init and installs both extensions in order', async () => {
   const { calls, deps } = setupFakes({ hasSpecifyDir: false, specifyInstalled: false });
@@ -1722,6 +1775,140 @@ test('snapshot: capture self-ignores the backup directory and refreshes only on 
     const third = await captureSnapshot(cwd, artifact, { clock: () => '2026-01-03T00:00:00.000Z' });
     assert.equal(third.captured, true);
     assert.equal(await fs.readFile(path.join(artifact.snapshotDir, 'ears-spec-template.bak'), 'utf8'), 'v2\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 003 US1 · 幂等状态检测（四分类 + unknown 兜底）
+// ---------------------------------------------------------------------------
+
+const EARS_OVERRIDE = path.join('.specify', 'templates', 'overrides', 'spec-template.md');
+const EARS_BACKUP = path.join('.specify', 'templates', 'overrides', '.backup');
+
+test('install_overrides: writes only when absent and then leaves a consistent file untouched (AC-01)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const first = await runBridge({ action: 'install_overrides', cwd });
+    assert.equal(first.ok, true);
+    assert.equal(first.status, 'written');
+    assert.equal(first.path, path.join(cwd, EARS_OVERRIDE));
+    assert.equal(first.artifacts.length, 1);
+    assert.equal(first.artifacts[0].id, 'ears-spec-template');
+    assert.equal(first.artifacts[0].verdict, 'not_installed');
+    assert.equal(
+      await fs.readFile(path.join(cwd, EARS_OVERRIDE), 'utf8'),
+      await fs.readFile(path.join(PKG_ROOT, 'overrides', 'spec-template.md'), 'utf8')
+    );
+
+    const before = await fs.stat(path.join(cwd, EARS_OVERRIDE), { bigint: true });
+    const second = await runBridge({ action: 'install_overrides', cwd });
+    const after = await fs.stat(path.join(cwd, EARS_OVERRIDE), { bigint: true });
+
+    assert.equal(second.ok, true);
+    assert.equal(second.status, 'unchanged');
+    assert.equal(second.artifacts[0].verdict, 'installed_consistent');
+    assert.equal(after.mtimeNs, before.mtimeNs, 'INV-5: a consistent install must not touch the file');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: leaves hand edits alone and offers a machine-readable next action (AC-02)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+
+    const result = await runBridge({ action: 'install_overrides', cwd });
+    const [artifact] = result.artifacts;
+
+    assert.equal(result.ok, true, 'refusing to overwrite is not a failure');
+    assert.equal(result.status, 'skipped_user_modified');
+    assert.equal(artifact.verdict, 'user_modified');
+    assert.equal(artifact.reason, null);
+    assert.deepEqual(artifact.nextAction, {
+      tool: 'sdd_bridge',
+      args: { action: 'install_overrides', overwrite: true },
+    });
+    assert.equal(await fs.readFile(path.join(cwd, EARS_OVERRIDE), 'utf8'), 'hand edited\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: reports a stale shipped template with both versions (AC-03)', async () => {
+  const cwd = await makeTempDir();
+  const bundledDir = path.join(cwd, 'bundled');
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    const oldBytes = 'old template\n';
+    const newBytes = 'new template\n';
+    await fs.mkdir(bundledDir, { recursive: true });
+    await fs.writeFile(path.join(bundledDir, 'spec-template.md'), newBytes, 'utf8');
+    await fs.writeFile(
+      path.join(bundledDir, 'spec-template.versions.json'),
+      `${JSON.stringify({
+        artifact: 'spec-template.md',
+        versions: [
+          { sinceVersion: '0.1.0', sha256: sha256Bytes(Buffer.from(oldBytes, 'utf8')) },
+          { sinceVersion: '0.2.0', sha256: sha256Bytes(Buffer.from(newBytes, 'utf8')) },
+        ],
+      }, null, 2)}\n`,
+      'utf8'
+    );
+    const artifacts = await listArtifacts(cwd, { bundledDir });
+    await writeSeed(cwd, EARS_OVERRIDE, oldBytes);
+
+    const result = await runBridge({ action: 'install_overrides', cwd }, { artifacts });
+    const [artifact] = result.artifacts;
+    assert.equal(result.status, 'skipped_stale');
+    assert.equal(artifact.verdict, 'stale_upstream');
+    assert.equal(artifact.localVersion, '0.1.0');
+    assert.equal(artifact.bundledVersion, '0.2.0');
+    assert.equal(artifact.nextAction.args.overwrite, true, 'INV-20a: a stale file must offer a next action');
+    assert.equal(await fs.readFile(target, 'utf8'), oldBytes, 'a stale file is not rewritten without intent');
+
+    const forced = await runBridge({ action: 'install_overrides', cwd, overwrite: true }, { artifacts });
+    assert.equal(forced.status, 'refreshed');
+    assert.equal(forced.artifacts[0].verdict, 'stale_upstream');
+    assert.equal(await fs.readFile(target, 'utf8'), newBytes);
+    const manifest = JSON.parse(await fs.readFile(path.join(cwd, EARS_BACKUP, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.snapshots['ears-spec-template'].sha256, sha256Bytes(Buffer.from(oldBytes, 'utf8')));
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: an unreadable target is unknown, never treated as absent (AC-04)', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX permission bits are not enforceable on Windows');
+  if (process.getuid?.() === 0) return t.skip('root ignores file permission bits');
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await fs.chmod(target, 0o000);
+
+    const result = await runBridge({ action: 'install_overrides', cwd });
+    const [artifact] = result.artifacts;
+    assert.equal(artifact.verdict, 'unknown');
+    assert.equal(result.status, 'failed');
+    assert.equal(result.ok, false);
+    assert.ok(artifact.reason, 'INV-4: unknown must carry a reason');
+  } finally {
+    await fs.chmod(target, 0o644).catch(() => {});
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('install_overrides: an empty artifact list is not success (report aggregation)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const result = await runBridge({ action: 'install_overrides', cwd }, { artifacts: [] });
+    assert.equal(result.ok, false, 'an empty list proves nothing and must not report ok');
+    assert.deepEqual(result.artifacts, []);
+    assert.equal(result.action, 'install_overrides');
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
