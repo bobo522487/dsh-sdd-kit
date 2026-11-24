@@ -64,8 +64,21 @@ test('Cursor writes a rule-dir file with the shared text (REQ-30)', async () => 
   const bytes = await fs.readFile(path.join(repo, '.cursor', 'rules', 'sdd-kit-discipline.mdc'), 'utf8');
   assert.equal(result.channel, 'rule-dir');
   assert.match(bytes, /## SDD 运行时纪律（dsh-sdd-kit）/);
+  assert.match(bytes, /^<!-- sdd-kit:rules:start -->\n/, 'kit-owned files carry an ownership marker');
   const again = await applyCursorGuidance({ cwd: repo });
   assert.deepEqual(result.text, again.text);
+});
+
+test('Cursor never deletes a user-authored rule file when guidance is disabled (C2)', async () => {
+  const repo = await makeRepo({ switchEnabled: false });
+  const target = path.join(repo, '.cursor', 'rules', 'sdd-kit-discipline.mdc');
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const userText = '# my own Cursor rules — do not erase\n';
+  await fs.writeFile(target, userText, 'utf8');
+  const result = await applyCursorGuidance({ cwd: repo });
+  assert.equal(result.written, false);
+  assert.equal(result.removed, false);
+  assert.equal(await fs.readFile(target, 'utf8'), userText, 'user data must survive a switch-off');
 });
 
 test('Cursor trust flags yield an explicit security warning, never a default (REQ-31/AC-17)', () => {

@@ -342,16 +342,24 @@ async function main() {
   const asText = argv.includes('--text');
   const { command, params } = parse(argv);
   rejectUnreachableOptions(command, argv);
-  const result = params.clearMarker
-    ? await clearHostMarker({ cwd: params.cwd, host: params.host })
-    : SUBCOMMANDS.includes(command)
-      ? await runAction(
-        command,
-        command === 'doctor' && typeof params.trigger === 'string' && params.trigger.length > 0
-          ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }) }
-          : params
-      )
-      : unknownActionError(command);
+  let result;
+  if (params.clearMarker && SUBCOMMANDS.includes(command) && command !== 'doctor') {
+    result = await clearHostMarker({ cwd: params.cwd, host: params.host });
+  } else if (SUBCOMMANDS.includes(command)) {
+    result = await runAction(
+      command,
+      command === 'doctor' && typeof params.trigger === 'string' && params.trigger.length > 0
+        ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }) }
+        : params
+    );
+    // A doctor exam must never swallow `--clear-marker`; the clearing outcome
+    // is attached to the full five-zone report (final review I3).
+    if (command === 'doctor' && params.clearMarker) {
+      result = { ...result, clearMarker: await clearHostMarker({ cwd: params.cwd, host: params.host }) };
+    }
+  } else {
+    result = unknownActionError(command);
+  }
   if (asText && command === 'guidance' && result && result.status !== 'error') {
     // A cleared marker is its own result shape (C4): render it directly, before
     // the bundle path below can mistake it for guidance content.
@@ -376,8 +384,8 @@ async function main() {
   if (result?.status === 'error' || result?.ok === false || result?.error) process.exitCode = 1;
   // A failed bridge result keeps its documented `{ok,action,error:{code,message,hint}}`
   // shape for tool callers, but the CLI contract is the four-field envelope.
-  if (command === 'bridge' && result?.status === 'error' && result?.error) {
-    const failure = typeof result.error === 'object' ? result.error : { message: String(result.error) };
+  if (command === 'bridge' && (result?.status === 'error' || result?.ok === false)) {
+    const failure = typeof result.error === 'object' ? result.error : { message: String(result.error ?? '') };
     process.stdout.write(`${JSON.stringify({
       status: 'error',
       code: failure.code ?? 'E_CLI',
@@ -385,6 +393,11 @@ async function main() {
       fix: failure.hint ?? failure.fix ?? 'Check the bridge action and retry.',
     }, null, 2)}\n`);
     return;
+  }
+  // A red zone is an exam failure even though the report itself is valid JSON.
+  if (command === 'doctor' && result?.action !== 'clear_marker'
+    && Object.values(result ?? {}).some((zone) => zone && typeof zone === 'object' && zone.status === 'fail')) {
+    process.exitCode = 1;
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

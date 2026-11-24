@@ -7,6 +7,9 @@
 
 const RELOAD_KEYS = ['tool_code', 'skill_data', 'extension_command'];
 
+/** Installed Spec Kit extension directory name; adapters must not hard-code it. */
+export const EXTENSION_ID = 'superpowers-hooks';
+
 /**
  * Host-neutral invocation face: every non-DSH host reaches the same core actions
  * through the CLI (`bin/sdd-kit.mjs`), so guidance never names a DSH-only tool.

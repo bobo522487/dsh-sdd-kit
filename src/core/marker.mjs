@@ -92,16 +92,18 @@ export async function clearHostMarker({ cwd = process.cwd(), host } = {}) {
  * boundary; otherwise a timestamp at/after the session baseline is pending.
  * Everything else is history (bad timestamps included).
  *
- * Without a usable baseline (the production CLI/register path passes neither
- * `sessionStart` nor `runId`) the baseline is -Infinity: a marker this very run
- * just wrote must never be demoted to history, so only an unparseable
- * timestamp can be history.
+ * Without a usable baseline the baseline falls back to a bounded history
+ * window before `now`. This keeps a freshly written marker pending on the
+ * production CLI path while still letting years-old leftovers be reported as
+ * history instead of warning forever (final review C1).
  */
+export const MARKER_HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export function classifyMarkers(markers = {}, { now = Date.now(), sessionStart, runId } = {}) {
   const parsed = typeof sessionStart === 'number'
     ? sessionStart
     : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : Number.NaN);
-  const baseline = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+  const baseline = Number.isFinite(parsed) ? parsed : now - MARKER_HISTORY_WINDOW_MS;
   const pending = [];
   const history = [];
   for (const [host, marker] of Object.entries(markers ?? {})) {

@@ -127,7 +127,7 @@ test('doctor --trigger collects host/project SKILL.md summaries and scores them 
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
     { HOME: home }
   );
-  assert.equal(cli.status, 0);
+  assert.equal(cli.status, 1, 'a synthetic HOME fails the environment zone and the CLI must report it');
   assert.equal(cli.stdout.triggerDryRun.status, 'pass');
   const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
   assert.ok(item, 'trigger zone must expose scored skills');
@@ -153,7 +153,7 @@ test('doctor --trigger also reads user-level skills and keeps excluded entries l
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
     { HOME: home }
   );
-  assert.equal(cli.status, 0);
+  assert.equal(cli.status, 1, 'a synthetic HOME fails the environment zone and the CLI must report it');
   const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
   assert.ok(item);
   const entry = item.scores.find((score) => score.skill.name === 'internal-debug');
@@ -177,7 +177,7 @@ test('doctor --trigger falls back to packaged skills/ when no host skill dir exi
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
     { HOME: home }
   );
-  assert.equal(cli.status, 0);
+  assert.equal(cli.status, 1, 'an empty HOME is a failed environment zone and must be visible in the exit code');
   const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
   const entry = item.scores.find((score) => score.skill.name === 'bundled-debug');
   assert.ok(entry, 'packaged skills/ is the last-resort scan target');
@@ -388,12 +388,14 @@ test('guidance --host <host> --clear-marker clears only that host marker (T081)'
   // T081/I3: doctor is a second supported entry point for the same operation.
   const doctor = invokeCli(['doctor', '--cwd', repo, '--host', 'dsh', '--clear-marker']);
   assert.equal(doctor.status, 0, JSON.stringify(doctor.stdout));
-  assert.deepEqual(Object.keys(doctor.stdout).sort(), ['action', 'cleared', 'host', 'path', 'status']);
-  assert.equal(doctor.stdout.status, 'ok');
-  assert.equal(doctor.stdout.action, 'clear_marker');
-  assert.equal(doctor.stdout.cleared, true, 'claude was cleared, dsh remains');
-  assert.equal(doctor.stdout.host, 'dsh');
-  assert.equal(doctor.stdout.path, marker);
+  for (const zone of ['environment', 'host', 'repository', 'runtime', 'triggerDryRun']) {
+    assert.ok(Object.hasOwn(doctor.stdout, zone), 'a doctor clearing run still renders the full exam');
+  }
+  assert.equal(doctor.stdout.clearMarker.status, 'ok');
+  assert.equal(doctor.stdout.clearMarker.action, 'clear_marker');
+  assert.equal(doctor.stdout.clearMarker.cleared, true, 'dsh was the remaining entry');
+  assert.equal(doctor.stdout.clearMarker.host, 'dsh');
+  assert.equal(doctor.stdout.clearMarker.path, marker);
 
   const afterDoctor = JSON.parse(await fs.readFile(marker, 'utf8'));
   assert.deepEqual(Object.keys(afterDoctor), [], 'doctor cleared only the requested host');
@@ -421,13 +423,15 @@ test('doctor --host <host> --clear-marker works like guidance and never crashes 
 
   const cleared = invokeCli(['doctor', '--json', '--cwd', repo, '--host', 'claude', '--clear-marker']);
   assert.equal(cleared.status, 0, JSON.stringify(cleared.stdout));
-  assert.equal(cleared.stdout.action, 'clear_marker');
-  assert.equal(cleared.stdout.host, 'claude');
-  assert.equal(cleared.stdout.cleared, true);
-  const jsonShape = Object.keys(cleared.stdout).sort();
+  for (const zone of ['environment', 'host', 'repository', 'runtime', 'triggerDryRun']) {
+    assert.ok(Object.hasOwn(cleared.stdout, zone), 'doctor keeps all five zones');
+  }
+  assert.equal(cleared.stdout.clearMarker.status, 'ok');
+  assert.equal(cleared.stdout.clearMarker.host, 'claude');
+  assert.equal(cleared.stdout.clearMarker.cleared, true);
   const guidance = invokeCli(['guidance', '--json', '--cwd', repo, '--host', 'claude', '--clear-marker']);
   assert.equal(guidance.status, 0);
-  assert.deepEqual(Object.keys(guidance.stdout).sort(), jsonShape, 'doctor and guidance must share the clear result shape');
+  assert.deepEqual(Object.keys(guidance.stdout.clearMarker ?? guidance.stdout).sort(), ['action', 'cleared', 'host', 'path', 'status'], 'the shared clear result shape is unchanged');
 
   const remaining = JSON.parse(await fs.readFile(marker, 'utf8'));
   assert.deepEqual(Object.keys(remaining), ['dsh']);
@@ -442,8 +446,8 @@ test('doctor --host <host> --clear-marker works like guidance and never crashes 
 
   const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-doctor-marker-empty-'));
   const absent = invokeCli(['doctor', '--cwd', empty, '--host', 'dsh', '--clear-marker']);
-  assert.equal(absent.status, 0, JSON.stringify(absent.stdout));
-  assert.equal(absent.stdout.cleared, false);
+  assert.equal(absent.status, 1, 'the exam still runs and reports the missing .specify/');
+  assert.equal(absent.stdout.clearMarker.cleared, false);
   await assert.rejects(fs.access(path.join(empty, '.specify', 'sdd-pending.json')));
 
   // --text is guidance-only: doctor refuses it with a structured error, never a crash.
@@ -512,4 +516,31 @@ test('formatGuidanceText tolerates a bundle without pointer or mapping (C4)', ()
 
   assert.doesNotThrow(() => formatGuidanceText({ upstreamText: 'x', sddPointer: null, toolMapping: null }));
   assert.doesNotThrow(() => formatGuidanceText({}));
+});
+
+test('doctor --clear-marker with --trigger keeps the five-zone report (final review I3)', () => {
+  const repo = PKG_ROOT;
+  const result = invokeCli([
+    'doctor', '--json', '--cwd', repo, '--host', 'dsh', '--clear-marker', '--trigger', 'do something',
+  ]);
+  assert.equal(result.status, 0, `the exam must still run: ${JSON.stringify(result.stdout)}`);
+  for (const zone of ['environment', 'host', 'repository', 'runtime', 'triggerDryRun']) {
+    assert.ok(Object.hasOwn(result.stdout, zone), `missing ${zone}: ${JSON.stringify(Object.keys(result.stdout))}`);
+  }
+  assert.ok(result.stdout.clearMarker, 'the clearing result is reported alongside the exam');
+});
+
+test('doctor and bridge failures are visible in the CLI exit code (final review I7)', async () => {
+  const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-fail-exit-'));
+  const doctor = invokeCli(['doctor', '--json', '--cwd', empty, '--host', 'dsh'], {
+    HOME: empty,
+    DSH_SDD_KIT_SUPERPOWERS_DIR: empty,
+  });
+  assert.notEqual(doctor.status, 0, 'a failed zone must not look like a successful exam');
+  assert.ok(Object.values(doctor.stdout).some((zone) => zone?.status === 'fail'));
+
+  const bridge = invokeCli(['bridge', '--json', '--action', 'restore_overrides', '--artifact', 'not-an-artifact']);
+  assert.notEqual(bridge.status, 0);
+  assert.deepEqual(Object.keys(bridge.stdout).sort(), ['code', 'fix', 'message', 'status']);
+  assert.equal(bridge.stdout.status, 'error');
 });

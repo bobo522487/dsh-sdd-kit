@@ -30,6 +30,9 @@ const HOST_PATTERNS = [
   // `import('./adapters/x.mjs')` stays legal; a non-literal argument does not.
   { code: 'DYNAMIC_IMPORT_SPECIFIER', re: /\bimport\s*\(\s*(?!['"`])(?=\S)/ },
   { code: 'DYNAMIC_IMPORT_TEMPLATE', re: /\bimport\s*\(\s*`[^`]*\$\{/ },
+  // C3 (AC-01): literal specifier followed by runtime concatenation is the
+  // common spelling of the same evasion and must not bypass the literal guard.
+  { code: 'DYNAMIC_IMPORT_CONCAT', re: /\bimport\s*\(\s*['"`][^'"`]*['"`]\s*\+/ },
   // C3 (AC-01): the same evasion spelled as a segment array joined at runtime.
   { code: 'COMPUTED_ADAPTER_SPECIFIER', re: /\[[^\]]*['"](?:\.\.|adapters)['"][^\]]*\]\s*\.\s*join\s*\(/ },
 ];
@@ -157,6 +160,7 @@ test('host environment and default-host patterns are precise enough to stay usef
       'param-default.mjs': "export function run({ host = 'dsh' } = {}) { return host; }\n",
       'expected-integration.mjs': "export const EXPECTED_INTEGRATION = 'dsh';\n",
       'fallback.mjs': "export const fallback = host || 'dsh';\n",
+      'dynamic-concat.mjs': "export const load = (host) => import('./adapters/' + host + '/index.mjs');\n",
     };
     for (const [file, source] of Object.entries(evasions)) {
       await fs.writeFile(path.join(tmp, file), source, 'utf8');
@@ -168,6 +172,7 @@ test('host environment and default-host patterns are precise enough to stay usef
       ['param-default.mjs', 'HOST_DEFAULT_DSH'],
       ['expected-integration.mjs', 'HOST_DEFAULT_DSH'],
       ['fallback.mjs', 'HOST_DEFAULT_DSH'],
+      ['dynamic-concat.mjs', 'DYNAMIC_IMPORT_CONCAT'],
     ]) {
       assert.ok(
         violations.some((violation) => violation.file === file && violation.code === code),

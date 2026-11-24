@@ -150,6 +150,16 @@ test('classifyMarkers treats a marker as pending when no session baseline is giv
   assert.deepEqual(classified.history, []);
 });
 
+test('classifyMarkers still separates old history without a session baseline (final review C1)', () => {
+  const now = Date.parse('2026-11-24T12:00:00.000Z');
+  const classified = classifyMarkers({
+    dsh: { host: 'dsh', timestamp: '2020-01-01T00:00:00.000Z' },
+    claude: { host: 'claude', timestamp: '2026-11-24T11:59:00.000Z' },
+  }, { now });
+  assert.deepEqual(classified.pending, ['claude']);
+  assert.deepEqual(classified.history, ['dsh'], 'a years-old marker must not warn forever');
+});
+
 test('classifyMarkers still rejects an unparseable timestamp without a baseline (C1)', () => {
   const classified = classifyMarkers(
     { dsh: { host: 'dsh', layer: 'tool_code', timestamp: 'not-a-date' } },

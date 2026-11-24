@@ -231,10 +231,19 @@ test('detectNativeEvents is a read-only probe over the project settings and exte
   await fs.mkdir(path.join(settingsRepo, '.claude'), { recursive: true });
   await fs.writeFile(
     path.join(settingsRepo, '.claude', 'settings.json'),
-    JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'sdd-kit guidance --text' }] }] } }),
+    JSON.stringify({
+      hooks: {
+        SessionStart: [{
+          hooks: [{
+            type: 'command',
+            command: 'python3 "${CLAUDE_PROJECT_DIR}/.specify/events.py" speckit.superpowers-hooks.guidance session_start 10',
+          }],
+        }],
+      },
+    }),
     'utf8'
   );
-  assert.equal(await detectNativeEvents({ cwd: settingsRepo, env: {} }), true, 'a SessionStart hook that mentions sdd-kit counts');
+  assert.equal(await detectNativeEvents({ cwd: settingsRepo, env: {} }), true, 'the real upstream events.py SessionStart command counts');
 
   const foreignRepo = await makeRepo();
   await fs.mkdir(path.join(foreignRepo, '.claude'), { recursive: true });
@@ -246,12 +255,14 @@ test('detectNativeEvents is a read-only probe over the project settings and exte
   assert.equal(await detectNativeEvents({ cwd: foreignRepo, env: {} }), false, 'an unrelated SessionStart hook is not ours');
 
   const manifestRepo = await makeRepo();
+  const installedDir = path.join(manifestRepo, '.specify', 'extensions', 'superpowers-hooks');
+  await fs.mkdir(installedDir, { recursive: true });
   await fs.writeFile(
-    path.join(manifestRepo, '.specify', 'extensions.yml'),
-    'installed:\n  - superpowers-hooks\nhooks:\n  session_start:\n    - command: guidance\n',
+    path.join(installedDir, 'extension.yml'),
+    'events:\n  session_start:\n    command: speckit.superpowers-hooks.guidance\n    timeout: 10\n',
     'utf8'
   );
-  assert.equal(await detectNativeEvents({ cwd: manifestRepo, env: {} }), true, 'a manifest session_start event counts');
+  assert.equal(await detectNativeEvents({ cwd: manifestRepo, env: {} }), true, 'an installed extension manifest declaring session_start counts');
 
   const brokenRepo = await makeRepo();
   await fs.mkdir(path.join(brokenRepo, '.claude'), { recursive: true });
@@ -275,9 +286,11 @@ test('Claude guidance auto-detects the channel and falls back to a written manag
 
 test('Claude guidance uses the native channel when the probe finds a rendered event (I1)', async () => {
   const repo = await makeRepo();
+  const installedDir = path.join(repo, '.specify', 'extensions', 'superpowers-hooks');
+  await fs.mkdir(installedDir, { recursive: true });
   await fs.writeFile(
-    path.join(repo, '.specify', 'extensions.yml'),
-    'hooks:\n  session_start:\n    - command: guidance\n',
+    path.join(installedDir, 'extension.yml'),
+    'events:\n  session_start:\n    command: speckit.superpowers-hooks.guidance\n    timeout: 10\n',
     'utf8'
   );
   const result = await applyClaudeGuidance({ cwd: repo });
@@ -289,9 +302,11 @@ test('Claude guidance uses the native channel when the probe finds a rendered ev
 
 test('an explicit nativeEventsAvailable still overrides the probe in both directions (I1)', async () => {
   const forcedOff = await makeRepo();
+  const forcedOffDir = path.join(forcedOff, '.specify', 'extensions', 'superpowers-hooks');
+  await fs.mkdir(forcedOffDir, { recursive: true });
   await fs.writeFile(
-    path.join(forcedOff, '.specify', 'extensions.yml'),
-    'hooks:\n  session_start:\n    - command: guidance\n',
+    path.join(forcedOffDir, 'extension.yml'),
+    'events:\n  session_start:\n    command: speckit.superpowers-hooks.guidance\n    timeout: 10\n',
     'utf8'
   );
   const off = await applyClaudeGuidance({ cwd: forcedOff, nativeEventsAvailable: false });

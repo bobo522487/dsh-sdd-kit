@@ -1,11 +1,10 @@
 /**
  * Claude Code adapter — contract faces and IO only; all text comes from src/core.
  */
-
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES, hasDisciplineSkills, isDisciplineSkill } from '../../core/host-capabilities.mjs';
+import { HOST_CAPABILITIES, EXTENSION_ID, hasDisciplineSkills, isDisciplineSkill } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 import { removeManagedBlockFile } from '../../core/fsutil.mjs';
@@ -23,16 +22,27 @@ function sessionStartCommands(settings) {
     .filter(Boolean);
 }
 
-/** Probe the two artifacts the integration writes; any failure means "no native event" (I1). */
+/** Spec Kit renders an events.py SessionStart command with a `*.guidance` hook. */
+function isGuidanceSessionStart(command) {
+  return typeof command === 'string' && command.includes('session_start')
+    && /events\.py/.test(command) && /\.guidance\b/.test(command);
+}
+
+/** Read-only probe of the artifacts the integration actually writes (I1). */
 export async function detectNativeEvents({ cwd = process.cwd() } = {}) {
   try {
     const settings = JSON.parse(await fs.readFile(path.join(cwd, '.claude', 'settings.json'), 'utf8'));
-    if (sessionStartCommands(settings).some((command) => command.includes('sdd-kit'))) return true;
-  } catch { /* missing or malformed settings means no native event is registered */ }
-  try {
-    const manifest = await fs.readFile(path.join(cwd, '.specify', 'extensions.yml'), 'utf8');
-    if (/^\s*session_start\s*:/m.test(manifest)) return true;
-  } catch { /* a project that never installed the extension simply has no manifest */ }
+    if (sessionStartCommands(settings).some(isGuidanceSessionStart)) return true;
+  } catch { /* no settings means no native event */ }
+  for (const manifest of [
+    path.join(cwd, '.specify', 'extensions', EXTENSION_ID, 'extension.yml'),
+    path.join(cwd, '.specify', 'extensions.yml'),
+  ]) {
+    try {
+      const text = await fs.readFile(manifest, 'utf8');
+      if (/events:\s*\n\s*session_start:[\s\S]*?command:\s*speckit\.[\w-]+\.guidance/.test(text)) return true;
+    } catch { /* no installed manifest in this project */ }
+  }
   return false;
 }
 
@@ -46,20 +56,13 @@ export function describeClaude() {
 }
 
 export function claudeManagedBlock(text, markers = MARKERS) {
-  const { markerStart, markerEnd } = markers;
-  return `${markerStart}\n${text}\n${markerEnd}\n`;
+  return `${markers.markerStart}\n${text}\n${markers.markerEnd}\n`;
 }
 
 export async function applyClaudeGuidance({
-  cwd = process.cwd(),
-  env = process.env,
-  skills,
-  nativeEventsAvailable,
+  cwd = process.cwd(), env = process.env, skills, nativeEventsAvailable,
 } = {}) {
-  // Startup completes a previous pending change: drop only this repository's entry for this host (REQ-18).
   await clearMarker({ cwd, host: CAP.key }).catch(() => {});
-
-  // An explicit boolean always wins; only an absent value is probed, so the managed-block fallback stays reachable (I1).
   const explicit = typeof nativeEventsAvailable === 'boolean';
   const nativeChannel = explicit ? nativeEventsAvailable : await detectNativeEvents({ cwd });
   const bundle = await assembleGuidance({ host: CAP.key, cwd, env, skills });
@@ -67,15 +70,13 @@ export async function applyClaudeGuidance({
   const enabled = bundle.enabled !== false;
   const warnings = [...bundle.warnings];
   if (!explicit && !nativeChannel) {
-    warnings.push('未探测到 Claude 原生 session_start 事件（.claude/settings.json 无 sdd-kit 钩子，.specify/extensions.yml 无 session_start），已降级为托管块写入。');
+    warnings.push('未探测到 Claude 原生 session_start 事件（events.py 钩子/V1 事件清单均缺失），已降级为托管块写入。');
   }
-
   const entries = await fs.readdir(path.join(cwd, CAP.skillsDir)).catch(() => []);
   const installHint = hasDisciplineSkills(entries)
     ? null
     : '缺少上游 SDD 技能：运行 specify integration install claude，或 specify extension add --dev spec-kit-extension 安装。';
   if (installHint) warnings.push(installHint);
-
   const target = path.join(cwd, CAP.guidanceConfig.managedBlockPath);
   const written = enabled && Boolean(bundle.upstreamText?.trim()) && !nativeChannel;
   let removed = false;
@@ -83,12 +84,11 @@ export async function applyClaudeGuidance({
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, claudeManagedBlock(text), 'utf8');
   } else {
-    // A switch-off or a native event supersedes an earlier managed block; leaving it resident would double-inject (REQ-12/AC-08).
     removed = await removeManagedBlockFile({ file: target, ...MARKERS });
   }
-
   return {
     channel: nativeChannel ? 'native-event' : 'managed-block',
-    text, installHint, enabled, written, removed, warnings, nativeEventsAvailable: nativeChannel, bundle,
+    text, installHint, enabled, written, removed, warnings,
+    nativeEventsAvailable: nativeChannel, bundle,
   };
 }

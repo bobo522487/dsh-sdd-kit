@@ -6,11 +6,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
+import { HOST_CAPABILITIES, checkTrustFlags } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
+import { removeManagedBlockFile } from '../../core/fsutil.mjs';
+export { checkTrustFlags };
 
 const CAP = HOST_CAPABILITIES.cursor;
+const MARKERS = {
+  markerStart: '<!-- sdd-kit:rules:start -->',
+  markerEnd: '<!-- sdd-kit:rules:end -->',
+};
 
 export function describeCursor() {
   return {
@@ -19,12 +25,6 @@ export function describeCursor() {
     skillFace: `技能目录 ${CAP.skillsDir}，由 specify integration install cursor-agent 安装`,
     reloadSemantics: Object.entries(CAP.reloadPolicy).map(([k, v]) => `${k}=${v}`).join('; '),
   };
-}
-
-export function checkTrustFlags(input) {
-  const source = typeof input === 'string' ? input : (input?.args ?? []);
-  const flags = Array.isArray(source) ? source : source.split(/\s+/);
-  return flags.filter((arg) => CAP.trustFlagPattern?.test(arg));
 }
 
 export function cursorDefaultConfig() {
@@ -44,12 +44,11 @@ export async function applyCursorGuidance({ cwd = process.cwd(), env = process.e
   let removed = false;
   if (written) {
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, text, 'utf8');
+    // An ownership marker makes later removal provably safe: a user-authored
+    // file at the same path must never disappear when the switch is closed.
+    await fs.writeFile(target, `${MARKERS.markerStart}\n${text}\n${MARKERS.markerEnd}\n`, 'utf8');
   } else {
-    // The rule file lives at a kit-owned path, so a closed switch or an empty
-    // upstream mirror must leave no resident rule behind (REQ-12/AC-08).
-    const present = await fs.access(target).then(() => true, () => false);
-    removed = present && await fs.rm(target, { force: true }).then(() => true, () => false);
+    removed = await removeManagedBlockFile({ file: target, ...MARKERS });
   }
   const warnings = [...bundle.warnings];
   return { channel: 'rule-dir', text, target, enabled, written, removed, warnings, bundle };
