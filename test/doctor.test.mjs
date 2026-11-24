@@ -175,6 +175,28 @@ test('the repository zone reports which extension command skills are installed (
   assert.match(entry.message, /1 of 6/, entry.message);
 });
 
+test('the host zone reports the effective guidance switch scope and its source (REQ-12/AC-08)', async () => {
+  const repo = await makeRepo();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-doctor-home-'));
+  await fs.mkdir(path.join(home, '.dsh'), { recursive: true });
+  await fs.writeFile(path.join(home, '.dsh', 'sdd-kit.json'), JSON.stringify({ guidance: { enabled: false } }), 'utf8');
+  const env = { ...process.env, HOME: home };
+
+  const userOnly = findItem((await runDoctor({ cwd: repo, host: 'dsh', env })).host, 'GUIDANCE_SCOPE');
+  assert.ok(userOnly, 'the host zone must report the effective guidance switch scope');
+  assert.equal(userOnly.status, 'pass');
+  assert.equal(userOnly.enabled, false);
+  assert.equal(userOnly.effectiveScope, 'user');
+  assert.match(userOnly.source, /sdd-kit\.json$/);
+
+  const projectFile = path.join(repo, '.specify', 'sdd-kit.json');
+  await fs.writeFile(projectFile, JSON.stringify({ guidance: { enabled: true } }), 'utf8');
+  const overridden = findItem((await runDoctor({ cwd: repo, host: 'dsh', env })).host, 'GUIDANCE_SCOPE');
+  assert.equal(overridden.enabled, true);
+  assert.equal(overridden.effectiveScope, 'project');
+  assert.equal(overridden.source, projectFile);
+});
+
 test('the host zone reports the guidance channel version and the rendered hook skills (REQ-33)', async () => {
   const repo = await makeRepo();
   const pkg = JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));

@@ -68,6 +68,11 @@ async function resolveSkillsDir({ superpowersDir, candidateDirs, env }) {
   return path.join(selection.dir, 'skills');
 }
 
+/**
+ * Read one of the two incremental guidance switches. This is the single
+ * source of truth for the doctor's "effective scope" report as well.
+ * @returns {Promise<{present: boolean, enabled: boolean}>}
+ */
 async function readJsonLevel(file, warnings) {
   try {
     const raw = await fs.readFile(file, 'utf8');
@@ -89,9 +94,16 @@ async function resolveSwitch({ cwd, env, warnings }) {
   const projectFile = path.join(cwd, '.specify', 'sdd-kit.json');
   const user = await readJsonLevel(userFile, warnings);
   const project = await readJsonLevel(projectFile, warnings);
-  if (project.present) return { enabled: project.enabled, effectiveScope: 'project' };
-  if (user.present) return { enabled: user.enabled, effectiveScope: 'user' };
-  return { enabled: true, effectiveScope: 'default' };
+  if (project.present) return { enabled: project.enabled, effectiveScope: 'project', source: projectFile };
+  if (user.present) return { enabled: user.enabled, effectiveScope: 'user', source: userFile };
+  return { enabled: true, effectiveScope: 'default', source: null };
+}
+
+/** Shared with the read-only doctor so both report the same effective scope. */
+export async function resolveGuidanceSwitch({ cwd = process.cwd(), env = process.env } = {}) {
+  const warnings = [];
+  const state = await resolveSwitch({ cwd, env, warnings });
+  return { ...state, warnings };
 }
 
 function toolMapping() {

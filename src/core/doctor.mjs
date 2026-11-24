@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { HOST_CAPABILITIES, HOST_KEYS } from './host-capabilities.mjs';
+import { resolveGuidanceSwitch } from './guidance.mjs';
 import { readMarkers } from './marker.mjs';
 import { scoreSkills } from './trigger.mjs';
 
@@ -152,6 +153,18 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
   }
   const visible = (skills ?? []).length;
   items.push(item('pass', 'VISIBLE_SKILLS', `${visible} visible skills provided`, 'No action needed.'));
+  const guidanceSwitch = await resolveGuidanceSwitch({ cwd, env });
+  items.push(item(
+    guidanceSwitch.warnings.length === 0 ? 'pass' : 'warn',
+    'GUIDANCE_SCOPE',
+    `enabled=${guidanceSwitch.enabled} effectiveScope=${guidanceSwitch.effectiveScope} source=${guidanceSwitch.source ?? 'default'}`,
+    guidanceSwitch.warnings.length === 0 ? 'No action needed.' : guidanceSwitch.warnings.join(' '),
+    {
+      enabled: guidanceSwitch.enabled,
+      effectiveScope: guidanceSwitch.effectiveScope,
+      source: guidanceSwitch.source,
+    }
+  ));
   const manifest = path.join(cwd, '.specify', 'extensions.yml');
   items.push(fs.existsSync(manifest)
     ? item('pass', 'EXTENSION_STATE', 'project extension manifest found', 'No action needed.')
