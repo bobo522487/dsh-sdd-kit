@@ -221,14 +221,14 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 8 ⚠️
 
-- [ ] T057 [P] [US8] 写失败测试 `test/boundary.test.mjs`：在含用户自建普通技能的仓库初始化后该技能字节不变、体检标注为非本套件产物、仓库内不存在上游逻辑复制品（`test/boundary.test.mjs`）
+- [x] T057 [P] [US8] 写失败测试 `test/boundary.test.mjs`：在含用户自建普通技能的仓库初始化后该技能字节不变、体检标注为非本套件产物、仓库内不存在上游逻辑复制品（`test/boundary.test.mjs`）
 
 ### Implementation for User Story 8
 
-- [ ] T058 [US8] 记录 M1 前置验证：`ctx.systemPrompt` 在打包形态下可达（已实测于 `dsh-base/cordis.patch.yml:525-526`），把探针方法与结论写入 `research.md` R3（`research.md`）
-- [ ] T059 [US8] 记录 M2 前置验证：引导段在模拟上下文压缩后仍存在（agent-loop 每步 `assemble()` 行为），写入 `research.md` R3（`research.md`）
-- [ ] T060 [US8] 记录 M4 前置验证：Codex 与 Cursor 的纪律技能安装方式可行（`.agents/skills`、`.cursor/skills` 实测），写入 `quickstart.md` 场景 8（`quickstart.md`）
-- [ ] T061 [US8] 在 `docs/adapters/` 增 `stop-loss.md`：逐里程碑列出止损线触发条件与预设处置（降级固定注入 / 延后扩展 / 冻结后续端 / 回退目录重组）（`docs/adapters/stop-loss.md`）
+- [x] T058 [US8] 记录 M1 前置验证：`ctx.systemPrompt` 在打包形态下可达（已实测于 `dsh-base/cordis.patch.yml:525-526`），把探针方法与结论写入 `research.md` R3（`research.md`）
+- [x] T059 [US8] 记录 M2 前置验证：引导段在模拟上下文压缩后仍存在（agent-loop 每步 `assemble()` 行为），写入 `research.md` R3（`research.md`）
+- [x] T060 [US8] 记录 M4 前置验证：Codex 与 Cursor 的纪律技能安装方式可行（`.agents/skills`、`.cursor/skills` 实测），写入 `quickstart.md` 场景 8（`quickstart.md`）
+- [x] T061 [US8] 在 `docs/adapters/` 增 `stop-loss.md`：逐里程碑列出止损线触发条件与预设处置（降级固定注入 / 延后扩展 / 冻结后续端 / 回退目录重组）（`docs/adapters/stop-loss.md`）
 
 **Checkpoint**：任何里程碑都不会以未验证状态叠加。
 

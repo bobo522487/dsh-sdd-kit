@@ -22,6 +22,8 @@
 - **Decision**：引导文案由 `src/core/guidance.mjs` 同一份拼装；DSH 适配用 `ctx.get('systemPrompt')` 可选读取并调用 `systemPrompt.section({name:'sdd-kit:discipline', order: getSectionOrder('PLAN_POLICY')+1, text})`，**不**把 `systemPrompt` 写入 `inject` 数组。
 - **Rationale**：Cordis `Inject` 无 optional 语法（数组即必需，缺失插件不加载），而 `ctx.get(name, strict?)` 缺失返回 undefined——这是 `REQ-11`「引导缺失不阻断加载」的唯一安全路径。实测打包形态可达：`dsh-base/cordis.patch.yml:525-526` 注册 system-prompt 服务。抗压缩：`dsh-agent-loop/lib/index.js:692 preStep()` 每步 `systemPrompt.assemble()`，:863 `systemPrompt.project(...,{inHistory})` 投影进历史 → 常驻段按步重算，压缩后仍在，满足 `REQ-10`。
 - **Alternatives considered**：注入 `inject=['tools','systemPrompt']` → 引导服务缺失时插件整体不加载（违反 REQ-11）；一次性塞进消息历史 → 压缩即丢失（违反 REQ-10）。
+- **前置验证记录（T058，2026-11-24）**：本机检查 `~/.dsh/profiles/web/dsh-base/cordis.patch.yml:525-526` 注册 `id: system-prompt` / `name: @deepseek-ai/dsh-system-prompt`，并核对打包形态的 profile bundles 含 `dsh-sdd-kit`；`ctx.get('systemPrompt')` 可达，M1 闸门通过，无需降级为固定注入。
+- **前置验证记录（T059，2026-11-24）**：`dsh-agent-loop/lib/index.js:692` 在每步 `preStep()` 调 `systemPrompt.assemble()`，:863 调 `systemPrompt.project(renderedPrompt,{inHistory})`，常驻段按步重算并投影进历史；模拟压缩后该段随下一步重新组装，M2 闸门通过。
 
 ## R4 外部宿主引导面定型（REQ-26/29/30）
 

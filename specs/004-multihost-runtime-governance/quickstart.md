@@ -83,6 +83,8 @@ specify integration use <key>   # 激活以获得扩展命令（实测：仅 act
 
 结论：扩展命令只在「曾成为 active」的端渲染（dsh 是 init 时的 active，故保留 6 个）；`switch` 不给其他端补渲染，切走也不清理原端。体检须按此真实状态报告，不得把非 active 端报成「钩子已生效」。
 
+**T060 前置验证记录（2026-11-24）**：`specify integration install claude` / `cursor-agent` / `codex` 实测均生成各自技能目录；Claude 的 `.claude/settings.json` 出现 SessionStart hook（扩展 events 通道），Codex/Cursor 的纪律文本由托管块/规则目录承载，故 M4 的跨端安装方式可行；peer 具体版本下界仍按 research.md 未决事项 1 在宿主环境补齐。
+
 ## 场景 9：五区体检与触发试跑（AC-18、AC-19）
 
 ```bash
