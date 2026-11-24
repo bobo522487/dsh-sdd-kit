@@ -313,3 +313,15 @@ test('reinstalling the extension renders all six hook skills and both extra comm
     fsSync.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('T108: documentation records measured peer floors and precise session_start channels', async () => {
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+  const research = await fs.readFile(path.join(PKG_ROOT, 'specs/004-multihost-runtime-governance/research.md'), 'utf8');
+  const manifest = await fs.readFile(path.join(PKG_ROOT, 'spec-kit-extension/extension.yml'), 'utf8');
+  assert.doesNotMatch(readme, /peerDependencies[^\n]*"\*"/);
+  assert.match(research, /R8[^\n]*peerDependencies/);
+  assert.match(research, />=4\.1\.0/);
+  assert.match(research, />=0\.2\.2-rc\.3/);
+  assert.doesNotMatch(research, /留到 M1[^\n]*测定/);
+  assert.match(manifest, /Claude 原生 SessionStart；Codex 托管块；Cursor 规则目录；DSH systemPrompt/);
+});

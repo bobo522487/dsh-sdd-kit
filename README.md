@@ -108,7 +108,7 @@ node ./node_modules/dsh-sdd-kit/bin/sdd-kit.mjs guard --json
 
 **候选目录选择**：`~/.dsh/upstream/superpowers` 不再是硬编码唯一答案。候选按声明顺序来自：显式 `superpowersDir` → 调用方 `candidateDirs` → `DSH_SDD_KIT_SUPERPOWERS_DIR` → `$DSH_HOME/upstream/superpowers` → 默认 `~/.dsh/upstream/superpowers`；按 `realpath` 去重（同一目录的多个别名只算一次）、最近修改时间优先、同时间按声明顺序决胜，报告里给出所选绝对路径与依据。不扫描文件系统，只认这五个声明来源。
 
-**真实上游验证**：`npm run verify:upstream` 会在临时项目里真跑 `specify init`、`specify extension add --dev`、`specify extension list --json`，核对参数与扩展契约今天是否仍成立。工具缺失或断网时输出「未执行（环境不可用）」并返回 0，契约不符才返回 1。它不进 `npm test`（日常不联网），`.github/workflows/upstream-integration.yml` 每日 03:00 UTC 跑一次，也可手动触发。
+**真实上游验证**：`npm run verify:upstream` 会在临时项目里真跑 `specify init`、`specify extension add --dev`、`specify extension list --json`，核对参数与扩展契约今天是否仍成立。工具缺失/断网导致的 `not_executed`、契约不符、以及 `versionDrift.needsAdjustment` 版本下界漂移都返回非零退出码 1；CI 对此再做一次独立门禁。它不进 `npm test`（日常不联网），`.github/workflows/upstream-integration.yml` 每日 03:00 UTC 跑一次，也可手动触发。
 
 ## 扩展钩子（Hooks）
 
@@ -137,9 +137,9 @@ node ./node_modules/dsh-sdd-kit/bin/sdd-kit.mjs guard --json
 | 平台 | 状态 |
 |---|---|
 | Linux / macOS / WSL | 一级支持（specify CLI 生成符号链接，bash 脚本原生） |
-| Windows 原生 | 已验证（51 测试全绿）；CLI 无 symlink 权限时钩子技能回退为内容一致的副本；`.specify/scripts/` 仅 bash 版本，Spec Kit 脚本步骤需 WSL/Git Bash |
+| Windows 原生 | 平台路径与扩展安装已验证；CLI 无 symlink 权限时钩子技能回退为内容一致的副本；`.specify/scripts/` 仅 bash 版本，Spec Kit 脚本步骤需 WSL/Git Bash |
 
-`peerDependencies` 目前为 `"*"`：宿主 `@deepseek-ai/cordis`、`dsh-tools`、`dsh-skill-filesystem` 的实际版本下界待在可读取的 DSH profile 上核实后收紧（desktop profile 的宿主包内置于应用，profile 内不可读）。
+`peerDependencies` 已在 DSH 0.2.2-rc.3 宿主实测并收紧为 `@deepseek-ai/cordis >=4.1.0`、`@deepseek-ai/dsh-skill-filesystem >=0.2.2-rc.3`、`@deepseek-ai/dsh-tools >=0.2.2-rc.3`，三项均保持 `optional: true`。`npm run verify:compat` 常态校验版本下界与预发布比较。
 
 **插件不加载时的排查**：`cordis.patch.yml` 用 `!!js` + `createRequire(baseUrl)` 定位包内 `skills/`，是加载的单点故障。确认 profile 的 `node_modules/dsh-sdd-kit` 存在且 `package.json` 可解析；DSH 日志中 skill-filesystem 提供器报错时优先检查该路径。
 
@@ -148,3 +148,5 @@ node ./node_modules/dsh-sdd-kit/bin/sdd-kit.mjs guard --json
 ```bash
 npm test
 ```
+
+测试数量以本次 `npm test` 实际输出为准，不再在文档中固定历史计数；`npm run test:contract`、`npm run test:adapters` 与 `npm run verify:compat` 分别守护核心同构、四端适配与宿主 peer 下界。

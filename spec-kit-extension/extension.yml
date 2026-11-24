@@ -62,5 +62,5 @@ hooks:
 events:
   session_start:
     command: speckit.superpowers-hooks.guidance
-    description: 注入三面契约引导文本（Claude/Codex/Cursor；DSH 走 systemPrompt）
+    description: 注入三面契约引导文本（Claude 原生 SessionStart；Codex 托管块；Cursor 规则目录；DSH systemPrompt）
     timeout: 10

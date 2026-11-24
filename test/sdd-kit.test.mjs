@@ -2627,3 +2627,14 @@ test('README documents the safety behaviours without the disproven gitignore cla
   assert.equal(/\.gitignore[^\n]*忽略[^\n]*\.backup|宿主 \.gitignore/.test(readme), false,
     'INV-17: the snapshot directory ignores itself; never claim the host .gitignore covers it');
 });
+
+test('T108: README reflects current verify:upstream exits, peer floors and test-count policy', async () => {
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+  assert.match(readme, /verify:upstream[\s\S]{0,240}(?:非零|退出码 1|退出码为非零)/,
+    'README must state that verify:upstream exits non-zero on not_executed or drift');
+  assert.match(readme, /@deepseek-ai\/cordis[\s\S]{0,160}>=4\.1\.0/);
+  assert.match(readme, /dsh-skill-filesystem[\s\S]{0,160}>=0\.2\.2-rc\.3/);
+  assert.match(readme, /dsh-tools[\s\S]{0,160}>=0\.2\.2-rc\.3/);
+  assert.equal(/51 测试全绿/.test(readme), false, 'historical fixed test count must not be advertised');
+  assert.match(readme, /测试数量以[\s\S]{0,80}npm test/);
+});
