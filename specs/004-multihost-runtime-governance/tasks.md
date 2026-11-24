@@ -453,3 +453,10 @@ Task: "实现 src/adapters/cursor/index.mjs（规则目录 + trust 告警）"
 - [x] T099 [US7] 让 `scripts/verify-upstream.mjs` 自身对 `not_executed` 与 `versionDrift.needsAdjustment` 返回非零退出码，CI gate 继续二次拦截；同步修订 `INV-23` 测试并补进程级退出码断言（`scripts/verify-upstream.mjs`, `test/sdd-kit.test.mjs`, `test/ci-matrix.test.mjs`）per T090/REQ-41 (partial)
 - [x] T100 [US7] 在具备宿主运行时的环境实测三项 peer 依赖下界并写入 `package.json`，把版本下界与预发布用例移入常态 CI/脚本而非仅靠 `DSH_SDD_KIT_INTEGRATION`，同步 `stop-loss.md` 的 M4 记录（`package.json`, `test/compat.test.mjs`, `.github/workflows/upstream-integration.yml`, `docs/adapters/stop-loss.md`）per REQ-21/AC-11/T091 (partial)
 - [x] T101 [US4] 让规划期护栏拦截响应显式提示“先回到定义阶段”，同步 `extension.yml` 钩子描述与命令文档，补精确文案断言；保持只读、不写状态文件、判定仍为当前 feature 的 `tasks.md` 有勾选任务（`src/core/guard.mjs`, `spec-kit-extension/extension.yml`, `spec-kit-extension/commands/speckit.superpowers-hooks.guard.md`, `test/guard.test.mjs`）per REQ-23/AC-13/T033 (contradicts)
+
+---
+
+## Phase 14: Convergence（规格差距收敛）
+
+- [x] T102 [US7] CRITICAL：中文化 `src/core/action.mjs` 的 `unknownActionError` 与 `src/core/update.mjs` 的执行失败文案，确保 CLI 对未知 action、`update --cwd` 等错误路径输出中文 `message`/`fix`（命令名、路径、字段名保留原文）；扩展 T096 静态守卫覆盖构造器参数、`Error.message` 与拼接文案，而非仅直接字段字面量，并补进程级 CLI 回归断言（`src/core/action.mjs`, `src/core/update.mjs`, `bin/sdd-kit.mjs`, `test/doctor.test.mjs`, `test/contract-parity.test.mjs`）per Constitution VI / T096 (contradicts)
+- [x] T103 [US7] 修正 `SKILL_PROVENANCE` 对套件托管技能的误标：让 `bin/sdd-kit.mjs` 的技能采集识别 `metadata.source`/`metadata.author`，`src/core/doctor.mjs` 不再仅凭 `/.dsh/skills/` 等目录路径把技能判为用户自有；补 CLI 采集 → doctor 报告的端到端回归，断言 Spec Kit 管理技能不进入 `userSkills`、真实用户技能仍进入（`bin/sdd-kit.mjs`, `src/core/doctor.mjs`, `test/doctor.test.mjs`, `test/contract-parity.test.mjs`）per REQ-46 / AC-23 / T078 (partial)
