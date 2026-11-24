@@ -551,3 +551,20 @@ test('CI runs verify-upstream from the workspace root, not the current directory
     'a relative verifier path resolves against whatever cwd the step happens to inherit'
   );
 });
+
+test('CI checks peer floors and prerelease cases on every run, not only with the integration switch (T100)', async () => {
+  const workflow = await fs.readFile(WORKFLOW, 'utf8');
+  assert.match(
+    workflow,
+    /node --test test\/compat\.test\.mjs/,
+    'compat floors and prerelease cases must run on ordinary CI passes'
+  );
+  assert.match(
+    workflow,
+    /DSH_SDD_KIT_HOST_MODULES/,
+    'a real host CI must be able to point the installed-peer probe at host node_modules'
+  );
+  const stopLoss = await fs.readFile(path.join(PKG_ROOT, 'docs', 'adapters', 'stop-loss.md'), 'utf8');
+  assert.match(stopLoss, /M4 门槛：peer 下界与 CI 凭据/);
+  assert.match(stopLoss, /DSH_SDD_KIT_HOST_MODULES/);
+});

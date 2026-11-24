@@ -106,20 +106,60 @@ test('version bound failures happen at install time with no half-installed resid
   }
 });
 
-test('peer versions stay `*` until a host runtime exists, and the reason is recorded (T091)', async () => {
+// Versions read from the DSH runtime that is actually installed and active on
+// this machine (see docs/adapters/stop-loss.md M4 for the exact package paths).
+// They are observed facts, not guesses: a host without these packages keeps
+// them optional; a host with older packages must fail the floor check.
+const MEASURED_PEER_FLOORS = {
+  '@deepseek-ai/cordis': { floor: '>=4.1.0', observed: '4.1.0' },
+  '@deepseek-ai/dsh-skill-filesystem': { floor: '>=0.2.2-rc.3', observed: '0.2.2-rc.3' },
+  '@deepseek-ai/dsh-tools': { floor: '>=0.2.2-rc.3', observed: '0.2.2-rc.3' },
+};
+
+test('peer floors are the versions measured in the active DSH host runtime (T100)', async () => {
   const pkg = await readPkg();
-  for (const [peer, range] of Object.entries(pkg.peerDependencies ?? {})) {
-    assert.equal(range, '*', `${peer} must stay "*" while no host runtime is installed here`);
-    assert.equal(pkg.peerDependenciesMeta?.[peer]?.optional, true, `${peer} must stay optional`);
+  assert.deepEqual(Object.keys(pkg.peerDependencies ?? {}).sort(), Object.keys(MEASURED_PEER_FLOORS).sort());
+  for (const [peer, { floor }] of Object.entries(MEASURED_PEER_FLOORS)) {
+    assert.equal(pkg.peerDependencies[peer], floor, `${peer} must use the measured floor`);
+    assert.equal(pkg.peerDependenciesMeta?.[peer]?.optional, true, `${peer} must stay optional for hosts without it`);
   }
-  // The `*` is a deliberate, documented decision, not an oversight: a tightened
-  // bound would make the plugin uninstallable for hosts we never measured.
-  const research = await fs.readFile(
-    path.join(PKG_ROOT, 'specs', '004-multihost-runtime-governance', 'research.md'),
-    'utf8'
-  );
-  assert.match(research, /peer 版本实测下界/, 'the open item must survive in the research report');
-  assert.match(research, /T091/, 'the T091 evidence must be recorded next to it');
+  const doc = await fs.readFile(path.join(PKG_ROOT, 'docs', 'adapters', 'stop-loss.md'), 'utf8');
+  for (const { floor } of Object.values(MEASURED_PEER_FLOORS)) {
+    assert.ok(doc.includes(floor), `M4 must record the measured floor ${floor}`);
+  }
+  assert.match(doc, /@deepseek-ai\/dsh\/node_modules/, 'M4 must name the runtime the versions came from');
+});
+
+test('a normal script exposes the compat checks without the integration switch (T100)', async () => {
+  const pkg = await readPkg();
+  assert.equal(pkg.scripts?.['verify:compat'], 'node --test test/compat.test.mjs');
+});
+
+test('prerelease floors are decided on every run, not only with a real toolchain (T100)', async () => {
+  const { compareBound } = await import('../scripts/verify-upstream.mjs');
+  const exact = compareBound('>=0.2.2-rc.3', '0.2.2-rc.3');
+  assert.equal(exact.needsAdjustment, false, 'an installed prerelease equal to its floor satisfies it');
+  const final = compareBound('>=0.2.2-rc.3', '0.2.2');
+  assert.equal(final.needsAdjustment, false, 'a final release satisfies a prerelease floor');
+  const older = compareBound('>=0.2.2-rc.4', '0.2.2-rc.3');
+  assert.equal(older.needsAdjustment, true, 'an older prerelease is still drift');
+  assert.equal(older.suggestedBound, '>=0.2.2-rc.3');
+});
+
+const HOST_MODULES = process.env.DSH_SDD_KIT_HOST_MODULES;
+
+test('installed host peers satisfy the declared floors (T100)', {
+  skip: HOST_MODULES ? false : 'set DSH_SDD_KIT_HOST_MODULES to a host node_modules directory',
+}, async () => {
+  const { createRequire } = await import('node:module');
+  const hostRequire = createRequire(path.join(HOST_MODULES, '__probe__.cjs'));
+  const { compareBound } = await import('../scripts/verify-upstream.mjs');
+  const pkg = await readPkg();
+  for (const [peer, floor] of Object.entries(pkg.peerDependencies ?? {})) {
+    const version = hostRequire(`${peer}/package.json`).version;
+    const verdict = compareBound(floor, version);
+    assert.equal(verdict.needsAdjustment, false, `${peer} ${version} must satisfy ${floor}: ${verdict.reason}`);
+  }
 });
 
 test('declared bound and prerelease semantics are asserted on every run (T091)', async () => {

@@ -60,6 +60,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Verify peer floors and prerelease cases on every run (T100)
+        # The floor/prerelease assertions need no toolchain and must never be
+        # hidden behind DSH_SDD_KIT_INTEGRATION. A host runner may additionally
+        # point the installed-peer probe at its real node_modules directory.
+        env:
+          DSH_SDD_KIT_HOST_MODULES: ${{ vars.DSH_SDD_KIT_HOST_MODULES || '' }}
+        run: node --test test/compat.test.mjs
       - uses: astral-sh/setup-uv@v5
       - name: Install the CLI under test
         run: |

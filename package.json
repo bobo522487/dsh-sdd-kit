@@ -40,9 +40,9 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-skill-filesystem": "*",
-    "@deepseek-ai/dsh-tools": "*"
+    "@deepseek-ai/cordis": ">=4.1.0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -59,7 +59,8 @@
     "test": "node --test test/*.test.mjs",
     "test:contract": "node --test test/contract-*.test.mjs",
     "test:adapters": "node --test test/adapters*.test.mjs",
-    "verify:upstream": "node scripts/verify-upstream.mjs"
+    "verify:upstream": "node scripts/verify-upstream.mjs",
+    "verify:compat": "node --test test/compat.test.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

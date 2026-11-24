@@ -57,6 +57,33 @@ function parseBound(text) {
   return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
 }
 
+/** `>=0.2.2-rc.3` / `1.4.4.dev0` → `rc.3` / `dev0`; finals → null. */
+function parsePrerelease(text) {
+  const match = /^[^\d]*\d+(?:\.\d+){0,2}[.\-+]([A-Za-z][0-9A-Za-z.-]*)/.exec(String(text ?? '').trim());
+  return match?.[1] ?? null;
+}
+
+/** Semver prerelease identifier order: numeric < non-numeric, then lexical. */
+function comparePrereleases(left, right) {
+  const a = String(left).split('.');
+  const b = String(right).split('.');
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if (index >= a.length) return -1;
+    if (index >= b.length) return 1;
+    const aNumeric = /^\d+$/.test(a[index]);
+    const bNumeric = /^\d+$/.test(b[index]);
+    if (aNumeric && bNumeric) {
+      const difference = Number(a[index]) - Number(b[index]);
+      if (difference !== 0) return difference < 0 ? -1 : 1;
+    } else if (aNumeric !== bNumeric) {
+      return aNumeric ? -1 : 1;
+    } else if (a[index] !== b[index]) {
+      return a[index] < b[index] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
 /** Compare two [major, minor, patch] triples: -1, 0 or 1. */
 function compareTriples(left, right) {
   for (let index = 0; index < 3; index += 1) {
@@ -96,16 +123,26 @@ export function compareBound(declared, observed) {
   // (prereleases=True) still refuses it against a final-release floor of the
   // same triple, so equality is not enough: the suffix decides (research R7).
   if (order === 0) {
-    const prerelease = /^\d+(\.\d+){0,2}([.\-+][A-Za-z].*)$/.test(String(observed).trim());
-    if (!prerelease) {
+    const observedPre = parsePrerelease(observed);
+    const declaredPre = parsePrerelease(declared);
+    // T100: a peer floor can itself be a prerelease measured in a real host
+    // (e.g. >=0.2.2-rc.3). That floor is met by the same prerelease, by a
+    // later prerelease of the same triple, and by the final release. Only a
+    // final-release floor rejects a same-triple prerelease (research R7).
+    if (!observedPre || (declaredPre && comparePrereleases(observedPre, declaredPre) >= 0)) {
       return { declared, observed, needsAdjustment: false, suggestedBound: declared, reason: null };
     }
+    const prereleaseFloorBound = declaredPre
+      ? `>=${String(observed).trim().replace(/^[^0-9]*/, '')}`
+      : suggestedBound;
     return {
       declared,
       observed,
       needsAdjustment: true,
-      suggestedBound,
-      reason: `the installed specify (${observed}) is a prerelease of ${actual.join('.')}, which does not satisfy the final-release floor (${declared}); pin a released version or declare ${suggestedBound}`,
+      suggestedBound: prereleaseFloorBound,
+      reason: declaredPre
+        ? `the installed ${observed} is below the prerelease floor (${declared}); pin a newer release or declare ${prereleaseFloorBound}`
+        : `the installed specify (${observed}) is a prerelease of ${actual.join('.')}, which does not satisfy the final-release floor (${declared}); pin a released version or declare ${suggestedBound}`,
     };
   }
   return {

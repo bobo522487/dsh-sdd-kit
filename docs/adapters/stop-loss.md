@@ -63,21 +63,31 @@ node scripts/verify-upstream.mjs --json
 
 ## M4 门槛：peer 下界与 CI 凭据
 
+实测来源（T100，2026-11-24）：本机 `node_modules/@deepseek-ai` 不存在，但当前生效的 DSH 运行时自带三项 peer；直接读取其 `package.json`（未改 profile、未联网安装、未编造版本）：
+
+- `@deepseek-ai/cordis@4.1.0` — `/home/bobo/.nvm/versions/node/v26.13.1/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/cordis/package.json`（DSH 自身声明 `~4.1.0`）
+- `@deepseek-ai/dsh-skill-filesystem@0.2.2-rc.3` — `/home/bobo/.nvm/versions/node/v26.13.1/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-skill-filesystem/package.json`
+- `@deepseek-ai/dsh-tools@0.2.2-rc.3` — `/home/bobo/.nvm/versions/node/v26.13.1/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-tools/package.json`
+
+宿主本体为 `/home/bobo/.nvm/versions/node/v26.13.1/lib/node_modules/@deepseek-ai/dsh/package.json`（`0.2.2-rc.3`）。以上观测到的安装版本即保守下界；没有这些 peer 的宿主仍由 `peerDependenciesMeta.<name>.optional: true` 放行。
+
 ```sh
 npm ls --depth=0
-node --test test/compat.test.mjs
+npm run verify:compat          # = node --test test/compat.test.mjs
 node scripts/verify-upstream.mjs --json
 ```
 
+真实宿主 CI 可在运行 `npm run verify:compat` 时设置 `DSH_SDD_KIT_HOST_MODULES=/path/to/host/node_modules`，追加"已安装 peer 满足下界"探针；该可选开关不属于上面的常态命令。
+
 断言：
 
-- `package.json` 的 `peerDependencies` 每项为 `*`，且 `peerDependenciesMeta.<name>.optional === true`（无宿主运行时期间的下界策略，见 `research.md` 未决事项 1 / T091）；
-- `test/compat.test.mjs` 全绿，含**常态执行**的版本下界与预发布语义断言（`compareBound` 纯函数，不需要工具链）；
-- `verify-upstream` 报告 `versionDrift.needsAdjustment === false`；若为 `true`，先按 `versionDrift.suggestedBound` 调整 `spec-kit-extension/extension.yml` 的 `requires.speckit_version`；
-- CI 无凭据时报告 `status === 'not_executed'`，此时**不得**记为通过（workflow 的 `status !== 'passed'` 门禁会失败）。
+- `package.json` 的 `peerDependencies` 为 `>=4.1.0`、`>=0.2.2-rc.3`、`>=0.2.2-rc.3`（正是上述实测版本），且三项 `peerDependenciesMeta.<name>.optional === true`；`research.md` 旧条目仍写 `*`，由 lead 决定是否回填（本任务文件清单不含它）。
+- `npm run verify:compat` 常态全绿：版本下界与预发布用例不依赖 `DSH_SDD_KIT_INTEGRATION`；`DSH_SDD_KIT_HOST_MODULES` 只用于把已安装 peer 探针带到真实宿主 CI，未设置时明确 skip 而非伪绿。常态 CI（`.github/workflows/upstream-integration.yml`）每轮都跑该脚本。
+- `verify-upstream` 报告 `versionDrift.needsAdjustment === false`；若为 `true`，按 `versionDrift.suggestedBound` 调整 `spec-kit-extension/extension.yml` 的 `requires.speckit_version`。
+- CI 无凭据时报告 `status === 'not_executed'`：T099 起验证器进程自身即以退出码 1 失败，workflow 的 `status !== 'passed'` 与 `needsAdjustment` 门禁继续二次拦截，绝不当成功。
 
-自动化守护：`test/compat.test.mjs`（下界/预发布语义），`test/ci-matrix.test.mjs`（漂移门禁与 `not_executed` 不得当成功）。
+自动化守护：`test/compat.test.mjs`（实测下界、预发布语义、可选宿主探针），`test/ci-matrix.test.mjs`（常态 CI 接线、漂移门禁与 `not_executed` 不得当成功）。
 
-判负即触发 M4 处置：冻结后续端开发，只保留已验证端；peer 下界维持未决并在发布说明中显式标注。
+判负即触发 M4 处置：冻结后续端开发，只保留已验证端；若某宿主版本低于下界，以该宿主实际版本为准重测并更新下界与本报告，不得回退到 `*` 掩盖问题。
 
 零分叉约束（所有里程碑）：核心目录禁止 `@deepseek-ai/*` 与 `ctx.` 引用（`test/contract-core-purity.test.mjs`）；用户自建技能零改写（`test/boundary.test.mjs`）；CLI 与 Host 工具共调 `src/core/action.mjs` 的同一实现，不产生第二份可编辑源。
