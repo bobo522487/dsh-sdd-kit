@@ -341,7 +341,9 @@ async function hostZone({ host, cwd, env, skills, trustFlags }) {
       : item('warn', 'CURSOR_TRUST', `检测到自动信任的 dispatch flag：${matched.join(' ')}；仅限受控项目使用`, '请从 dispatch 配置中移除这些 flag。', { matched }));
   }
   const visible = (skills ?? []).length;
-  items.push(item('pass', 'VISIBLE_SKILLS', `已提供 ${visible} 个可见 skill`, '无需处理。'));
+  items.push(visible > 0
+    ? item('pass', 'VISIBLE_SKILLS', `已提供 ${visible} 个可见 skill`, '无需处理。')
+    : item('skip', 'VISIBLE_SKILLS', '无法盘点：当前没有可见 skill', '请加载 skill provider 后重新运行 doctor。'));
   const guidanceSwitch = await resolveGuidanceSwitch({ cwd, env });
   items.push(item(
     guidanceSwitch.warnings.length === 0 ? 'pass' : 'warn',
@@ -640,14 +642,17 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
       },
     });
   }
-  items.push(conflicts.length === 0
-    ? item('pass', 'SKILL_CONFLICT', '无跨 provider 的 skill 名称冲突', '无需处理。', { conflicts: [] })
-    : item(
-      'warn', 'SKILL_CONFLICT',
-      `存在 skill 名称冲突：${conflicts.map((entry) => `${entry.name}（${entry.origins.join(' / ')}；winner=${entry.winner.provider}）`).join(', ')}`,
-      '请停用冲突的 provider 之一；用户自有 skill 保持优先。',
-      { conflicts }
-    ));
+  const hasVisibleSkills = visibleSkills.length > 0;
+  items.push(!hasVisibleSkills
+    ? item('skip', 'SKILL_CONFLICT', '无法判定 skill 冲突：当前没有可见 skill', '请加载 skill provider 后重新运行 doctor。', { conflicts: [] })
+    : conflicts.length === 0
+      ? item('pass', 'SKILL_CONFLICT', '无跨 provider 的 skill 名称冲突', '无需处理。', { conflicts: [] })
+      : item(
+        'warn', 'SKILL_CONFLICT',
+        `存在 skill 名称冲突：${conflicts.map((entry) => `${entry.name}（${entry.origins.join(' / ')}；winner=${entry.winner.provider}）`).join(', ')}`,
+        '请停用冲突的 provider 之一；用户自有 skill 保持优先。',
+        { conflicts }
+      ));
 
   // User-authored skills are explicitly labelled as non-kit artifacts so they
   // are never mistaken for kit drift or silently managed by the kit.
@@ -663,14 +668,16 @@ async function runtimeZone({ cwd, env, skills, now, sessionStart, runId }) {
     source: skill.source ?? 'unknown',
     path: skill.path ?? null,
   }));
-  items.push(item(
-    'pass', 'SKILL_PROVENANCE',
-    userSkills.length > 0
-      ? `${userSkills.length} 个用户自有 skill 标记为非本套件产物：${userSkills.map((entry) => entry.name).join(', ')}`
-      : '未观察到用户自有 skill',
-    userSkills.length > 0 ? '请勿改动用户自有 skill；套件仅管理自身产物。' : '无需处理。',
-    { userSkills, bundled: kitSkills }
-  ));
+  items.push(!hasVisibleSkills
+    ? item('skip', 'SKILL_PROVENANCE', '无法判定 skill 来源：当前没有可见 skill', '请加载 skill provider 后重新运行 doctor。', { userSkills: [], bundled: [] })
+    : item(
+      'pass', 'SKILL_PROVENANCE',
+      userSkills.length > 0
+        ? `${userSkills.length} 个用户自有 skill 标记为非本套件产物：${userSkills.map((entry) => entry.name).join(', ')}`
+        : '未观察到用户自有 skill',
+      userSkills.length > 0 ? '请勿改动用户自有 skill；套件仅管理自身产物。' : '无需处理。',
+      { userSkills, bundled: kitSkills }
+    ));
 
   items.push(await probeBridgeSource({ cwd, env }));
   return zone(items);

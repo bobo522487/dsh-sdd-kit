@@ -812,3 +812,18 @@ test('T078: user-authored skills are labeled non-kit artifacts, never drift', as
   assert.ok(report.runtime.items.some((entry) => entry.code === 'SKILL_CONFLICT'));
   assert.ok(report.runtime.items.every((entry) => !entry.code.includes('DRIFT')));
 });
+
+test('T105: an empty skill list never reports SKILL_CONFLICT or SKILL_PROVENANCE as pass', async () => {
+  const repo = await makeRepo();
+  const report = await runDoctor({ cwd: repo, host: 'dsh', skills: [] });
+  const visible = findItem(report.host, 'VISIBLE_SKILLS');
+  const conflict = findItem(report.runtime, 'SKILL_CONFLICT');
+  const provenance = findItem(report.runtime, 'SKILL_PROVENANCE');
+  assert.equal(visible.status, 'skip', visible.message);
+  assert.equal(conflict.status, 'skip', conflict.message);
+  assert.equal(provenance.status, 'skip', provenance.message);
+  assert.match(conflict.message, /无法判定/);
+  assert.match(provenance.message, /无法判定/);
+  assert.deepEqual(conflict.conflicts ?? [], []);
+  assert.deepEqual(provenance.userSkills ?? [], []);
+});

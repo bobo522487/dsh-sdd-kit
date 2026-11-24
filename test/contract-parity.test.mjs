@@ -203,6 +203,41 @@ test('doctor provenance distinguishes metadata-authored kit skills from real use
   assert.equal(user.skill.provider, 'user');
 });
 
+test('doctor --json inventories installed skills without --trigger (T105)', async () => {
+  const { repo, home } = await makeSkillTree({
+    project: {
+      name: 'speckit-implement',
+      frontmatter: [
+        'name: speckit-implement',
+        'description: execute implementation tasks',
+        'metadata:',
+        '  author: "github-spec-kit"',
+        '  source: "templates/commands/implement.md"',
+      ].join('\n'),
+    },
+    user: {
+      name: 'my-private-skill',
+      frontmatter: 'name: my-private-skill\ndescription: debug failing test\nsource: user-dsh\nprovider: user\n',
+    },
+  });
+  const cli = invokeCli(['doctor', '--json', '--cwd', repo, '--host', 'dsh'], { HOME: home });
+  assert.equal(cli.status, 1, 'a synthetic HOME fails the environment zone and must be visible');
+
+  const inventory = cli.stdout.runtime.items.find((entry) => entry.code === 'SKILL_INVENTORY');
+  assert.ok(inventory, 'doctor must inventory skills even without --trigger');
+  assert.equal(inventory.status, 'pass', inventory.message);
+  assert.ok(inventory.skills.some((skill) => skill.name === 'speckit-implement'));
+  assert.ok(inventory.skills.some((skill) => skill.name === 'my-private-skill'));
+
+  const provenance = cli.stdout.runtime.items.find((entry) => entry.code === 'SKILL_PROVENANCE');
+  assert.equal(provenance.status, 'pass', provenance.message);
+  assert.ok(provenance.userSkills.some((skill) => skill.name === 'my-private-skill'),
+    'a real user skill must stay labelled non-kit without --trigger');
+  assert.ok(provenance.bundled.some((skill) => skill.name === 'speckit-implement'));
+  assert.equal(cli.stdout.triggerDryRun.status, 'not_executed');
+  await assert.rejects(fs.access(path.join(repo, 'EXECUTED')), 'inventory must never execute a skill');
+});
+
 test('doctor --trigger falls back to packaged skills/ when no host skill dir exists (T077)', async () => {
   const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-bundled-'));
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'sdd-cli-empty-home-'));

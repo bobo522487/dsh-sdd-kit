@@ -378,12 +378,12 @@ async function main() {
   if (params.clearMarker && SUBCOMMANDS.includes(command) && command !== 'doctor') {
     result = await clearHostMarker({ cwd: params.cwd, host: params.host });
   } else if (SUBCOMMANDS.includes(command)) {
-    result = await runAction(
-      command,
-      command === 'doctor' && typeof params.trigger === 'string' && params.trigger.length > 0
-        ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }) }
-        : params
-    );
+    // `doctor --json` always inventories the currently visible skills; the
+    // trigger flag only decides whether the dry-run zone executes (T105).
+    const actionParams = command === 'doctor'
+      ? { ...params, skills: await collectSkillSummaries({ cwd: params.cwd, host: params.host }).catch(() => []) }
+      : params;
+    result = await runAction(command, actionParams);
     // A doctor exam must never swallow `--clear-marker`; the clearing outcome
     // is attached to the full five-zone report (final review I3).
     if (command === 'doctor' && params.clearMarker) {
