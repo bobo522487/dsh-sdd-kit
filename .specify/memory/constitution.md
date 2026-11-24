@@ -1,18 +1,18 @@
 <!--
 同步影响报告
-版本变更：3.0.0 → 4.0.0（MAJOR：删除自研 profile 安装器与 check_task 平行写路径，工具动作表面收缩）
+版本变更：4.0.0 → 5.0.0（MAJOR：原则 I 的对外表面枚举被重新定义，新增一个宿主中立命令行入口）
 修改的原则：
-  I. 零分叉，薄胶水层（新增两条禁令：插件 MUST NOT 自替换已安装副本；MUST NOT 提供 tasks.md 平行勾选写者。
-     `/sdd-update` 语义从三层降为两层上游）
-  V. 可升级、免值守的上游同步（插件自身安装/升级 MUST 走 DSH 包管理器；重启提示义务改为按上游变更判定）
+  I. 零分叉，薄胶水层（对外表面从「两技能 + 两宿主工具 + 一扩展」扩为
+     「两技能 + 两宿主工具 + 一个宿主中立 CLI + 一扩展」；新增第三条硬边界：
+     CLI MUST 只委托核心、MUST NOT 承载业务逻辑、输出 MUST 与宿主工具同构）
 新增章节：无
 移除章节：无
-迁移说明：`sdd_upstream(update_all)` 不再更新 dsh-sdd-kit 自身，`dshKitSourceDir`/`dshProfileDir`/`force`
-  参数已删除；`sdd_bridge(check_task)` 与 `taskMatch` 参数已删除，tasks.md 勾选唯一写者为上游
-  `/speckit.implement`。升级插件请执行 `dsh plugin --profile <profile> update dsh-sdd-kit --latest`
-  并重启 DSH。`src/core/kit-copy.mjs` 已整体删除。EARS 模板唯一可编辑源为 `overrides/spec-template.md`，
-  `.specify/templates/overrides/` 为安装产物，不再入库。
-授权：项目拥有者显式指令（宏观架构评审批次 1，2026-11-23）。
+迁移说明：`bin/sdd-kit.mjs` 成为章程允许的对外表面之一，其存在理由是
+  specs/004-multihost-runtime-governance 的 REQ-05：非 DSH 宿主没有 Host 工具通道，
+  必须有一个零第三方依赖的命令行入口提供等价能力。该 CLI MUST 只是核心的第二个
+  薄入口（与 `sdd_upstream`/`sdd_bridge` 共享同一实现），MUST NOT 引入第二套逻辑或
+  第二份事实。此前「表面严格限定为四项」的表述不再成立，相关断言与文档 MUST 更新。
+授权：项目拥有者显式指令（采纳 /speckit-analyze 报告 C1 的修复顺序，2026-11-24）。
 后续待办：本文档无。
 -->
 
@@ -23,13 +23,14 @@
 ### I. 零分叉，薄胶水层
 dsh-sdd-kit MUST NOT 重实现 GitHub Spec Kit 或 obra/superpowers。它 MUST 把“构建什么”
 交给上游 `specify` CLI，把“如何构建”交给上游 Superpowers 技能。插件对外表面 MUST
-严格限定为两个命名技能（`sdd-setup`、`sdd-update`）和两个轻量 Host
-工具（`sdd_upstream`、`sdd_bridge`），以及一个以标准形态存在的 Spec Kit 扩展
+严格限定为两个命名技能（`sdd-setup`、`sdd-update`）、两个轻量 Host
+工具（`sdd_upstream`、`sdd_bridge`）、一个宿主中立的命令行入口
+（`bin/sdd-kit.mjs`，零第三方依赖）以及一个以标准形态存在的 Spec Kit 扩展
 （`spec-kit-extension/`，由 `specify extension add --dev` 装入，自身不含桥接代码）；
 新行为 MUST 以委托或薄胶水层实现，MUST NOT 形成并行逻辑。`/sdd-update` MUST 是声明式命令技能，仅委托 `sdd_upstream(update_all)`
 一次，MUST NOT 包含更新逻辑。
 
-零分叉的两条硬边界（v4.0.0）：
+零分叉的三条硬边界（v5.0.0）：
 - 插件 MUST NOT 复制或替换已安装的 profile 副本；自身安装与升级 MUST 走 DSH 包管理器
   （`dsh plugin add/update dsh-sdd-kit --latest`）。运行中的插件无法可靠替换自己。
 - `tasks.md` 勾选 MUST 只有上游 `/speckit.implement` 一个写者；插件 MUST NOT 提供
@@ -37,9 +38,20 @@ dsh-sdd-kit MUST NOT 重实现 GitHub Spec Kit 或 obra/superpowers。它 MUST �
 - 同一事实 MUST 只有一处可编辑源：打包白名单以 `package.json` 的 `files` 为准，
   EARS 模板以 `overrides/spec-template.md` 为准，安装产物 MUST NOT 入库。
 
-理由：这使项目始终可随上游升级，避免漂移；“薄”的实质是消灭第二套机制与第二份事实，
-而不是表面的技能个数。
+宿主中立 CLI 的边界（v5.0.0）：
+- `bin/sdd-kit.mjs` MUST 只做参数解析与结果序列化，业务逻辑 MUST 全部位于宿主无关核心
+  （`src/core/`）；CLI 与 Host 工具 MUST 调用同一核心函数，MUST NOT 各写一份。
+- 同一动作经 CLI 与经 Host 工具执行 MUST 输出结构同构的 JSON，且该同构性 MUST 由共享
+  契约测试断言，MUST NOT 依赖人工核对。
+- CLI 的存在 MUST NOT 使任一事实出现第二处可编辑源，也 MUST NOT 引入新的运行期依赖。
 
+理由：这使项目始终可随上游升级，避免漂移；“薄”的实质是消灭第二套机制与第二份事实，
+而不是表面的技能个数或入口个数。
+
+迁移说明（v5.0.0）：`bin/sdd-kit.mjs` 被列入允许表面，用于非 DSH 宿主（Claude Code、
+Codex、Cursor 等）没有 Host 工具通道时的等价能力。此前「对外表面严格限定为四项」的
+表述与任何据此写成的断言 MUST 在功能实现前更新为五项枚举；CLI 本身 MUST 只是核心的
+第二个薄入口。
 迁移说明（v4.0.0）：`update_all` 从三层降为两层上游（`spec-kit`、`superpowers`），
 `kit-copy` 自研安装器与 `check_task` 平行勾选路径整体删除，不保留兼容别名。
 迁移说明（v3.0.0）：v2.1.0 的三技能上限（`sdd-setup`、`sdd-implement`、`sdd-update`）
@@ -121,6 +133,9 @@ EARS 验收语法（`WHEN ... THE SYSTEM SHALL ...`），并 MUST 通过已安�
 每次 PR 与评审 MUST 验证对这些原则的合规性。运行时指导见 `README.md` 与已安装的
 Superpowers 技能；本文档仅定义不可协商的治理规则。
 
+v5.0.0 修订为 MAJOR，因为原则 I 的对外表面枚举被重新定义（新增宿主中立 CLI），
+属治理契约的不兼容变更；其迁移说明记录在原则 I 与顶部同步影响报告中，经项目拥有者
+对 /speckit-analyze 报告 C1 的显式采纳落地。
 v4.0.0 修订为 MAJOR，因为删除了 `update_all` 的第三组件与 `check_task` 动作及配套参数，
 属工具表面的不兼容收缩；其迁移说明记录在原则 I 与顶部同步影响报告中，经项目拥有者
 对宏观架构评审批次 1 的显式批准落地。
@@ -129,4 +144,4 @@ v2.1.0 修订为 MINOR，因为新增了原则 VI；其中文文档与答复规�
 拥有者授权。v2.0.0 修订为 MAJOR，因为原则 I 的表面上限被重新定义，其迁移说明记录在
 原则 I 中。
 
-**版本**：4.0.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-23
+**版本**：5.0.0 | **批准日期**：2026-11-23 | **最后修订**：2026-11-24
