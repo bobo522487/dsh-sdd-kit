@@ -88,16 +88,26 @@ function zone(items) {
   return { status: aggregate(items), items };
 }
 
-function findOnPath(binary, env) {
-  const paths = String(env?.PATH ?? '').split(path.delimiter).filter(Boolean);
-  return paths.some((dir) => {
+function findOnPath(binary, env, platform = process.platform) {
+  // PATH is platform-shaped: ';' on Windows, ':' elsewhere. The doctor never
+  // guesses suffix variants on POSIX; Windows honours PATHEXT plus the three
+  // built-in executable suffixes even when PATHEXT is absent.
+  const delimiter = platform === 'win32' ? path.win32.delimiter : path.posix.delimiter;
+  const paths = String(env?.PATH ?? '').split(delimiter).filter(Boolean);
+  let candidates = [binary];
+  if (platform === 'win32') {
+    const fromEnv = String(env?.PATHEXT ?? '').split(delimiter).filter(Boolean);
+    const extensions = [...new Set([...fromEnv, '.exe', '.cmd', '.ps1'].map((ext) => ext.toLowerCase()))];
+    candidates = extensions.map((ext) => (binary.toLowerCase().endsWith(ext) ? binary : `${binary}${ext}`));
+  }
+  return paths.some((dir) => candidates.some((candidate) => {
     try {
-      fs.accessSync(path.join(dir, binary), fs.constants.X_OK);
+      fs.accessSync(path.join(dir, candidate), fs.constants.X_OK);
       return true;
     } catch {
       return false;
     }
-  });
+  }));
 }
 
 async function readableDir(dir) {
@@ -110,21 +120,21 @@ async function readableDir(dir) {
   }
 }
 
-async function environmentZone({ env }) {
+async function environmentZone({ env, platform = process.platform }) {
   const items = [];
   const major = Number(process.versions.node.split('.')[0]);
   items.push(major >= 18
-    ? item('pass', 'NODE_VERSION', `Node ${process.versions.node} satisfies >=18`, 'No action needed.')
-    : item('fail', 'NODE_VERSION', `Node ${process.versions.node} is older than 18`, TOOL_FIX_COMMANDS.node));
+    ? item('pass', 'NODE_VERSION', `Node ${process.versions.node} 满足 >=18`, '无需处理。')
+    : item('fail', 'NODE_VERSION', `Node ${process.versions.node} 低于 18`, TOOL_FIX_COMMANDS.node));
   for (const binary of REQUIRED_TOOLS) {
-    items.push(findOnPath(binary, env)
-      ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} is on PATH`, 'No action needed.')
-      : item('fail', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, TOOL_FIX_COMMANDS[binary]));
+    items.push(findOnPath(binary, env, platform)
+      ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} 已在 PATH 中`, '无需处理。')
+      : item('fail', `TOOL_${binary.toUpperCase()}`, `${binary} 不在 PATH 中`, TOOL_FIX_COMMANDS[binary]));
   }
   for (const binary of OPTIONAL_TOOLS) {
-    items.push(findOnPath(binary, env)
-      ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} is on PATH`, 'No action needed.')
-      : item('warn', `TOOL_${binary.toUpperCase()}`, `${binary} is missing from PATH`, TOOL_FIX_COMMANDS[binary]));
+    items.push(findOnPath(binary, env, platform)
+      ? item('pass', `TOOL_${binary.toUpperCase()}`, `${binary} 已在 PATH 中`, '无需处理。')
+      : item('warn', `TOOL_${binary.toUpperCase()}`, `${binary} 不在 PATH 中`, TOOL_FIX_COMMANDS[binary]));
   }
 
   // Read-only mirror probe: declared sources only, never a network fetch.

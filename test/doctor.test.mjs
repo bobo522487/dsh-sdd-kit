@@ -107,6 +107,203 @@ async function snapshot(root) {
   return out;
 }
 
+// T096: user-facing prose must be Chinese. Commands, flags, paths, field names,
+// host/integration keys and upstream titles are technical tokens and stay verbatim.
+const EXEMPT_TECHNICAL_LITERALS = new Set([
+  'pass', 'fail', 'warn', 'skip', 'not_executed', 'error', 'ok',
+  'node', 'npm', 'uv', 'git', 'specify', 'user', 'host', 'project', 'plugin', 'bundled',
+  'unknown', 'default', 'none', 'active', 'utf8', 'text', 'json', 'md',
+  'upstream-mirror', 'system-prompt', 'user-skills', 'kit-package-fallback',
+  'skill-metadata', 'skill-version-unavailable',
+]);
+const ENGLISH_PROSE_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'is', 'are', 'was', 'were', 'be', 'been', 'to',
+  'of', 'in', 'on', 'at', 'by', 'for', 'from', 'with', 'not', 'no', 'this', 'that',
+  'it', 'its', 'use', 'uses', 'used', 'using', 'run', 'running', 'check', 'fix',
+  'remove', 'reinstall', 'restore', 'rerun', 'point', 'pick', 'pass', 'load',
+  'disable', 'leave', 'found', 'missing', 'present', 'configured', 'detected',
+  'provided', 'observed', 'discoverable', 'verified', 'executed', 'supplied',
+  'scored', 'older', 'satisfies', 'intentionally', 'omitted', 'bounded',
+  'controlled', 'projects', 'one', 'each', 'only', 'whether', 'real', 'needed',
+  'values', 'supported', 'accepts', 'does', 'did', 'can', 'after', 'before',
+  'above', 'leftovers', 'artifacts', 'record', 'affected', 'reloads', 'dropped',
+  'provenance', 'probed', 'error', 'errors', 'unknown', 'option', 'options',
+  'commands', 'arguments', 'authored', 'template', 'copy', 'local', 'edits',
+  'skipped', 'none', 'mounted', 'winner', 'conflicting', 'conflicts', 'visible',
+  'history', 'earlier', 'runs', 'matches', 'differs', 'keep', 'precedence',
+  'own', 'render', 'restart', 'readable', 'unreadable', 'starts', 'supplied',
+  'silently', 'fails', 'documented', 'retry', 'stale', 'whether', 'score',
+]);
+const PROSE_CONNECTIVE_RE = new RegExp(`\\b(?:${[...ENGLISH_PROSE_WORDS].filter((word) => !['install', 'use', 'used'].includes(word)).join('|')})\\b`, 'i');
+const COMMAND_SPAN_RE = /\b(?:nvm|npm|uv|git|curl|apt-get|brew|specify|node|sdd-kit)\b[^。；;，,）)]*(?=[。；;，,）)]|$)/g;
+
+function stripForProse(value) {
+  return String(value ?? '')
+    .replace(COMMAND_SPAN_RE, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/['"][^'"]*['"]/g, ' ')
+    .replace(/\bhost[：:]\s*[\w.-]+/g, ' ')
+    .replace(/\$\{[^}]*\}/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/--?[A-Za-z][\w-]*/g, ' ')
+    .replace(/\b[\w.-]+\s*=\s*[^\s;,，；）)]*/g, ' ')
+    .replace(/[\w.@+-]*[/\\][\w./\\-]*/g, ' ')
+    .replace(/\b[A-Z][A-Z0-9_]*\b/g, ' ')
+    .replace(/[^A-Za-z\u4e00-\u9fff]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function firstEnglishProse(value) {
+  return stripForProse(value).split(' ').find((word) => ENGLISH_PROSE_WORDS.has(word.toLowerCase())) ?? null;
+}
+
+function assertChineseProse(value, label) {
+  assert.equal(firstEnglishProse(value), null, `${label} 仍含英文散文：${JSON.stringify(value)} -> ${JSON.stringify(stripForProse(value))}`);
+}
+
+function sourceStringLiterals(source) {
+  const withoutComments = source.split(/\r?\n/).filter((line) => {
+    const trimmed = line.trim();
+    return !trimmed.startsWith('//') && !trimmed.startsWith('/*') && !trimmed.startsWith('*');
+  }).join('\n');
+  const literals = [];
+  const re = /'((?:\\.|[^'\\\r\n])*)'|"((?:\\.|[^"\\\r\n])*)"|`((?:\\.|[^`\\\r\n])*)`/g;
+  for (const match of withoutComments.matchAll(re)) literals.push(match[1] ?? match[2] ?? match[3]);
+  return literals;
+}
+
+function isTechnicalLiteral(literal) {
+  if (EXEMPT_TECHNICAL_LITERALS.has(literal)) return true;
+  if (/[\u4e00-\u9fff]/.test(literal)) return true;
+  if (!/\s/.test(literal.trim())) return true;
+  if (/^(?:nvm|npm|uv|git|curl|apt-get|brew|specify|node|sdd-kit)\b/.test(literal)
+    && !PROSE_CONNECTIVE_RE.test(literal)) return true;
+  return false;
+}
+
+test('T096: every doctor message and fix uses Chinese prose with technical tokens exempt', async () => {
+  const repo = await makeRepo();
+  const bin = await makeBinDir(['node', 'npm', 'uv', 'specify', 'git']);
+  const mirror = await makeMirrorFixture();
+  await writeIntegrationManifest(repo, { installed: ['dsh'], active: 'dsh' });
+  await installRenderedSkills(repo, '.dsh', ['speckit-superpowers-hooks-before-implement']);
+  const markerFile = path.join(repo, '.specify', 'sdd-pending.json');
+  await fs.writeFile(markerFile, JSON.stringify({
+    dsh: { host: 'dsh', layer: 'tool_code', timestamp: new Date().toISOString(), reason: 'update' },
+  }), 'utf8');
+  const config = path.join(repo, 'host-cordis.yml');
+  await fs.writeFile(config, 'plugins:\n  - name: dsh-sdd-kit\n', 'utf8');
+  const skills = [{
+    name: 'my-private-skill', description: '', whenToUse: '', source: 'user-dsh',
+    provider: 'user', path: '/fake/home/.dsh/skills/my-private-skill/SKILL.md',
+  }];
+  const env = { PATH: bin, DSH_SDD_KIT_SUPERPOWERS_DIR: mirror, DSH_CONFIG: config };
+  const reports = [
+    await runDoctor({ cwd: repo, host: 'dsh', env, skills, trigger: 'debug failing test' }),
+    await runDoctor({ cwd: repo, host: 'unknown-host', env: {}, skills: [] }),
+  ];
+  let checked = 0;
+  for (const report of reports) {
+    for (const [zoneName, zoneReport] of Object.entries(report)) {
+      for (const entry of zoneReport.items) {
+        assertChineseProse(entry.message, `${zoneName}/${entry.code}.message`);
+        if (entry.fix !== undefined) assertChineseProse(entry.fix, `${zoneName}/${entry.code}.fix`);
+        checked += 1;
+      }
+    }
+  }
+  assert.ok(checked > 20);
+});
+
+test('T096: static guard rejects English prose in doctor/CLI message and fix literals', async () => {
+  const files = [
+    path.join(PKG_ROOT, 'src', 'core', 'doctor.mjs'),
+    path.join(PKG_ROOT, 'bin', 'sdd-kit.mjs'),
+  ];
+  let scanned = 0;
+  for (const file of files) {
+    const source = await fs.readFile(file, 'utf8');
+    for (const literal of sourceStringLiterals(source)) {
+      scanned += 1;
+      if (isTechnicalLiteral(literal)) continue;
+      assertChineseProse(literal, `${path.relative(PKG_ROOT, file)} literal`);
+    }
+  }
+  assert.ok(scanned > 20);
+});
+
+test('T098: POSIX PATH probes exact executable names only', async () => {
+  const root = await makeRepo();
+  const bin = path.join(root, 'posix-bin');
+  await fs.mkdir(bin, { recursive: true });
+  for (const name of ['node.exe', 'npm.cmd', 'uv.ps1', 'specify.exe', 'git.cmd']) {
+    const file = path.join(bin, name);
+    await fs.writeFile(file, '#!/bin/sh\n', 'utf8');
+    await fs.chmod(file, 0o755);
+  }
+  const before = await snapshot(root);
+  const report = await runDoctor({
+    cwd: root,
+    platform: 'posix',
+    env: { PATH: bin, PATHEXT: '.EXE;.CMD;.PS1' },
+  });
+  const expected = {
+    TOOL_NODE: 'fail', TOOL_NPM: 'fail', TOOL_SPECIFY: 'fail',
+    TOOL_UV: 'warn', TOOL_GIT: 'warn',
+  };
+  for (const [code, status] of Object.entries(expected)) {
+    const entry = findItem(report.environment, code);
+    assert.equal(entry.status, status, `${code} must not treat a Windows-suffixed file as a POSIX executable`);
+  }
+  assert.deepEqual(await snapshot(root), before);
+});
+
+test('T098: Windows-shaped PATH resolves PATHEXT and built-in suffixes without writes', async () => {
+  const root = await makeRepo();
+  const emptyBin = path.join(root, 'empty-bin');
+  const bin = path.join(root, 'win-bin');
+  await fs.mkdir(emptyBin, { recursive: true });
+  await fs.mkdir(bin, { recursive: true });
+  const tools = { node: 'bat', npm: 'cmd', uv: 'ps1', specify: 'exe', git: 'exe' };
+  for (const [name, ext] of Object.entries(tools)) {
+    const file = path.join(bin, `${name}.${ext}`);
+    await fs.writeFile(file, 'stub', 'utf8');
+    await fs.chmod(file, 0o755);
+  }
+  const before = await snapshot(root);
+  const report = await runDoctor({
+    cwd: root,
+    platform: 'win32',
+    env: {
+      PATH: [emptyBin, bin].join(path.win32.delimiter),
+      PATHEXT: ['.EXE', '.CMD', '.PS1', '.BAT'].join(path.win32.delimiter),
+    },
+  });
+  for (const name of Object.keys(tools)) {
+    const entry = findItem(report.environment, `TOOL_${name.toUpperCase()}`);
+    assert.equal(entry.status, 'pass', `${name} is installed and must not be reported missing`);
+  }
+  assert.deepEqual(await snapshot(root), before);
+});
+
+test('T098: Windows probes still find default .exe/.cmd/.ps1 when PATHEXT is absent', async () => {
+  const root = await makeRepo();
+  const bin = path.join(root, 'win-default-bin');
+  await fs.mkdir(bin, { recursive: true });
+  for (const [name, ext] of Object.entries({ node: 'exe', npm: 'cmd', uv: 'ps1', specify: 'exe', git: 'exe' })) {
+    const file = path.join(bin, `${name}.${ext}`);
+    await fs.writeFile(file, 'stub', 'utf8');
+    await fs.chmod(file, 0o755);
+  }
+  const before = await snapshot(root);
+  const report = await runDoctor({ cwd: root, platform: 'win32', env: { PATH: bin } });
+  for (const name of ['node', 'npm', 'uv', 'specify', 'git']) {
+    assert.equal(findItem(report.environment, `TOOL_${name.toUpperCase()}`).status, 'pass', name);
+  }
+  assert.deepEqual(await snapshot(root), before);
+});
+
 test('doctor reports all five zones with the two distinct status enums (REQ-33/REQ-39)', async () => {
   const repo = await makeRepo();
   const report = await runDoctor({ cwd: repo, host: 'dsh' });
