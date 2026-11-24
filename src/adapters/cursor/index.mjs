@@ -8,6 +8,7 @@ import path from 'node:path';
 
 import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
+import { clearMarker } from '../../core/marker.mjs';
 
 const CAP = HOST_CAPABILITIES.cursor;
 
@@ -31,11 +32,19 @@ export function cursorDefaultConfig() {
 }
 
 export async function applyCursorGuidance({ cwd = process.cwd(), env = process.env, skills } = {}) {
+  // Startup completes a previous pending change: drop only this repository's
+  // entry for this host (REQ-18). A failed clear never blocks guidance.
+  await clearMarker({ cwd, host: CAP.key }).catch(() => {});
+
   const bundle = await assembleGuidance({ host: CAP.key, cwd, env, skills });
   const text = formatGuidanceText(bundle);
   const target = path.join(cwd, CAP.guidanceConfig.rulePath);
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, text, 'utf8');
+  const enabled = bundle.enabled !== false;
+  const written = enabled && Boolean(bundle.upstreamText?.trim());
+  if (written) {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, text, 'utf8');
+  }
   const warnings = [...bundle.warnings];
-  return { channel: 'rule-dir', text, target, warnings, bundle };
+  return { channel: 'rule-dir', text, target, enabled, written, warnings, bundle };
 }

@@ -2,9 +2,13 @@
  * DSH guidance adapter — registers the shared guidance bundle as an ordered,
  * always-present system prompt section. Host-only APIs stay in this file; the
  * text itself comes from src/core/guidance.mjs (REQ-08/REQ-10).
+ *
+ * It also hosts the startup host selector: src/index.mjs imports this module
+ * anyway, and keeping the pure selector here makes it unit-testable without
+ * loading the DSH runtime.
  */
 
-import { HOST_CAPABILITIES } from '../../core/host-capabilities.mjs';
+import { HOST_CAPABILITIES, HOST_KEYS } from '../../core/host-capabilities.mjs';
 import { assembleGuidance, formatGuidanceText } from '../../core/guidance.mjs';
 import { clearMarker } from '../../core/marker.mjs';
 
@@ -12,6 +16,28 @@ const CAP = HOST_CAPABILITIES.dsh;
 
 export function renderGuidanceText(bundle) {
   return formatGuidanceText(bundle);
+}
+
+/** Pure startup host resolution: explicit env > context marker > dsh (T086). */
+export function resolveGuidanceHost({ ctx, env = process.env } = {}) {
+  let declared = env?.DSH_SDD_KIT_HOST;
+  if (declared == null && typeof ctx?.sddKitHost === 'string') declared = ctx.sddKitHost;
+  if (declared == null && typeof ctx?.get === 'function') {
+    try {
+      const value = ctx.get('sddKitHost');
+      if (typeof value === 'string') declared = value;
+    } catch {
+      // ctx may not know this service; fall through to the default host.
+    }
+  }
+  const host = typeof declared === 'string' ? declared.trim().toLowerCase() : '';
+  return HOST_KEYS.includes(host) ? host : 'dsh';
+}
+
+function withStatus(dispose, status) {
+  const fn = typeof dispose === 'function' ? dispose : () => {};
+  fn.status = { ...status };
+  return fn;
 }
 
 /**
@@ -26,20 +52,28 @@ export async function applyDshGuidance(ctx, { cwd = process.cwd(), env = process
   const service = typeof ctx?.get === 'function' ? ctx.get(CAP.guidanceConfig.service) : undefined;
   if (!service || typeof service.section !== 'function') {
     warnings.push('ctx.systemPrompt 服务缺失，会话引导静默缺席。');
-    return () => {};
+    return withStatus(() => {}, { enabled: null, registered: false, reason: 'no-service', warnings });
   }
 
   const bundle = await assembleGuidance({ host: CAP.key, cwd, env });
   warnings.push(...bundle.warnings);
-  if (!bundle.enabled) return () => {};
+  const enabled = bundle.enabled !== false;
+  const hasText = Boolean(bundle.upstreamText?.trim?.());
+  if (!enabled) {
+    return withStatus(() => {}, { enabled, registered: false, reason: 'disabled', warnings });
+  }
+  if (!hasText) {
+    return withStatus(() => {}, { enabled, registered: false, reason: 'no-upstream', warnings });
+  }
 
   const anchorOrder = typeof service.getSectionOrder === 'function'
     ? service.getSectionOrder(CAP.guidanceConfig.sectionOrderAnchor)
     : 0;
   const text = renderGuidanceText(bundle);
-  return service.section({
+  const dispose = service.section({
     name: CAP.guidanceConfig.sectionName,
     order: anchorOrder + CAP.guidanceConfig.sectionOrderOffset,
     text,
   });
+  return withStatus(dispose, { enabled, registered: true, reason: 'registered', warnings });
 }
