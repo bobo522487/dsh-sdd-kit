@@ -29,9 +29,9 @@ description: "004-multihost-runtime-governance 任务清单"
 
 **Purpose**：建立新目录骨架与打包/脚本入口，不改任何既有逻辑。
 
-- [ ] T001 建立 `src/adapters/dsh/`、`src/adapters/claude/`、`src/adapters/codex/`、`src/adapters/cursor/`、`bin/`、`docs/adapters/` 六个目录（`src/adapters/`、`bin/`、`docs/adapters/`）
-- [ ] T002 [P] 在 `package.json` 增加 `bin` 字段（`"sdd-kit": "./bin/sdd-kit.mjs"`）并把 `bin/`、`docs/` 加入 `files` 白名单（`package.json`）
-- [ ] T003 [P] 在 `package.json` 的 `scripts` 增加 `test:contract`（`node --test test/contract-*.test.mjs`）与 `test:adapters`（`node --test test/adapters*.test.mjs`）（`package.json`）
+- [x] T001 建立 `src/adapters/dsh/`、`src/adapters/claude/`、`src/adapters/codex/`、`src/adapters/cursor/`、`bin/`、`docs/adapters/` 六个目录（`src/adapters/`、`bin/`、`docs/adapters/`）
+- [x] T002 [P] 在 `package.json` 增加 `bin` 字段（`"sdd-kit": "./bin/sdd-kit.mjs"`）并把 `bin/`、`docs/` 加入 `files` 白名单（`package.json`）
+- [x] T003 [P] 在 `package.json` 的 `scripts` 增加 `test:contract`（`node --test test/contract-*.test.mjs`）与 `test:adapters`（`node --test test/adapters*.test.mjs`）（`package.json`）
 
 **Checkpoint**：目录与打包入口就绪，`npm test` 仍为基线全绿（91/91，数字不固定，以全绿为判据）。
 
