@@ -27,7 +27,16 @@ export async function runSetup(args = {}, deps = {}) {
   // REQ-11: a mirror sync failure must not abort the extension install.
   const sync = await upstream({ action: 'sync_superpowers', cwd, superpowersDir: args.superpowersDir, repoUrl: args.repoUrl });
   record('sync_superpowers', sync.ok ? 'performed' : 'failed',
-    sync.ok ? { mode: sync.mode, skillCount: sync.skillCount } : { stderr: sync.stderr });
+    sync.ok
+      ? {
+          mode: sync.mode,
+          skillCount: sync.skillCount,
+          dir: sync.dir ?? null,
+          selection: sync.selection
+            ? { reason: sync.selection.reason, realPath: sync.selection.realPath }
+            : null,
+        }
+      : { stderr: sync.stderr });
   const restartRequired = sync.mode === 'clone';
 
   const status = await upstream({ action: 'status', cwd, superpowersDir: args.superpowersDir });
