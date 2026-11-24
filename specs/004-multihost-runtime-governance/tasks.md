@@ -246,6 +246,54 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ---
 
+## Phase 12: Convergence（规格差距收敛）
+
+**Purpose**：基于 2026-11-24 的三路只读评估（REQ-01~46 / AC-01~23）与 spec/plan 对照，补齐已实现但与规范不完全一致的缺口。所有任务完成并通过 TDD 前，不得宣称 Converged。
+
+**Gate**：P0 必须先完成；P1 可在 P0 之后并行；P2 依赖 P0/P1 的公开接口稳定。
+
+### P0：正确性与安全边界（阻塞）
+
+- [x] T067 [US2] 先补失败用例，再让四个引导投递通道统一以 `bundle.enabled` 为闸门：Claude/Codex/Cursor 适配器关闭时不得写托管块/规则文件，CLI `--text` 关闭时不得输出引导文本；补 `test/adapters-claude.test.mjs`、`test/adapters-codex.test.mjs`、`test/adapters-cursor.test.mjs`、`test/contract-parity.test.mjs` 的关闭开关用例（`src/adapters/claude/index.mjs`、`src/adapters/codex/index.mjs`、`src/adapters/cursor/index.mjs`、`bin/sdd-kit.mjs`）
+- [x] T068 [US2] 让 `toolMapping(host)` 从 `HOST_CAPABILITIES` 派生：DSH 映射 `sdd_upstream`/`sdd_bridge`，非 DSH 映射 `sdd-kit <subcommand>`；`assembleGuidance` 必须实际使用 `host`，并同步 `contracts/host-adapter.md` 与四端逐字断言（`src/core/guidance.mjs`、`src/core/host-capabilities.mjs`、`test/guidance.test.mjs`、`specs/004-multihost-runtime-governance/contracts/host-adapter.md`）
+- [x] T069 [US2] 镜像缺失或 `upstreamText` 为空时，DSH 不得注册 `service.section`，Claude/Codex/Cursor 不得落盘，并把告警投递到宿主可见通道；补空镜像/改名场景测试（`src/adapters/dsh/index.mjs`、`src/adapters/claude/index.mjs`、`src/adapters/codex/index.mjs`、`src/adapters/cursor/index.mjs`、`test/adapters*.test.mjs`）
+- [x] T070 [US2] 以 `formatGuidanceText(bundle)` 的最终文本（含标题、工具映射、当前进度标签）计算 `tokenEstimate` 与 1.2k 闸门，超限仍只裁剪 `sddPointer` 并记录告警；补最终文本 ≤1200 或告警的断言（`src/core/guidance.mjs`、`test/guidance.test.mjs`）
+- [x] T071 [US2] 按 REQ-08「引用而非复制」与 1.2k 预算明确“上游原文”的注入单位为 frontmatter `name + description`（不复制 SKILL.md 全文）；超长引用条目完整保留、只裁 SDD 指针并记录超限告警；补超长 description 用例（`src/core/guidance.mjs`、`test/guidance.test.mjs`、`specs/004-multihost-runtime-governance/data-model.md`）
+- [x] T072 [US7] 体检读取 `.specify/integration.json` / `.specify/integrations.yml` 的已装集成清单，逐端检查 `skillsDir` 下六个命令技能与四个执行钩子；非激活端未渲染必须 `warn`/`fail` 而非恒 `pass`；补多集成与单集成测试（`src/core/doctor.mjs`、`test/doctor.test.mjs`）
+- [x] T073 [US7] 宿主区 Cursor 信任告警复用 `checkTrustFlags` 与 `CAP.trustFlagPattern`，不得按 `trustFlags.length` 一刀切；`--harmless` 不告警、真实 `--trust`/`--approve-mcps`/`--force`/`-p` 告警；补测试（`src/core/doctor.mjs`、`src/adapters/cursor/index.mjs`、`test/doctor.test.mjs`、`test/adapters-cursor.test.mjs`）
+- [x] T074 [US7] 环境区一次性全量探测 `node/npm/uv/specify/git` 与上游镜像/纪律技能可读性，逐项给出状态、失败原因和可直接执行的修复命令；缺必需项置 `fail`，缺镜像按 REQ-11/AC-07 报失败或告警；补临时 PATH/空镜像测试（`src/core/doctor.mjs`、`test/doctor.test.mjs`）
+- [x] T075 [US7] 宿主区报告纪律技能的安装渠道与**实际版本**（从技能插件/扩展清单/镜像读取），不得用套件自身 `package.json` 版本冒充；补有/无技能插件两种测试（`src/core/doctor.mjs`、`test/doctor.test.mjs`）
+- [x] T076 [US7] 运行时区报告每个可见技能的 `name/provider/path/source`，同名冲突给出胜出者与优先级顺序；补同名跨提供者测试（`src/core/doctor.mjs`、`test/doctor.test.mjs`）
+- [x] T077 [US7] CLI `doctor --trigger` 按宿主技能目录与用户级目录收集 `SkillSummary[]` 后传给 `runDoctor`，不得因 `skills=[]` 恒报 `skipped`，且不执行任何技能；补 CLI 触发试跑测试（`bin/sdd-kit.mjs`、`src/core/action.mjs`、`test/doctor.test.mjs`）
+- [x] T078 [US7] 体检新增“非本套件产物”标注项，识别并列出用户自建普通技能，不误报为漂移；补 boundary/doctor 测试（`src/core/doctor.mjs`、`test/boundary.test.mjs`、`test/doctor.test.mjs`）
+- [x] T079 [US1] 把 `DSH_*` 环境变量、`host='dsh'` 默认值等宿主专属引用纳入核心纯度静态门禁；把 DSH 路径/环境解析下沉到 `src/adapters/dsh/` 或能力表，核心只接受注入，并补自证用例（`test/contract-core-purity.test.mjs`、`src/core/candidates.mjs`、`src/core/doctor.mjs`、`src/adapters/dsh/index.mjs`）
+
+### P1：重载、标记与适配器接线
+
+- [x] T080 [US3] 待生效标记支持记录全部受影响层（`layers` 数组或按层多条），`withReload` 不得只写 `layers[0]`；消费端兼容并补多组件更新测试（`src/core/action.mjs`、`src/core/marker.mjs`、`test/marker.test.mjs`、`test/reload.test.mjs`）
+- [x] T081 [US3] 为 Claude/Codex/Cursor 增加启动清理入口，CLI `guidance`/`doctor` 支持按 `--host` 清理当前仓库当前宿主条目；doctor 的修复提示必须指向真实存在的命令；补各端清理测试（`src/adapters/claude/index.mjs`、`src/adapters/codex/index.mjs`、`src/adapters/cursor/index.mjs`、`bin/sdd-kit.mjs`、`src/core/doctor.mjs`、`test/adapters-marker.test.mjs`）
+- [x] T082 [US3] 重载后的 follow-up 文案由 `HOST_CAPABILITIES` 派生，删除 `src/core/update.mjs` 中硬编码的 “Restart DSH”，并按 DSH/Claude/Codex/Cursor 分别断言（`src/core/update.mjs`、`src/core/host-capabilities.mjs`、`test/reload.test.mjs`）
+- [x] T083 [US3] 让扩展命令变更进入生产链路：`components`→`changedLayers`→`decideReload` 覆盖 `extension_command` 层，并验证三态结论（`src/core/update.mjs`、`src/core/action.mjs`、`src/core/reload.mjs`、`test/reload.test.mjs`）
+- [x] T084 [US3] 历史标记判定改为相对于本次运行/会话基线（或记录 run/session 标识），替代固定 24h 墙钟；补“跨天仍为本次”“23 小时前历史残留”两类测试（`src/core/doctor.mjs`、`src/core/marker.mjs`、`test/doctor.test.mjs`、`test/marker.test.mjs`）
+- [x] T085 [US5] Claude 缺插件判据改为上游扩展命令/纪律技能命名（如 `speckit-superpowers-hooks-*` 与官方纪律技能名），不得用 `/sdd-(setup|update)/`；补已装/未装两种测试（`src/adapters/claude/index.mjs`、`test/adapters-claude.test.mjs`）
+- [x] T086 [US6] 为 `applyCodexGuidance`/`applyCursorGuidance` 增加实际启动接线（CLI 子命令或各端 session 入口），幂等写托管块/规则文件；同步 `docs/adapters/codex.md`、`docs/adapters/cursor.md` 与真实渠道一致并补端到端测试（`src/adapters/codex/index.mjs`、`src/adapters/cursor/index.mjs`、`bin/sdd-kit.mjs`、`docs/adapters/codex.md`、`docs/adapters/cursor.md`、`test/adapters-codex.test.mjs`、`test/adapters-cursor.test.mjs`）
+- [x] T087 [US5] 把 Claude 托管块标记与技能判定下沉到 `HOST_CAPABILITIES`/核心，适配器只做 IO；补“适配器无业务判定”约束测试与 ≤100 行断言（`src/adapters/claude/index.mjs`、`src/core/host-capabilities.mjs`、`test/host-capabilities.test.mjs`、`test/adapters-claude.test.mjs`）
+
+### P2：契约与回归
+
+- [x] T088 [US1] 把 CLI/宿主工具同构断言扩展到 `update`/`bridge`/`doctor`，并处理不可达参数：`--action` 要么实现要么拒绝，`upgrade/switch-integration/use-skills/python/superpowers-dir/repoUrl/extension-dir` 要么接到 `setup`/`upstream` 要么删除；补测试（`bin/sdd-kit.mjs`、`test/contract-parity.test.mjs`、`src/core/action.mjs`）
+- [x] T089 [US7] CI 矩阵补 `pull_request`（必要时 `push`）触发；`pinned-mirror` 的镜像目录必须真正用于 `specify init`/doctor/verify；doctor 冒烟传 `--host "$HOST_KEY"`；补 workflow 静态断言（`.github/workflows/upstream-integration.yml`、`test/ci-matrix.test.mjs`）
+- [x] T090 [US7] CI 门禁断言扩展安装后 `COMMAND_SKILLS`/`EXTENSION_STATE`/`TEMPLATE_*` 子项为 `pass`，不得只看区级 `pass`；`scripts/verify-upstream.mjs` 对 `not_executed` 返回非零，并在报告中加入“需调整的版本下界”字段（`.github/workflows/upstream-integration.yml`、`scripts/verify-upstream.mjs`、`test/ci-matrix.test.mjs`）
+- [x] T091 [US7] 在具备宿主运行时的环境实测并写入 peer 依赖下界，让版本下界/预发布用例在默认 CI 或常态脚本执行，不只依赖 `DSH_SDD_KIT_INTEGRATION` 手工开关；记录预发布判定结论（`package.json`、`test/compat.test.mjs`、`.github/workflows/upstream-integration.yml`）
+- [x] T092 [US8] 把 M1–M4 前置最小验证与止损线做成可执行门槛（脚本或 CI gate），前置失败时阻断后续里程碑并落到预设降级，而不只是文档表；补门槛测试（`docs/adapters/stop-loss.md`、`scripts/`、`.github/workflows/upstream-integration.yml`、`test/`）
+- [x] T093 [US4] `src/core/feature-phase.mjs` 在 tasks.md 存在但零勾选且无 plan.md 时继续按 `spec.md→specify` 回落，与 data-model 的判定顺序一致；补测试（`src/core/feature-phase.mjs`、`test/feature-phase.test.mjs`）
+- [x] T094 [US7] 触发打分改用码点比较，name/provider 同分时再以 path/source 作最终稳定键；excluded 技能语义与 data-model 对齐并补确定性用例（`src/core/trigger.mjs`、`test/trigger.test.mjs`、`specs/004-multihost-runtime-governance/data-model.md`）
+- [x] T095 [US7] 刷新本仓库的扩展安装态并在体检中验证：`.specify` 下重新安装 `spec-kit-extension` 后确认六个钩子、`session_start` 与 `guard`/`guidance` 命令落盘，记录安装前后证据（`.specify/`、`spec-kit-extension/extension.yml`、`quickstart.md`）
+
+**Checkpoint**：T067–T079 完成后重跑 P0 回归；T080–T087 完成后重跑重载/适配器测试；T088–T095 完成后执行全量 `npm test`、`npm run test:contract`、`npm run test:adapters` 与真实 `doctor` 冒烟。
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
