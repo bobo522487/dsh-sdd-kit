@@ -2299,6 +2299,12 @@ test('upstream: status and sync_superpowers report the selected directory (REQ-0
     assert.equal(status.superpowers.selection.reason, 'explicit');
     assert.equal(status.superpowers.selection.realPath, explicit);
     assert.equal(status.superpowers.selection.fallback, false);
+    assert.ok(Array.isArray(status.superpowers.selection.candidates), 'the report must keep every declaration');
+    assert.ok(status.superpowers.selection.candidates.length >= 3, 'explicit, dsh_home and default are always declared');
+    for (const candidate of status.superpowers.selection.candidates) {
+      assert.equal(candidate.mtimeNs === null || typeof candidate.mtimeNs === 'string', true,
+        'bigint mtimeNs must be JSON-safe in the report');
+    }
 
     const synced = await runUpstream({ action: 'sync_superpowers', cwd: root, superpowersDir: explicit }, runner);
     assert.equal(synced.dir, explicit);
@@ -2437,6 +2443,29 @@ test('verify-upstream: the unit suite never imports the real verification module
   assert.equal(source.includes(gate), false,
     'REQ-18: the unit suite must not switch the integration suite on');
   const integrationSuite = await fs.readFile(path.join(PKG_ROOT, 'test', 'upstream-contract.test.mjs'), 'utf8');
-  assert.match(integrationSuite, new RegExp(gate));
-  assert.match(integrationSuite, /t\.skip/);
+  assert.match(integrationSuite, /verifyUpstream/);
+  assert.match(integrationSuite, /skip:/, 'the integration suite must be opt-in');
+});
+
+test('sdd-setup skill reports nextAction and selection evidence without naming actions (INV-22/REQ-08)', async () => {
+  const raw = await fs.readFile(path.join(PKG_ROOT, 'skills', 'sdd-setup', 'SKILL.md'), 'utf8');
+  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  assert.match(body, /nextAction/, 'REQ-05: the report must surface the recommended next step');
+  assert.match(body, /selection/, 'REQ-08: the report must surface why that mirror was chosen');
+  assert.match(body, /等待确认|等用户确认|confirm/, 'the next step needs explicit user consent');
+  for (const forbidden of ['install_overrides', 'restore_overrides', 'sync_index']) {
+    assert.equal(body.includes(forbidden), false, `INV-22: the skill must not hardcode the action name ${forbidden}`);
+  }
+});
+
+test('README documents the safety behaviours without the disproven gitignore claim (INV-17)', async () => {
+  const readme = await fs.readFile(path.join(PKG_ROOT, 'README.md'), 'utf8');
+  assert.match(readme, /安装安全性/);
+  for (const verdict of ['not_installed', 'installed_consistent', 'user_modified', 'stale_upstream', 'unknown']) {
+    assert.match(readme, new RegExp(verdict), `README must document the ${verdict} verdict`);
+  }
+  assert.match(readme, /\.backup\//);
+  assert.match(readme, /verify:upstream/);
+  assert.equal(/\.gitignore[^\n]*忽略[^\n]*\.backup|宿主 \.gitignore/.test(readme), false,
+    'INV-17: the snapshot directory ignores itself; never claim the host .gitignore covers it');
 });
