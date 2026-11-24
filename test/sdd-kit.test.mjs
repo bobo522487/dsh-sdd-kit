@@ -2227,6 +2227,8 @@ test('candidates: dedupes by realpath and prefers the most recently modified (AC
 test('candidates: mtime ties fall back to declaration order; nothing resolvable means a default fallback', async (t) => {
   if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
   const root = await makeTempDir();
+  const savedHome = process.env.HOME;
+  process.env.HOME = root;
   try {
     const [a, b] = await seedCandidateDirs(root, ['a', 'b'], Date.now());
     const when = (await fs.stat(a)).mtimeMs;
@@ -2244,6 +2246,8 @@ test('candidates: mtime ties fall back to declaration order; nothing resolvable 
     assert.equal(fallback.candidates.every((x) => x.eligible === false), true);
     assert.equal(fallback.candidates.filter((x) => x.selected).length, 1);
   } finally {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
     await fs.rm(root, { recursive: true, force: true });
   }
 });

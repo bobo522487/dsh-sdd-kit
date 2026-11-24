@@ -24,7 +24,8 @@ export async function selectSuperpowersDir(args = {}, env = process.env) {
   for (const dir of args.candidateDirs ?? []) push(1, 'candidateDirs', dir);
   push(2, 'env', env.DSH_SDD_KIT_SUPERPOWERS_DIR);
   if (env.DSH_HOME) push(3, 'dsh_home', path.join(env.DSH_HOME, 'upstream', 'superpowers'));
-  push(4, 'default', path.join(env.HOME ?? os.homedir(), '.dsh', 'upstream', 'superpowers'));
+  // os.homedir() follows HOME on POSIX / USERPROFILE on Windows; no third env var is read here.
+  push(4, 'default', path.join(os.homedir(), '.dsh', 'upstream', 'superpowers'));
 
   const seenRealPaths = new Set();
   const candidates = [];
@@ -55,7 +56,13 @@ export async function selectSuperpowersDir(args = {}, env = process.env) {
   const eligible = candidates.filter((candidate) => candidate.eligible);
   let selected;
   let fallback = false;
-  if (eligible.length === 0) {
+  const explicit = candidates.find((candidate) => candidate.reason === 'explicit');
+  if (explicit) {
+    // An explicit request wins even when the directory does not exist yet: it is
+    // the clone target. Silently redirecting it to another existing mirror would
+    // ignore the caller's instruction.
+    selected = explicit;
+  } else if (eligible.length === 0) {
     selected = candidates.find((candidate) => candidate.reason === 'default');
     fallback = true;
   } else {
