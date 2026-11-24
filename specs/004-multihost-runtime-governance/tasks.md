@@ -85,16 +85,16 @@ description: "004-multihost-runtime-governance 任务清单"
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T017 [P] [US2] 写失败测试 `test/guidance.test.mjs`：三段内容齐备、`tokenEstimate ≤ 1200`、超限只裁 `sddPointer` 且 `upstreamText` 逐字不变、原文本身超限时保留并记 `warnings`、缺镜像时返回告警而非抛错、项目级开关覆盖全局级、两宿主拼装结果逐字一致（`test/guidance.test.mjs`）
-- [ ] T018 [P] [US2] 写失败测试 `test/adapters.test.mjs`：`systemPrompt` 服务缺失时插件照常加载且引导静默缺席（`test/adapters.test.mjs`）
+- [x] T017 [P] [US2] 写失败测试 `test/guidance.test.mjs`：三段内容齐备、`tokenEstimate ≤ 1200`、超限只裁 `sddPointer` 且 `upstreamText` 逐字不变、原文本身超限时保留并记 `warnings`、缺镜像时返回告警而非抛错、项目级开关覆盖全局级、两宿主拼装结果逐字一致（`test/guidance.test.mjs`）
+- [x] T018 [P] [US2] 写失败测试 `test/adapters.test.mjs`：`systemPrompt` 服务缺失时插件照常加载且引导静默缺席（`test/adapters.test.mjs`）
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] 实现 `src/core/guidance.mjs` 的 `assembleGuidance({ host, cwd, skills })`，返回结构对应 `data-model.md` 的 `GuidanceBundle.upstreamText`、`GuidanceBundle.toolMapping`、`GuidanceBundle.sddPointer`、`GuidanceBundle.tokenEstimate`、`GuidanceBundle.warnings`；`GuidanceBundle.sddPointer` 的 `feature`/`phase`/`nextCommand` 三字段按 `data-model.md` 的推导规则实现，`phase` 推导 MUST 与 `FeaturePhase.判定` 共用同一实现而非各写一份（`src/core/guidance.mjs`）
-- [ ] T020 [US2] 在 `src/core/guidance.mjs` 实现 token 估算器（CJK 1 tok/字 + 非 CJK `ceil(chars/3.5)`）与裁剪次序：仅裁 `sddPointer`，`upstreamText` 不可裁（`src/core/guidance.mjs`）
-- [ ] T021 [US2] 实现两级开关读取与生效层级判定：项目级 `<repo>/.specify/sdd-kit.json` 的 `guidance.enabled`、全局级 `~/.dsh/sdd-kit.json` 的 `guidance.enabled`（HOME 可覆盖，便于测试），产出 `data-model.md` 的 `GuidanceBundle.enabled`（布尔，项目级键存在则覆盖全局级）与 `GuidanceBundle.effectiveScope`（`project|user|default`），并记录生效层级来源供体检引用；文件不可解析视为该级未设置并记 `GuidanceBundle.warnings`，MUST NOT 使引导整体失败，MUST NOT 新建开关文件（`src/core/guidance.mjs`）
-- [ ] T022 [P] [US2] 实现 `src/adapters/dsh/index.mjs`：用 `ctx.get('systemPrompt')` 读取服务（**不得**写入 `inject` 必需数组），注册 `section({ name:'sdd-kit:discipline', order: getSectionOrder('PLAN_POLICY')+1, text })`，服务缺失则不注册并记告警（`src/adapters/dsh/index.mjs`）
-- [ ] T023 [US2] 在 `src/index.mjs` 的 `apply(ctx)` 中接线 DSH 适配器，确保 disposer 正确释放（`src/index.mjs`）
+- [x] T019 [US2] 实现 `src/core/guidance.mjs` 的 `assembleGuidance({ host, cwd, skills })`，返回结构对应 `data-model.md` 的 `GuidanceBundle.upstreamText`、`GuidanceBundle.toolMapping`、`GuidanceBundle.sddPointer`、`GuidanceBundle.tokenEstimate`、`GuidanceBundle.warnings`；`GuidanceBundle.sddPointer` 的 `feature`/`phase`/`nextCommand` 三字段按 `data-model.md` 的推导规则实现，`phase` 推导 MUST 与 `FeaturePhase.判定` 共用同一实现而非各写一份（`src/core/guidance.mjs`）
+- [x] T020 [US2] 在 `src/core/guidance.mjs` 实现 token 估算器（CJK 1 tok/字 + 非 CJK `ceil(chars/3.5)`）与裁剪次序：仅裁 `sddPointer`，`upstreamText` 不可裁（`src/core/guidance.mjs`）
+- [x] T021 [US2] 实现两级开关读取与生效层级判定：项目级 `<repo>/.specify/sdd-kit.json` 的 `guidance.enabled`、全局级 `~/.dsh/sdd-kit.json` 的 `guidance.enabled`（HOME 可覆盖，便于测试），产出 `data-model.md` 的 `GuidanceBundle.enabled`（布尔，项目级键存在则覆盖全局级）与 `GuidanceBundle.effectiveScope`（`project|user|default`），并记录生效层级来源供体检引用；文件不可解析视为该级未设置并记 `GuidanceBundle.warnings`，MUST NOT 使引导整体失败，MUST NOT 新建开关文件（`src/core/guidance.mjs`）
+- [x] T022 [P] [US2] 实现 `src/adapters/dsh/index.mjs`：用 `ctx.get('systemPrompt')` 读取服务（**不得**写入 `inject` 必需数组），注册 `section({ name:'sdd-kit:discipline', order: getSectionOrder('PLAN_POLICY')+1, text })`，服务缺失则不注册并记告警（`src/adapters/dsh/index.mjs`）
+- [x] T023 [US2] 在 `src/index.mjs` 的 `apply(ctx)` 中接线 DSH 适配器，确保 disposer 正确释放（`src/index.mjs`）
 
 **Checkpoint**：引导在 DSH 上常驻且抗压缩，关闭开关后技能目录与可用性不受影响。
 

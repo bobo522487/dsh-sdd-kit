@@ -45,12 +45,18 @@
     "@deepseek-ai/dsh-tools": "*"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": { "optional": true },
-    "@deepseek-ai/dsh-skill-filesystem": { "optional": true },
-    "@deepseek-ai/dsh-tools": { "optional": true }
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill-filesystem": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
   },
   "scripts": {
-    "test": "node --test test/sdd-kit.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "test:contract": "node --test test/contract-*.test.mjs",
     "test:adapters": "node --test test/adapters*.test.mjs",
     "verify:upstream": "node scripts/verify-upstream.mjs"

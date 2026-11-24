@@ -7,6 +7,7 @@ import { runUpstream } from './upstream.mjs';
 import { runBridge } from './bridge.mjs';
 import { runUpdate } from './update.mjs';
 import { runSetup } from './setup.mjs';
+import { assembleGuidance } from './guidance.mjs';
 
 export function actionError(code, message, fix) {
   return { status: 'error', code, message, fix };
@@ -34,9 +35,10 @@ export async function runAction(action, params = {}, deps = {}) {
       return (deps.runBridge ?? runBridge)(params);
     case 'upstream':
       return (deps.runUpstream ?? runUpstream)(params);
+    case 'guidance':
+      return (deps.assembleGuidance ?? assembleGuidance)(params);
     case 'doctor':
     case 'guard':
-    case 'guidance':
       return unknownActionError(action);
     default:
       return unknownActionError(action);
