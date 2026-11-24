@@ -108,8 +108,11 @@ export function classifyMarkers(markers = {}, { now = Date.now(), sessionStart, 
   const parsed = typeof sessionStart === 'number'
     ? sessionStart
     : (typeof sessionStart === 'string' ? Date.parse(sessionStart) : Number.NaN);
-  const baseline = Number.isFinite(parsed) ? parsed : now - MARKER_HISTORY_WINDOW_MS;
   const runFloor = now - MAX_SAME_RUN_AGE_MS;
+  // 工作区 anchor 会被跨进程复用，过期后不能继续充当当前会话基线；
+  // 此时按缺失基线处理，避免绕过有界运行窗口。
+  const usableSession = Number.isFinite(parsed) && parsed >= runFloor && parsed <= now;
+  const baseline = usableSession ? parsed : now - MARKER_HISTORY_WINDOW_MS;
   const pending = [];
   const history = [];
   for (const [host, marker] of Object.entries(markers ?? {})) {

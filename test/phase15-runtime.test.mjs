@@ -269,6 +269,30 @@ test('T106: 同一 runId 的标记也必须有界，48 小时 pending 但 365 �
   }, '同一 runId 的 365 天标记必须判 history');
 });
 
+test('T106 终轮复审：过期的 sessionStart 不得让遗留标记继续 pending', () => {
+  const now = Date.parse('2026-11-24T12:00:00.000Z');
+  const day = 24 * 60 * 60 * 1000;
+  const staleSessionStart = now - (30 * day);
+  const markers = {
+    sameRunEightDays: { runId: 'current-run', timestamp: new Date(now - (8 * day)).toISOString() },
+    otherRunTwoDays: { runId: 'other-run', timestamp: new Date(now - (2 * day)).toISOString() },
+  };
+  assert.deepEqual(
+    classifyMarkers(markers, { now, sessionStart: staleSessionStart, runId: 'current-run' }),
+    { pending: [], history: ['sameRunEightDays', 'otherRunTwoDays'] },
+    'anchor 过期 30 天时，withinSession 不得绕过同运行 7 天上界'
+  );
+
+  const freshSession = {
+    otherRunTwoDays: markers.otherRunTwoDays,
+  };
+  assert.deepEqual(
+    classifyMarkers(freshSession, { now, sessionStart: now - (6 * day), runId: 'current-run' }),
+    { pending: ['otherRunTwoDays'], history: [] },
+    '未过期的 sessionStart 仍按会话基线判定'
+  );
+});
+
 test('生产路径：Host 工具无环境覆盖时生成并复用同一 run context', async (t) => {
   const root = await makeRepo(t);
   const registered = [];
