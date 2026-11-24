@@ -1913,3 +1913,177 @@ test('install_overrides: an empty artifact list is not success (report aggregati
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// 003 US2 · 快照刷新与一键回滚
+// ---------------------------------------------------------------------------
+
+test('restore_overrides: restores the pre-overwrite bytes and keeps the snapshot reusable (AC-06/AC-07)', async () => {
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    const shipped = await fs.readFile(target, 'utf8');
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+
+    const forced = await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+    assert.equal(forced.status, 'refreshed');
+    assert.equal(await fs.readFile(target, 'utf8'), shipped);
+
+    const restored = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(restored.ok, true);
+    assert.equal(restored.status, 'restored');
+    assert.equal(restored.restored.length, 1);
+    assert.equal(restored.restored[0].id, 'ears-spec-template');
+    assert.equal(restored.restored[0].path, target);
+    assert.equal(restored.restored[0].sourceVersion, 'unknown');
+    assert.equal(await fs.readFile(target, 'utf8'), 'hand edited\n');
+    assert.equal(
+      await fs.readFile(path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'), 'utf8'),
+      'hand edited\n',
+      'INV-18: the snapshot survives a restore'
+    );
+
+    const again = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(again.ok, true, 'a second restore must still succeed');
+    assert.equal(await fs.readFile(target, 'utf8'), 'hand edited\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('restore_overrides: an empty or missing snapshot set is a failure, never a fake success (AC-07)', async () => {
+  const cwd = await makeTempDir();
+  try {
+    const fresh = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(fresh.ok, false);
+    assert.equal(fresh.status, 'no_snapshot');
+    assert.deepEqual(fresh.restored, []);
+    assert.equal(fresh.reason, 'E_NO_SNAPSHOT');
+
+    await writeSeed(cwd, path.join(EARS_BACKUP, 'manifest.json'), '{"schema":1,"snapshots":{}}\n');
+    const empty = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(empty.ok, false, 'an empty manifest must not report ok');
+    assert.equal(empty.status, 'no_snapshot');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('restore_overrides: a tampered or missing snapshot fails loudly and writes nothing (INV-15)', async () => {
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+    await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+    const current = await fs.readFile(target, 'utf8');
+
+    await fs.appendFile(path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'), 'tampered\n', 'utf8');
+    const tampered = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(tampered.ok, false);
+    assert.equal(tampered.status, 'partial');
+    assert.equal(tampered.restored[0].reason, 'E_SNAPSHOT_CHECKSUM_MISMATCH');
+    assert.equal(await fs.readFile(target, 'utf8'), current, 'a failed verification must not write');
+
+    await fs.rm(path.join(cwd, EARS_BACKUP, 'ears-spec-template.bak'));
+    const missing = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.restored[0].reason, 'E_SNAPSHOT_MISSING');
+    assert.equal(await fs.readFile(target, 'utf8'), current);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('restore_overrides: an unknown artifact id is an argument error and touches nothing (E_ARGS)', async () => {
+  const cwd = await makeTempDir();
+  const target = path.join(cwd, EARS_OVERRIDE);
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+    await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+
+    const result = await runBridge({ action: 'restore_overrides', cwd, artifact: 'nope' });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'E_ARGS');
+    assert.notEqual(await fs.readFile(target, 'utf8'), 'hand edited\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('restore_overrides: stays inside the project and refuses a symlinked target (REQ-11/REQ-15)', async (t) => {
+  if (process.platform === 'win32') return t.skip('creating symlinks on Windows needs elevation; covered on POSIX only');
+  const cwd = await makeTempDir();
+  const outside = await makeTempDir();
+  try {
+    await runBridge({ action: 'install_overrides', cwd });
+    await writeSeed(cwd, EARS_OVERRIDE, 'hand edited\n');
+    await runBridge({ action: 'install_overrides', cwd, overwrite: true });
+
+    const sentinel = path.join(cwd, 'sentinel.txt');
+    await fs.writeFile(sentinel, 'untouched\n', 'utf8');
+    const sentinelBefore = await fs.stat(sentinel, { bigint: true });
+
+    const target = path.join(cwd, EARS_OVERRIDE);
+    await fs.rm(target);
+    const external = path.join(outside, 'spec-template.md');
+    await fs.writeFile(external, 'outside\n', 'utf8');
+    await fs.symlink(external, target);
+
+    const result = await runBridge({ action: 'restore_overrides', cwd });
+    assert.equal(result.ok, false);
+    assert.match(result.restored[0].reason, /^E_SYMLINK: /);
+    assert.equal(await fs.readFile(external, 'utf8'), 'outside\n', 'the link target must not be written');
+    assert.equal((await fs.lstat(target)).isSymbolicLink(), true, 'the link itself must survive');
+
+    const sentinelAfter = await fs.stat(sentinel, { bigint: true });
+    assert.equal(sentinelAfter.mtimeNs, sentinelBefore.mtimeNs, 'REQ-11: files outside the manifest are untouched');
+    assert.equal(await fs.readFile(sentinel, 'utf8'), 'untouched\n');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+    await fs.rm(outside, { recursive: true, force: true });
+  }
+});
+
+test('restore_overrides: an artifact filter restores only the requested entry', async () => {
+  const cwd = await makeTempDir();
+  const other = path.join(cwd, '.specify', 'templates', 'overrides', 'other.md');
+  try {
+    const [base] = await listArtifacts(cwd);
+    const second = {
+      ...base,
+      id: 'other-artifact',
+      path: other,
+      bundledPath: path.join(cwd, 'bundled-other.md'),
+      snapshotDir: base.snapshotDir,
+    };
+    await fs.writeFile(second.bundledPath, 'other shipped\n', 'utf8');
+    await writeSeed(cwd, '.specify/templates/overrides/other.md', 'other hand\n');
+    await writeSeed(cwd, EARS_OVERRIDE, 'ears hand\n');
+
+    const artifacts = [base, second];
+    await runBridge({ action: 'install_overrides', cwd, overwrite: true }, { artifacts });
+    await fs.writeFile(second.path, 'other shipped v2\n', 'utf8');
+    await fs.writeFile(base.path, 'ears shipped v2\n', 'utf8');
+
+    const result = await runBridge({ action: 'restore_overrides', cwd, artifact: 'other-artifact' }, { artifacts });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.restored.map((r) => r.id), ['other-artifact']);
+    assert.equal(await fs.readFile(other, 'utf8'), 'other hand\n', 'the snapshot holds the pre-overwrite bytes');
+    assert.equal(await fs.readFile(base.path, 'utf8'), 'ears shipped v2\n', 'the unrequested artifact is untouched');
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('sdd_bridge: an unknown action enumerates all four supported actions (REQ-12)', async () => {
+  const result = await runBridge({ action: 'nope' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'E_ARGS');
+  assert.match(result.error.message, /Unknown sdd_bridge action "nope"/);
+  for (const name of ['inspect', 'install_overrides', 'restore_overrides', 'sync_index']) {
+    assert.match(result.error.message, new RegExp(name), `the hint must list ${name}`);
+  }
+});
