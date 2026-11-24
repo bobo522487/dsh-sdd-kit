@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BUNDLED_OVERRIDE_SPEC = path.join(PKG_ROOT, 'overrides', 'spec-template.md');
+import { listArtifacts } from './artifacts.mjs';
+import { assertInside, assertNoSymlinkComponent, atomicWriteFile } from './fsutil.mjs';
+import { captureSnapshot } from './snapshot.mjs';
+import { classifyArtifact, VERDICT } from './status.mjs';
 
 async function exists(p) {
   try {
@@ -20,15 +21,6 @@ async function readIfExists(p) {
   } catch {
     return null;
   }
-}
-
-function assertInside(baseDir, targetPath) {
-  const base = path.resolve(baseDir);
-  const target = path.resolve(targetPath);
-  if (target !== base && !target.startsWith(base + path.sep)) {
-    throw new Error(`Path escapes allowed root: ${targetPath}`);
-  }
-  return target;
 }
 
 export function parseTasks(text) {
@@ -139,17 +131,104 @@ async function inspectRepo(cwd, featureFilter, bugFilter) {
   };
 }
 
-async function installOverrides(cwd, overwrite = false) {
-  const root = path.resolve(cwd || process.cwd());
-  const destDir = path.join(root, '.specify', 'templates', 'overrides');
-  const destFile = path.join(destDir, 'spec-template.md');
-  if (!overwrite && (await exists(destFile))) {
-    return { action: 'install_overrides', path: destFile, status: 'skipped_existing' };
+function nextOverwriteAction() {
+  return { tool: 'sdd_bridge', args: { action: 'install_overrides', overwrite: true } };
+}
+
+/**
+ * Every write goes through the same three gates, in this order: containment,
+ * symlink components, then the actual publish. Nothing is opened before them.
+ */
+async function writeArtifact(root, artifact) {
+  const bytes = await fs.readFile(artifact.bundledPath);
+  assertInside(root, artifact.path);
+  await assertNoSymlinkComponent(root, artifact.path);
+  await fs.mkdir(path.dirname(artifact.path), { recursive: true });
+  await atomicWriteFile(artifact.path, bytes);
+}
+
+async function installOne(root, artifact, overwrite, clock) {
+  const classification = await classifyArtifact(artifact);
+  const entry = {
+    id: artifact.id,
+    path: artifact.path,
+    status: 'failed',
+    verdict: classification.verdict,
+    reason: classification.reason,
+    localVersion: classification.localVersion,
+    bundledVersion: classification.bundledVersion,
+    nextAction: null,
+    snapshot: null,
+  };
+
+  try {
+    if (artifact.owner !== 'plugin') {
+      entry.reason = 'E_OWNER';
+      return entry;
+    }
+    if (artifact.bundledSha256 === null) {
+      entry.reason = `E_BUNDLED_MISSING: ${artifact.bundledPath}`;
+      return entry;
+    }
+
+    switch (classification.verdict) {
+      case VERDICT.INSTALLED_CONSISTENT:
+        entry.status = 'unchanged';
+        return entry;
+      case VERDICT.UNKNOWN:
+        return entry;
+      case VERDICT.NOT_INSTALLED:
+        await writeArtifact(root, artifact);
+        entry.status = 'written';
+        return entry;
+      case VERDICT.USER_MODIFIED:
+        if (!overwrite) {
+          entry.status = 'skipped_user_modified';
+          entry.nextAction = nextOverwriteAction();
+          return entry;
+        }
+        break;
+      case VERDICT.STALE_UPSTREAM:
+        if (!overwrite) {
+          entry.status = 'skipped_stale';
+          entry.nextAction = nextOverwriteAction();
+          return entry;
+        }
+        break;
+      default:
+        entry.reason = `E_VERDICT: ${classification.verdict}`;
+        return entry;
+    }
+
+    // Explicit overwrite of an existing file: snapshot the bytes we are about to
+    // replace, then swap them in.
+    const snapshot = await captureSnapshot(root, artifact, clock ? { clock } : {});
+    entry.snapshot = snapshot.entry ?? null;
+    await writeArtifact(root, artifact);
+    entry.status = 'refreshed';
+    return entry;
+  } catch (error) {
+    entry.status = 'failed';
+    entry.reason = error?.message ?? String(error);
+    return entry;
   }
-  await fs.mkdir(destDir, { recursive: true });
-  const content = await fs.readFile(BUNDLED_OVERRIDE_SPEC, 'utf8');
-  await fs.writeFile(destFile, content, 'utf8');
-  return { action: 'install_overrides', path: destFile, status: 'written' };
+}
+
+async function installOverrides(cwd, overwrite = false, deps = {}) {
+  const root = path.resolve(cwd || process.cwd());
+  const artifacts = deps.artifacts ?? (await listArtifacts(root));
+  const results = [];
+  for (const artifact of artifacts) {
+    results.push(await installOne(root, artifact, overwrite, deps.clock));
+  }
+  return {
+    action: 'install_overrides',
+    ok: results.length > 0 && results.every((entry) => entry.status !== 'failed'),
+    cwd: root,
+    status: results[0]?.status ?? 'failed',
+    path: results[0]?.path ?? null,
+    artifacts: results,
+  };
 }
 
 async function syncIndex(cwd) {
@@ -186,13 +265,13 @@ async function syncIndex(cwd) {
   return { action: 'sync_index', indexPath, featureCount: info.features.length };
 }
 
-export async function runBridge(args = {}) {
+export async function runBridge(args = {}, deps = {}) {
   const action = args.action || 'inspect';
   switch (action) {
     case 'inspect':
       return inspectRepo(args.cwd, args.featureName, args.bugSlug);
     case 'install_overrides':
-      return installOverrides(args.cwd, Boolean(args.overwrite));
+      return installOverrides(args.cwd, Boolean(args.overwrite), deps);
     case 'sync_index':
       return syncIndex(args.cwd);
     default:
