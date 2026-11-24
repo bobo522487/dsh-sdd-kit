@@ -15,6 +15,7 @@ import {
 } from '../src/core/fsutil.mjs';
 import { bundledVersion, listArtifacts, readLedger, sha256Bytes, sha256File } from '../src/core/artifacts.mjs';
 import { captureSnapshot, readManifest } from '../src/core/snapshot.mjs';
+import { selectSuperpowersDir } from '../src/core/candidates.mjs';
 import { runUpdate } from '../src/core/update.mjs';
 import { runSetup } from '../src/core/setup.mjs';
 import { registerSddTools } from '../src/register.mjs';
@@ -2173,4 +2174,111 @@ test('install_overrides: one failed artifact does not block the next one (AC-09)
   } finally {
     await fs.rm(cwd, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 003 US4 · 多候选目录选择（AC-05）
+// ---------------------------------------------------------------------------
+
+async function seedCandidateDirs(root, names, baseMs) {
+  const dirs = [];
+  for (let i = 0; i < names.length; i++) {
+    const dir = path.join(root, names[i]);
+    await fs.mkdir(dir, { recursive: true });
+    const when = new Date(baseMs - (names.length - i) * 10000);
+    await fs.utimes(dir, when, when);
+    dirs.push(dir);
+  }
+  return dirs;
+}
+
+test('candidates: dedupes by realpath and prefers the most recently modified (AC-05)', async (t) => {
+  if (process.platform === 'win32') return t.skip('symlink creation on Windows needs elevation; covered on POSIX only');
+  const root = await makeTempDir();
+  const baseMs = Date.now();
+  try {
+    const [a, b, c] = await seedCandidateDirs(root, ['a', 'b', 'c'], baseMs);
+    const alias = path.join(root, 'alias-to-a');
+    await fs.symlink(a, alias);
+
+    const result = await selectSuperpowersDir(
+      { candidateDirs: [a, alias, b, c] },
+      { HOME: root, DSH_HOME: path.join(root, 'empty-home') }
+    );
+    assert.equal(result.reason, 'candidateDirs');
+    assert.equal(result.dir, c);
+    assert.equal(result.realPath, c);
+    assert.equal(result.fallback, false);
+
+    const realPaths = result.candidates.filter((x) => x.eligible).map((x) => x.realPath);
+    assert.equal(new Set(realPaths).size, realPaths.length, 'INV-10: eligible realPaths are unique');
+    assert.equal(result.candidates.filter((x) => x.selected).length, 1, 'INV-12: exactly one winner');
+    const aliasEntry = result.candidates.find((x) => x.input === alias);
+    assert.equal(aliasEntry.realPath, a);
+    assert.equal(aliasEntry.eligible, false, 'an alias of an earlier candidate is ineligible');
+    const winner = result.candidates.find((x) => x.selected);
+    assert.equal(winner.declaredIndex, 1, 'all candidateDirs entries share declaration index 1');
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('candidates: mtime ties fall back to declaration order; nothing resolvable means a default fallback', async (t) => {
+  if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
+  const root = await makeTempDir();
+  try {
+    const [a, b] = await seedCandidateDirs(root, ['a', 'b'], Date.now());
+    const when = (await fs.stat(a)).mtimeMs;
+    const same = new Date(when);
+    await fs.utimes(b, same, same);
+
+    const tied = await selectSuperpowersDir({ candidateDirs: [b, a] }, { HOME: root, DSH_HOME: path.join(root, 'empty-home') });
+    assert.equal(tied.dir, b, 'REQ-07: an mtime tie keeps the earlier declared candidate');
+
+    const fallback = await selectSuperpowersDir({ candidateDirs: [] }, { HOME: root, DSH_HOME: path.join(root, 'empty-home') });
+    assert.equal(fallback.fallback, true);
+    assert.equal(fallback.reason, 'default');
+    assert.equal(fallback.realPath, null);
+    assert.equal(fallback.candidates.length, 2, 'INV-13: every declaration is kept, even the unresolvable ones');
+    assert.equal(fallback.candidates.every((x) => x.eligible === false), true);
+    assert.equal(fallback.candidates.filter((x) => x.selected).length, 1);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('candidates: explicit overrides env, and env overrides the DSH home source (REQ-08)', async (t) => {
+  if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
+  const root = await makeTempDir();
+  try {
+    const [explicit, mirrored, dshHome] = await seedCandidateDirs(root, ['explicit', 'mirrored', 'dsh-home'], Date.now());
+    const env = {
+      HOME: root,
+      DSH_SDD_KIT_SUPERPOWERS_DIR: mirrored,
+      DSH_HOME: path.join(root, 'dsh-root'),
+    };
+    await fs.mkdir(path.join(root, 'dsh-root', 'upstream'), { recursive: true });
+    await fs.symlink(dshHome, path.join(root, 'dsh-root', 'upstream', 'superpowers'));
+    const when = (await fs.stat(explicit)).mtimeMs;
+    const same = new Date(when);
+    for (const dir of [mirrored, dshHome]) await fs.utimes(dir, same, same);
+
+    const envFirst = await selectSuperpowersDir({}, env);
+    assert.equal(envFirst.reason, 'env');
+    assert.equal(envFirst.dir, mirrored);
+
+    const explicitFirst = await selectSuperpowersDir({ superpowersDir: explicit }, env);
+    assert.equal(explicitFirst.reason, 'explicit');
+    assert.equal(explicitFirst.dir, explicit);
+    assert.equal(explicitFirst.candidates.find((x) => x.declaredIndex === 3).realPath, dshHome);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('candidates: selection never scans the filesystem for undeclared roots', async () => {
+  const source = await fs.readFile(path.join(PKG_ROOT, 'src', 'core', 'candidates.mjs'), 'utf8');
+  assert.equal(source.includes('readdir'), false, 'candidate discovery is declaration-driven, not a directory walk');
+  assert.match(source, /DSH_SDD_KIT_SUPERPOWERS_DIR/);
+  assert.match(source, /DSH_HOME/);
 });
