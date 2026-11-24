@@ -40,6 +40,16 @@ function invokeCli(args, env = {}) {
   return { stdout, status: result.status };
 }
 
+/**
+ * os.homedir() follows HOME on POSIX and USERPROFILE on Windows (see
+ * src/core/candidates.mjs), so a fixture that isolates the user skill root has
+ * to set the platform's own variable. HOME alone silently points the CLI at the
+ * developer's real skills on Windows and the assertion then reads their state.
+ */
+function isolatedHome(home) {
+  return process.platform === 'win32' ? { HOME: home, USERPROFILE: home } : { HOME: home };
+}
+
 test('core entry and CLI entry produce structurally identical JSON for the same action (REQ-05/14/AC-03)', async () => {
   const params = { cwd: PKG_ROOT };
   const coreResult = await runAction('guidance', params);
@@ -125,7 +135,7 @@ test('doctor --trigger collects host/project SKILL.md summaries and scores them 
   });
   const cli = invokeCli(
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
-    { HOME: home }
+    isolatedHome(home)
   );
   assert.equal(cli.status, 1, 'a synthetic HOME fails the environment zone and the CLI must report it');
   assert.equal(cli.stdout.triggerDryRun.status, 'pass');
@@ -135,7 +145,7 @@ test('doctor --trigger collects host/project SKILL.md summaries and scores them 
   assert.ok(entry, 'CLI must pass scanned SkillSummary[] to the doctor action');
   assert.ok(entry.score > 0);
   assert.equal(typeof entry.skill.path, 'string');
-  assert.match(entry.skill.path, /debug-helper\/SKILL\.md$/);
+  assert.match(entry.skill.path.replaceAll('\\', '/'), /debug-helper\/SKILL\.md$/);
   assert.equal(entry.skill.provider, 'plugin');
   assert.equal(entry.skill.source, 'host');
   assert.deepEqual(entry.skill.invocation, { userInvocable: true, modelInvocable: true });
@@ -151,7 +161,7 @@ test('doctor --trigger also reads user-level skills and keeps excluded entries l
   });
   const cli = invokeCli(
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
-    { HOME: home }
+    isolatedHome(home)
   );
   assert.equal(cli.status, 1, 'a synthetic HOME fails the environment zone and the CLI must report it');
   const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');
@@ -175,7 +185,7 @@ test('doctor --trigger falls back to packaged skills/ when no host skill dir exi
   );
   const cli = invokeCli(
     ['doctor', '--json', '--cwd', repo, '--host', 'dsh', '--trigger', 'debug failing test'],
-    { HOME: home }
+    isolatedHome(home)
   );
   assert.equal(cli.status, 1, 'an empty HOME is a failed environment zone and must be visible in the exit code');
   const item = cli.stdout.triggerDryRun.items.find((entry) => entry.code === 'TRIGGER_SCORES');

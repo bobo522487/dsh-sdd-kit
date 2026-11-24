@@ -43,9 +43,16 @@ function assertShape(report) {
 async function makeBinDir(names) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-doctor-bin-'));
   for (const name of names) {
-    const file = path.join(dir, name);
-    await fs.writeFile(file, '#!/bin/sh\nexit 0\n', 'utf8');
-    await fs.chmod(file, 0o755);
+    if (process.platform === 'win32') {
+      // findOnPath resolves PATHEXT entries on Windows (see src/core/doctor.mjs),
+      // and an extensionless file is not executable there: write a real .cmd shim
+      // instead of a shebang script the probe can never match.
+      await fs.writeFile(path.join(dir, `${name}.cmd`), '@echo off\r\nexit /b 0\r\n', 'utf8');
+    } else {
+      const file = path.join(dir, name);
+      await fs.writeFile(file, '#!/bin/sh\nexit 0\n', 'utf8');
+      await fs.chmod(file, 0o755);
+    }
   }
   return dir;
 }
