@@ -70,7 +70,19 @@ export async function runSetup(args = {}, deps = {}) {
     hooks.ok ? { extension: hooks.extension, hooks: hooks.hooks } : { stderr: hooks.stderr ?? hooks.error });
 
   const ov = await bridge({ action: 'install_overrides', cwd });
-  record('install_overrides', ov.status === 'written' ? 'performed' : 'skipped', { status: ov.status });
+  const ovDetail = {
+    status: ov.status,
+    verdict: ov.artifacts?.[0]?.verdict ?? null,
+    reason: ov.artifacts?.[0]?.reason ?? null,
+    nextAction: ov.artifacts?.[0]?.nextAction ?? null,
+    artifacts: ov.artifacts ?? [],
+  };
+  const ovStep = ov.status === 'failed'
+    ? 'failed'
+    : ov.status === 'written' || ov.status === 'refreshed'
+      ? 'performed'
+      : 'skipped';
+  record('install_overrides', ovStep, ovDetail);
 
   // REQ-16: the switch is explicit opt-in only, then hooks are regenerated.
   let mismatch = hooks.integrationMismatch ?? null;
