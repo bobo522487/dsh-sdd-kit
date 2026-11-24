@@ -239,7 +239,7 @@ test('the purity scan also walks nested core subdirectories (REQ-01/AC-01)', asy
     );
     const violations = await scanCore(tmp);
     assert.ok(
-      violations.some((v) => v.code === 'HOST_PACKAGE' && v.file.endsWith(path.join('nested', 'deeper', 'host.mjs'))),
+      violations.some((v) => v.code === 'HOST_PACKAGE' && v.file.replaceAll('\\', '/').endsWith('nested/deeper/host.mjs')),
       `nested violation must be detected, got ${JSON.stringify(violations)}`
     );
   } finally {

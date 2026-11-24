@@ -7,8 +7,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { selectSuperpowersDir } from '../src/core/candidates.mjs';
+import { resolvePosixShell, POSIX_SHELL_SKIP } from './posix-shell.mjs';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SHELL = resolvePosixShell();
 
 async function readPkg() {
   return JSON.parse(await fs.readFile(path.join(PKG_ROOT, 'package.json'), 'utf8'));
@@ -275,6 +277,10 @@ test('reinstalling the extension renders all six hook skills and both extra comm
     t.skip('specify is not installed here; the render is covered by the static assertions above');
     return;
   }
+  if (!SHELL.available) {
+    t.skip(POSIX_SHELL_SKIP);
+    return;
+  }
   const home = fsSync.mkdtempSync(path.join(os.tmpdir(), 'dsh-t095-home-'));
   const dir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'dsh-t095-'));
   // The scripts resolve the CLI through _cli.sh; point them at this checkout so
@@ -300,12 +306,12 @@ test('reinstalling the extension renders all six hook skills and both extra comm
     const installedManifest = fsSync.readFileSync(path.join(dir, '.specify', 'extensions', 'superpowers-hooks', 'extension.yml'), 'utf8');
     assert.match(installedManifest, /session_start:/, 'the installed manifest must still carry session_start');
 
-    const guard = spawnSync('sh', ['.specify/extensions/superpowers-hooks/scripts/bash/guard.sh', '--json'], { cwd: dir, encoding: 'utf8', timeout: 30_000, env });
+    const guard = spawnSync(SHELL.shell, ['.specify/extensions/superpowers-hooks/scripts/bash/guard.sh', '--json'], { cwd: dir, encoding: 'utf8', timeout: 30_000, env });
     const guardReport = JSON.parse(guard.stdout);
     assert.ok(['ok', 'error'].includes(guardReport.status), `guard must answer with a verdict, got: ${guard.stdout}`);
     assert.equal(guardReport.blocked, false, 'a fresh project has no checked tasks, so the guard must not block');
 
-    const guidance = spawnSync('sh', ['.specify/extensions/superpowers-hooks/scripts/bash/guidance.sh', '--text'], { cwd: dir, encoding: 'utf8', timeout: 60_000, env });
+    const guidance = spawnSync(SHELL.shell, ['.specify/extensions/superpowers-hooks/scripts/bash/guidance.sh', '--text'], { cwd: dir, encoding: 'utf8', timeout: 60_000, env });
     assert.equal(guidance.status, 0, `guidance script failed: ${guidance.stderr}`);
     assert.match(guidance.stdout, /## SDD 运行时纪律/, 'the session_start payload must be the real discipline text');
   } finally {

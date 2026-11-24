@@ -2376,8 +2376,11 @@ test('candidates: mtime ties fall back to declaration order; nothing resolvable 
   process.env.HOME = root;
   try {
     const [a, b] = await seedCandidateDirs(root, ['a', 'b'], Date.now());
-    const when = (await fs.stat(a)).mtimeMs;
-    const same = new Date(when);
+    // Whole-second stamps on both sides: fs.stat().mtimeMs drops the nanosecond
+    // part, so a Date rebuilt from it leaves the two candidates a few ms apart on
+    // filesystems with sub-second precision and the tie under test never happens.
+    const same = new Date(Math.floor(Date.now() / 1000) * 1000);
+    await fs.utimes(a, same, same);
     await fs.utimes(b, same, same);
 
     const tied = await selectSuperpowersDir({ candidateDirs: [b, a] }, { HOME: root, DSH_HOME: path.join(root, 'empty-home') });
@@ -2400,6 +2403,12 @@ test('candidates: mtime ties fall back to declaration order; nothing resolvable 
 test('candidates: explicit overrides env, and env overrides the DSH home source (REQ-08)', async (t) => {
   if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
   const root = await makeTempDir();
+  // The default declaration is built from os.homedir(), not from the injected
+  // env object, so the process HOME has to be redirected too: a real
+  // ~/.dsh/upstream/superpowers on this machine would otherwise outrank the
+  // seeded candidates by mtime and win under the "default" reason.
+  const savedHome = process.env.HOME;
+  process.env.HOME = root;
   try {
     const [explicit, mirrored, dshHome] = await seedCandidateDirs(root, ['explicit', 'mirrored', 'dsh-home'], Date.now());
     const env = {
@@ -2409,9 +2418,10 @@ test('candidates: explicit overrides env, and env overrides the DSH home source 
     };
     await fs.mkdir(path.join(root, 'dsh-root', 'upstream'), { recursive: true });
     await fs.symlink(dshHome, path.join(root, 'dsh-root', 'upstream', 'superpowers'));
-    const when = (await fs.stat(explicit)).mtimeMs;
-    const same = new Date(when);
-    for (const dir of [mirrored, dshHome]) await fs.utimes(dir, same, same);
+    // Whole-second stamps: mtimeMs drops nanoseconds, so rebuilt Dates would
+    // leave the seeds milliseconds apart and replace the declared-order tie.
+    const same = new Date(Math.floor(Date.now() / 1000) * 1000);
+    for (const dir of [explicit, mirrored, dshHome]) await fs.utimes(dir, same, same);
 
     const envFirst = await selectSuperpowersDir({}, env);
     assert.equal(envFirst.reason, 'env');
@@ -2422,6 +2432,8 @@ test('candidates: explicit overrides env, and env overrides the DSH home source 
     assert.equal(explicitFirst.dir, explicit);
     assert.equal(explicitFirst.candidates.find((x) => x.declaredIndex === 3).realPath, dshHome);
   } finally {
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
     await fs.rm(root, { recursive: true, force: true });
   }
 });
@@ -2436,6 +2448,18 @@ test('candidates: selection never scans the filesystem for undeclared roots', as
 test('upstream: status and sync_superpowers report the selected directory (REQ-08)', async (t) => {
   if (process.platform === 'win32') return t.skip('HOME does not control os.homedir() on Windows; covered on POSIX only');
   const root = await makeTempDir();
+  // runUpstream reads the process env, so the declared source set is pinned here
+  // instead of inherited: on a machine that exports neither DSH_HOME nor the
+  // mirror override, only `explicit` and `default` are declared and the
+  // declaration check below could never hold.
+  const savedEnv = {
+    HOME: process.env.HOME,
+    DSH_HOME: process.env.DSH_HOME,
+    DSH_SDD_KIT_SUPERPOWERS_DIR: process.env.DSH_SDD_KIT_SUPERPOWERS_DIR,
+  };
+  process.env.HOME = root;
+  process.env.DSH_HOME = path.join(root, 'dsh-root');
+  process.env.DSH_SDD_KIT_SUPERPOWERS_DIR = path.join(root, 'mirror');
   try {
     const [explicit] = await seedCandidateDirs(root, ['explicit'], Date.now());
     const runner = async (command, args) => ({
@@ -2449,7 +2473,7 @@ test('upstream: status and sync_superpowers report the selected directory (REQ-0
     assert.equal(status.superpowers.selection.realPath, explicit);
     assert.equal(status.superpowers.selection.fallback, false);
     assert.ok(Array.isArray(status.superpowers.selection.candidates), 'the report must keep every declaration');
-    assert.ok(status.superpowers.selection.candidates.length >= 3, 'explicit, dsh_home and default are always declared');
+    assert.ok(status.superpowers.selection.candidates.length >= 3, 'explicit, env, dsh_home and default are all declared');
     for (const candidate of status.superpowers.selection.candidates) {
       assert.equal(candidate.mtimeNs === null || typeof candidate.mtimeNs === 'string', true,
         'bigint mtimeNs must be JSON-safe in the report');
@@ -2459,6 +2483,10 @@ test('upstream: status and sync_superpowers report the selected directory (REQ-0
     assert.equal(synced.dir, explicit);
     assert.equal(synced.selection.reason, 'explicit');
   } finally {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     await fs.rm(root, { recursive: true, force: true });
   }
 });
